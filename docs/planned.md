@@ -298,6 +298,12 @@ Bard tokens can grant 1 bonus dungeon action (for 2 tokens). This is the only wa
 
 ## Dungeon
 
+### The Darkcragg Depths
+
+The dungeon is always the Darkcragg Depths. Like the Last Ember, the name is a constant — it persists across every epoch, every server, every wipe. The floors reskin, the layout regenerates, the monsters change, but the Depths are always the Depths. Players descend into the Darkcragg. They talk about the Darkcragg. It's a proper noun, not a generic dungeon.
+
+The four floors are narratively re-skinned each epoch (Sunken Halls, Fungal Depths, Ember Caverns, Void Reach are defaults — the LLM pipeline may rename them) but the Darkcragg Depths is the name on the door every time.
+
 ### Hub-Spoke Layout with Loops
 
 Each floor has a central hub room connecting to 3-4 branching paths of 3-5 rooms each, with 1-2 loops connecting branches. Hubs are mental anchors — players always know where they are relative to center.
@@ -922,7 +928,7 @@ Sound > smell > temperature > light > taste. Sound is most evocative in text.
 
 The Last Ember is the one room that never changes. Epochs wipe the dungeon, reskin the narrative, randomize everything — but players always wake up in the same bar, with the same people, who remember them. The lanterns don't burn oil — they just burn. Nobody lights them. Nobody replaces them. The dungeon reshapes itself every 30 days but the Last Ember sits at the mouth of it like a tooth that won't come loose.
 
-The Last Ember is the constant across every epoch, every server, every wipe. It is the frame for the entire game.
+The Last Ember and the Darkcragg Depths are the two constants across every epoch, every server, every wipe. The bar and the hole it sits on top of. Everything else changes. These don't.
 
 ### Grist — The Barkeep
 
@@ -992,7 +998,7 @@ Players don't issue a `talk` command — they DM the NPC's node directly. The ga
 
 **Rule 2 — Known player, not in the bar:** Static in-character refusal. Player is in the dungeon, dead, or otherwise not in town. No LLM call.
 - Grist: `"You're not here, {name}. Come back to the bar first."`
-- Maren: `"I can hear you're still down there. Come back alive."`
+- Maren: `"I can hear you're still in the Darkcragg. Come back alive."`
 - Torval: `"I don't do deliveries. Get back to the Ember."`
 - Whisper: `"...too far. Return."`
 
@@ -1104,6 +1110,7 @@ On a 45-60 second radio round-trip, guessing a command and getting "Unknown comm
 - Town hub: The Last Ember — persistent bar across all epochs, all servers. Four permanent NPCs: Grist (barkeep), Maren (healer), Torval (merchant), Whisper (sage).
 - NPC live conversations: NPCs are sim nodes on the mesh (GRST, MRN, TRVL, WSPR). Players DM them directly. Three rule layers: unknown node gets static onboarding response, known player not in bar gets static rejection, known player in bar gets full LLM conversation. No rate limit. Session-only memory. Falls back to pre-generated dialogue on failure. 24-epoch history seed provides 2 years of lore for NPCs to draw from.
 - Command discovery: smart error responses show valid commands for current state, barkeep nudges for unused systems, explicit command listing on first connect.
+- Dungeon name: The Darkcragg Depths — persistent across all epochs like the Last Ember. Floor names reskin per epoch but the Darkcragg is always the Darkcragg.
 
 ## Open Questions
 
