@@ -25,6 +25,7 @@ from config import (
     LLM_OUTPUT_CHAR_LIMIT,
 )
 from src.transport.meshtastic import MeshTransport
+from src.transport.message_logger import log_message
 
 logger = logging.getLogger(__name__)
 
@@ -109,8 +110,14 @@ class BroadcastDrain:
     def _send_broadcast(self, row: sqlite3.Row) -> None:
         """Send a non-targeted broadcast as a channel message."""
         message = row["message"][:LLM_OUTPUT_CHAR_LIMIT]
-        logger.info(f"DCRG broadcast (tier {row['tier']}): {message[:60]}...")
+        tier = row["tier"]
+        msg_type = f"broadcast_tier{tier}"
+        logger.info(f"DCRG broadcast (tier {tier}): {message[:60]}...")
         self.dcrg_transport.send_broadcast(message)
+        log_message(
+            self.conn, "DCRG", "outbound", message, msg_type,
+            metadata={"broadcast_id": row["id"], "tier": tier},
+        )
 
     def _send_targeted(self, row: sqlite3.Row) -> None:
         """Send a targeted broadcast as DMs to qualifying players.
@@ -127,6 +134,10 @@ class BroadcastDrain:
         if not condition:
             # No condition — send as regular broadcast
             self.dcrg_transport.send_broadcast(message)
+            log_message(
+                self.conn, "DCRG", "outbound", message, "broadcast_targeted",
+                metadata={"broadcast_id": row["id"], "condition": None},
+            )
             return
 
         try:
@@ -141,6 +152,11 @@ class BroadcastDrain:
             mesh_id = player["mesh_id"]
             logger.debug(f"DCRG targeted DM to {mesh_id}: {message[:40]}...")
             self.dcrg_transport.send_dm(mesh_id, message)
+            log_message(
+                self.conn, "DCRG", "outbound", message, "broadcast_targeted",
+                recipient_id=mesh_id,
+                metadata={"broadcast_id": row["id"], "condition": condition},
+            )
 
     def _find_qualifying_players(self, condition: dict) -> list[dict]:
         """Find players matching a target condition."""
