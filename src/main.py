@@ -31,13 +31,15 @@ import sys
 import threading
 import time
 
-from config import BROADCAST_DRAIN_INTERVAL, MESH_NODES
+from config import BROADCAST_DRAIN_INTERVAL, MESH_NODES, MESSAGE_LOG_RETENTION_DAYS
 from src.core.engine import GameEngine
 from src.db.database import get_db
 from src.generation.narrative import get_backend
+from src.systems.daytick import run_day_tick
 from src.systems.npc_conversation import NPCConversationHandler
 from src.transport.broadcast_drain import BroadcastDrain
 from src.transport.meshtastic import MeshMessage, MeshTransport
+from src.transport.message_logger import log_message, prune_old_logs
 from src.transport.router import NodeRouter
 
 logger = logging.getLogger(__name__)
@@ -70,6 +72,42 @@ def _connect_node(name: str, conn_str: str, channel: int) -> MeshTransport:
                 logger.error(f"  {name} connect failed after {max_retries} attempts: {e}")
                 raise
     return transport  # unreachable, satisfies type checker
+
+
+def _check_day_tick(conn, last_day: int) -> int:
+    """Check if the epoch day has advanced and run the day tick if needed.
+
+    Returns the current day number. Logs the daytick event and prunes old logs.
+    """
+    from src.models.epoch import get_epoch
+
+    try:
+        epoch = get_epoch(conn)
+        if not epoch:
+            return last_day
+
+        current_day = epoch["day_number"]
+        if current_day == last_day:
+            return last_day
+
+        # Day has changed — run the tick
+        stats = run_day_tick(conn)
+        new_day = stats.get("new_day", current_day)
+
+        log_message(
+            conn, "EMBR", "system", f"Day tick: day {new_day}", "daytick",
+            metadata=stats,
+        )
+        logger.info(f"Day tick executed: day {new_day}")
+
+        # Prune old logs once per day tick
+        prune_old_logs(conn, MESSAGE_LOG_RETENTION_DAYS)
+
+        return new_day
+
+    except Exception as e:
+        logger.error(f"Day tick error: {e}", exc_info=True)
+        return last_day
 
 
 def _run_drain_loop(drain: BroadcastDrain, interval: float, stop_event: threading.Event) -> None:
@@ -173,12 +211,19 @@ def main():
         drain_thread.start()
         logger.info("Broadcast drain started")
 
+    # Track current day for day tick detection
+    from src.models.epoch import get_epoch
+    epoch = get_epoch(conn)
+    current_day = epoch["day_number"] if epoch else 0
+
     # Main loop
     logger.info("MMUD server running. Press Ctrl+C to stop.")
     try:
         while not stop_event.is_set():
             # Periodic session cleanup
             npc_handler.sessions.cleanup()
+            # Check for day tick
+            current_day = _check_day_tick(conn, current_day)
             stop_event.wait(5)
     finally:
         _shutdown(router, conn, drain_thread, stop_event)
