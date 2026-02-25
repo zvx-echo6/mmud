@@ -81,7 +81,7 @@ def handle_action(
 
     handler = handlers.get(command)
     if not handler:
-        return fmt(f"Unknown command: {command}. Type H for help.")
+        return _smart_error(player)
 
     # Check action budget for dungeon-cost actions
     if command in DUNGEON_COST_ACTIONS:
@@ -90,6 +90,20 @@ def handle_action(
                 return fmt("No dungeon actions left today! Return to town and rest.")
 
     return handler(conn, player, args)
+
+
+def _smart_error(player: dict) -> str:
+    """State-specific error with valid command suggestions."""
+    state = player.get("state", "town")
+    if state == "town":
+        return fmt("Unknown. Try: BAR SHOP HEAL BANK TRAIN ENTER H(elp)")
+    if state == "dungeon":
+        return fmt("Unknown. Try: F(ight) FL(ee) L(ook) N/S/E/W H(elp)")
+    if state == "combat":
+        return fmt("Unknown. Try: F(ight) FL(ee) STATS")
+    if state == "dead":
+        return fmt("Unknown. You're dead. Type RESPAWN.")
+    return fmt("Unknown. Type H for help.")
 
 
 def action_look(conn: sqlite3.Connection, player: dict, args: list[str]) -> str:

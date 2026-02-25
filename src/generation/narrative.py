@@ -232,7 +232,7 @@ _TRAP_DESCS = {
 
 # NPC names and context
 _NPC_DIALOGUE = {
-    "barkeep": {
+    "grist": {
         "greeting": [
             "Grist slides a drink across the bar.",
             "Grist nods. 'What'll it be?'",
@@ -249,21 +249,21 @@ _NPC_DIALOGUE = {
             "Grist: 'Things happened. {summary}'",
         ],
     },
-    "healer": {
+    "maren": {
         "greeting": [
             "Maren inspects your wounds.",
             "Maren: 'You look terrible. Sit down.'",
             "'Hold still.' Maren reaches for bandages.",
         ],
     },
-    "merchant": {
+    "torval": {
         "greeting": [
             "Torval arranges wares on the counter.",
             "Torval: 'Browse freely. Break it, buy it.'",
             "'Fresh stock today.' Torval gestures widely.",
         ],
     },
-    "sage": {
+    "whisper": {
         "greeting": [
             "Whisper barely acknowledges your presence.",
             "Whisper turns a yellowed page slowly.",
@@ -406,7 +406,7 @@ class DummyBackend(BackendInterface):
         """Generate NPC dialogue."""
         lines = _NPC_DIALOGUE.get(npc, {}).get(context, [])
         if not lines:
-            return f"The {npc} says nothing."
+            return f"{npc.title()} says nothing."
         template = random.choice(lines)
         try:
             return template.format(**kwargs)[:LLM_OUTPUT_CHAR_LIMIT]

@@ -109,7 +109,7 @@ class GameEngine:
             return fmt(
                 f"Welcome {sender_name} the {cls.title()}! "
                 f"POW:{stats['POW']} DEF:{stats['DEF']} SPD:{stats['SPD']} "
-                f"Type LOOK to begin."
+                f"Move:N/S/E/W Fight:F Look:L Flee:FL Stats:ST Help:H"
             )
 
         # First contact — show class picker

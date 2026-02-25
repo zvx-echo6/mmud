@@ -176,12 +176,12 @@ def _generate_narrative_content(
     counts = {"dialogue": 0, "skins": 0, "broadcasts": 0}
 
     # NPC dialogue for all NPCs and contexts
-    npcs = ["barkeep", "healer", "merchant", "sage"]
+    npcs = ["grist", "maren", "torval", "whisper"]
     contexts = {
-        "barkeep": ["greeting", "hint", "recap"],
-        "healer": ["greeting"],
-        "merchant": ["greeting"],
-        "sage": ["greeting", "hint"],
+        "grist": ["greeting", "hint", "recap"],
+        "maren": ["greeting"],
+        "torval": ["greeting"],
+        "whisper": ["greeting", "hint"],
     }
 
     for npc in npcs:

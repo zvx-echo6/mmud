@@ -404,7 +404,7 @@ CREATE TABLE IF NOT EXISTS narrative_skins (
 
 CREATE TABLE IF NOT EXISTS npc_dialogue (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    npc TEXT NOT NULL,                  -- barkeep, sage, merchant, healer
+    npc TEXT NOT NULL,                  -- grist, maren, torval, whisper
     context TEXT NOT NULL,              -- greeting, hint, recap, token_spend, etc.
     dialogue TEXT NOT NULL,             -- ≤150 chars
     used INTEGER DEFAULT 0             -- Track usage to avoid repetition
