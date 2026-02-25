@@ -20,6 +20,18 @@ from src.models import player as player_model
 from src.systems import broadcast as broadcast_sys
 
 
+# ── Grist's Story Pool ─────────────────────────────────────────────────────
+
+_GRIST_STORIES = [
+    "Grist: 'Oryn built this place. Sola lit it. Malcor... well.'",
+    "Grist: 'They say the builder's hands are in the walls.'",
+    "Grist: 'Every epoch the Darkcragg resets. But it remembers.'",
+    "Grist: 'The light fades a little more each cycle.'",
+    "Grist: 'The Breach opened earlier last time. I'm counting.'",
+    "Grist: 'Floor 4 takes more than it gives back.'",
+]
+
+
 # ── Bard Token Accrual ─────────────────────────────────────────────────────
 
 
@@ -194,7 +206,7 @@ def _spend_hint(conn: sqlite3.Connection, player: dict) -> tuple[bool, str]:
     if secret and secret["hint_tier1"]:
         return True, f"Grist: '{secret['hint_tier1']}'"
 
-    return True, f"Grist: 'Hmm... nothing I've heard about Floor {floor} lately.'"
+    return True, random.choice(_GRIST_STORIES)
 
 
 def _spend_buff(conn: sqlite3.Connection, player: dict) -> tuple[bool, str]:
@@ -288,4 +300,4 @@ def _spend_intel(conn: sqlite3.Connection, player: dict) -> tuple[bool, str]:
     if secret:
         return True, f"Grist: 'Floor {secret['floor']}, {secret['room_name']}. Don't tell anyone.'"
 
-    return True, "Grist: 'I've got nothing. You've found them all?'"
+    return True, random.choice(_GRIST_STORIES)

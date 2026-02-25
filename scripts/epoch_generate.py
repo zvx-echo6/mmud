@@ -136,6 +136,11 @@ def generate_epoch(
           f"Skins: {narrative_count['skins']}, "
           f"Broadcasts: {narrative_count['broadcasts']}")
 
+    # 8b. Seed NPC journals
+    journal_count = _seed_npc_journals(conn, epoch_number)
+    stats["journals"] = journal_count
+    print(f"  NPC journals seeded: {journal_count}")
+
     # 9. Validation
     print("[9/9] Running validation...")
     validation = validate_epoch(conn)
@@ -242,6 +247,40 @@ def _generate_narrative_content(
 
     conn.commit()
     return counts
+
+
+_JOURNAL_SEEDS = {
+    "grist": (
+        "New epoch. Walls shifted overnight. Same bar, different dungeon. "
+        "Three regulars already. The usual."
+    ),
+    "maren": (
+        "Stocks restocked. New epoch brings new injuries. "
+        "Floor 2 fungal burns incoming, I can tell already."
+    ),
+    "torval": (
+        "Fresh inventory. Priced the fire-rated gear higher — "
+        "Floor 3 demand always spikes early epoch."
+    ),
+    "whisper": (
+        "...the cycle begins again. The marks have changed. "
+        "Something in the pattern is different this time."
+    ),
+}
+
+
+def _seed_npc_journals(conn: sqlite3.Connection, epoch_number: int) -> int:
+    """Insert Day 1 journal entries for each NPC at epoch start."""
+    count = 0
+    for npc, content in _JOURNAL_SEEDS.items():
+        conn.execute(
+            """INSERT OR IGNORE INTO npc_journals (npc, epoch_number, day_number, content)
+               VALUES (?, ?, 1, ?)""",
+            (npc, epoch_number, content),
+        )
+        count += 1
+    conn.commit()
+    return count
 
 
 if __name__ == "__main__":

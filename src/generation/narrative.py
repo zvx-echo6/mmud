@@ -258,15 +258,19 @@ _NPC_DIALOGUE = {
             "Grist nods. 'What'll it be?'",
             "Grist wipes the counter. 'Still alive, eh?'",
             "'Back already?' Grist grins.",
+            "Grist: 'Another day. Walls shifted last night.'",
+            "'Epoch's turning. I can feel it.' Grist pours.",
         ],
         "hint": [
             "Grist: 'I heard something about Floor {floor}.'",
             "Grist: 'Explorers found something {direction} on Floor {floor}.'",
             "Grist: 'The {theme} holds secrets.'",
+            "Grist: 'The builder left something on Floor {floor}.'",
         ],
         "recap": [
             "Grist: 'While you were away: {summary}'",
             "Grist: 'Things happened. {summary}'",
+            "Grist: 'The Darkcragg remembers. {summary}'",
         ],
     },
     "maren": {
@@ -274,6 +278,8 @@ _NPC_DIALOGUE = {
             "Maren inspects your wounds.",
             "Maren: 'You look terrible. Sit down.'",
             "'Hold still.' Maren reaches for bandages.",
+            "Maren checks her supplies. 'Who's next?'",
+            "'The Depths sent you back early.' Maren frowns.",
         ],
     },
     "torval": {
@@ -281,6 +287,8 @@ _NPC_DIALOGUE = {
             "Torval arranges wares on the counter.",
             "Torval: 'Browse freely. Break it, buy it.'",
             "'Fresh stock today.' Torval gestures widely.",
+            "'Void-grade stock today.' Torval beams.",
+            "Torval: 'The Caverns melted my last shipment.'",
         ],
     },
     "whisper": {
@@ -288,11 +296,14 @@ _NPC_DIALOGUE = {
             "Whisper barely acknowledges your presence.",
             "Whisper turns a yellowed page slowly.",
             "'Hmm.' Whisper does not look up.",
+            "Whisper traces a symbol in the dust.",
+            "'...the pattern shifts.' Whisper goes quiet.",
         ],
         "hint": [
             "Whisper: 'The {theme} conceals much.'",
             "Whisper: '{direction} of Floor {floor}, something waits.'",
             "Whisper: 'Power lies dormant in the {theme}.'",
+            "Whisper: 'The builder's mark. Floor {floor}. {direction}.'",
         ],
     },
 }
@@ -469,6 +480,11 @@ class DummyBackend(BackendInterface):
             "The ground trembles briefly.",
             "An eerie silence falls.",
             "Shadows lengthen without cause.",
+            "The Darkcragg groans. Something below stirs.",
+            "Ancient symbols flicker in the walls.",
+            "The air tastes of old stone and older memory.",
+            "A low hum rises from the deep floors.",
+            "The Breach pulses faintly. Waiting.",
         ]
         return random.choice(msgs)[:LLM_OUTPUT_CHAR_LIMIT]
 
@@ -546,7 +562,7 @@ class OpenAIBackend(BackendInterface):
 
 
 class GoogleBackend(BackendInterface):
-    """Gemini API backend."""
+    """Gemini API backend using google-genai SDK."""
 
     def __init__(self, api_key=None, model=None):
         self.api_key = api_key or os.environ.get("MMUD_GOOGLE_API_KEY", "")
@@ -554,29 +570,37 @@ class GoogleBackend(BackendInterface):
         if not self.api_key:
             raise ValueError("Google API key required")
 
+    def _get_client(self):
+        from google import genai
+        return genai.Client(api_key=self.api_key)
+
     def complete(self, prompt: str, max_tokens: int = 200) -> str:
-        import google.generativeai as genai
-        genai.configure(api_key=self.api_key)
-        model = genai.GenerativeModel(self.model)
-        response = model.generate_content(
-            prompt,
-            generation_config={"max_output_tokens": max_tokens},
+        from google.genai import types
+        client = self._get_client()
+        response = client.models.generate_content(
+            model=self.model,
+            contents=prompt,
+            config=types.GenerateContentConfig(max_output_tokens=max_tokens),
         )
         return response.text.strip()
 
     def chat(self, system: str, messages: list[dict], max_tokens: int = 80) -> str:
-        import google.generativeai as genai
-        genai.configure(api_key=self.api_key)
-        model = genai.GenerativeModel(self.model, system_instruction=system)
-        history = []
-        for msg in messages[:-1]:
+        from google.genai import types
+        client = self._get_client()
+        contents = []
+        for msg in messages:
             role = "user" if msg["role"] == "user" else "model"
-            history.append({"role": role, "parts": [msg["content"]]})
-        chat = model.start_chat(history=history)
-        last_msg = messages[-1]["content"] if messages else ""
-        response = chat.send_message(
-            last_msg,
-            generation_config={"max_output_tokens": max_tokens},
+            contents.append(types.Content(
+                role=role,
+                parts=[types.Part(text=msg["content"])],
+            ))
+        response = client.models.generate_content(
+            model=self.model,
+            contents=contents,
+            config=types.GenerateContentConfig(
+                system_instruction=system,
+                max_output_tokens=max_tokens,
+            ),
         )
         return response.text.strip()
 

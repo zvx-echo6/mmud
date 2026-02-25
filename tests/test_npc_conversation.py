@@ -332,12 +332,13 @@ def test_system_prompt_contains_personality():
     prompt = _build_system_prompt("grist", state)
     assert "Grist" in prompt
     assert "barkeep" in prompt.lower()
+    assert "EXAMPLE RESPONSES" in prompt
 
 
 def test_system_prompt_contains_rules():
     state = "Epoch 1, Day 5."
     prompt = _build_system_prompt("whisper", state)
-    assert "150 characters" in prompt
+    assert "145 characters" in prompt
     assert "NEVER break character" in prompt
 
 
@@ -359,6 +360,8 @@ def test_all_npcs_have_personalities():
         assert "title" in card
         assert "voice" in card
         assert "knowledge" in card
+        assert "example_lines" in card
+        assert len(card["example_lines"]) >= 2
 
 
 # ── Fallback on LLM Error ──
@@ -414,3 +417,39 @@ def test_npc_name_mixed_case():
     result = handler.handle_message("Maren", "!town01", "Help")
     assert result is not None
     assert len(result) > 0
+
+
+# ── Worldbuilding Integration ──
+
+
+_WORLDBUILDING_KEYWORDS = {
+    "grist": ["Darkcragg", "epoch", "walls", "Breach", "Oryn", "Sola", "Malcor"],
+    "maren": ["Floor", "burns", "Caverns", "Depths", "injuries"],
+    "torval": ["Halls", "Depths", "Caverns", "dungeon-tested", "fire-rated"],
+    "whisper": ["builder", "light", "below", "pattern", "Breach", "epoch"],
+}
+
+
+def test_personality_has_worldbuilding_keywords():
+    for npc, keywords in _WORLDBUILDING_KEYWORDS.items():
+        card = NPC_PERSONALITIES[npc]
+        combined = card["voice"] + " " + card["knowledge"]
+        found = any(kw.lower() in combined.lower() for kw in keywords)
+        assert found, f"{npc} voice/knowledge missing worldbuilding keywords"
+
+
+def test_example_lines_under_150_chars():
+    for npc, card in NPC_PERSONALITIES.items():
+        for line in card.get("example_lines", []):
+            assert len(line) <= 150, (
+                f"{npc} example line too long ({len(line)}): {line}"
+            )
+
+
+def test_system_prompt_includes_examples():
+    state = "Epoch 1, Day 5."
+    for npc in ("grist", "maren", "torval", "whisper"):
+        prompt = _build_system_prompt(npc, state)
+        assert "EXAMPLE RESPONSES" in prompt
+        for line in NPC_PERSONALITIES[npc]["example_lines"]:
+            assert line in prompt

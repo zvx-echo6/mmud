@@ -24,10 +24,11 @@ def get_db(db_path: str = "mmud.db") -> sqlite3.Connection:
         sqlite3.Connection with row_factory set to sqlite3.Row.
     """
     exists = os.path.exists(db_path)
-    conn = sqlite3.connect(db_path)
+    conn = sqlite3.connect(db_path, check_same_thread=False)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
+    conn.execute("PRAGMA busy_timeout=5000")
 
     if not exists:
         init_schema(conn)
@@ -50,7 +51,7 @@ def reset_epoch_tables(conn: sqlite3.Connection) -> None:
     """
     epoch_tables = [
         "broadcast_seen", "broadcasts", "player_messages", "mail",
-        "epoch_votes", "npc_dialogue", "narrative_skins",
+        "epoch_votes", "npc_journals", "npc_dialogue", "narrative_skins",
         "breach", "htl_checkpoints",
         "escape_participants", "escape_run",
         "raid_boss_contributors", "raid_boss",
