@@ -12,11 +12,18 @@ All routing decisions are logged to message_log for traffic visibility.
 """
 
 import logging
+import random
 import sqlite3
 import time
 from typing import Optional
 
-from config import DCRG_REJECTION, LLM_OUTPUT_CHAR_LIMIT, MESH_NODES
+from config import (
+    DCRG_REJECTION,
+    LLM_OUTPUT_CHAR_LIMIT,
+    MESH_NODES,
+    NPC_GREETINGS,
+    NPC_TO_NODE,
+)
 from src.core.engine import GameEngine
 from src.models import player as player_model
 from src.systems.npc_conversation import NPCConversationHandler
@@ -49,6 +56,7 @@ class NodeRouter:
         self.engine = engine
         self.npc_handler = npc_handler
         self.transports: dict[str, MeshTransport] = transports or {}
+        self._own_node_ids: set[str] = set()
 
     @property
     def conn(self) -> sqlite3.Connection:
@@ -150,6 +158,9 @@ class NodeRouter:
             if transport:
                 transport.send_dm(msg.sender_id, response)
 
+        # Drain NPC greeting DM queue (populated by engine)
+        self._drain_npc_dm_queue(player_id)
+
     def _handle_dcrg(self, msg: MeshMessage) -> None:
         """Handle a message on the DCRG (broadcast) node — always reject."""
         rejection = DCRG_REJECTION[:LLM_OUTPUT_CHAR_LIMIT]
@@ -168,6 +179,67 @@ class NodeRouter:
         transport = self.transports.get("DCRG")
         if transport:
             transport.send_dm(msg.sender_id, rejection)
+
+    def _drain_npc_dm_queue(self, player_id: Optional[int] = None) -> None:
+        """Send queued NPC greeting DMs from the engine."""
+        for npc, recipient_id in self.engine.npc_dm_queue:
+            node = NPC_TO_NODE.get(npc)
+            if not node:
+                continue
+
+            transport = self.transports.get(node)
+            if not transport:
+                continue  # Single-node mode: skip silently
+
+            greeting = self._generate_npc_greeting(npc, recipient_id)
+            if not greeting:
+                continue
+
+            # Send DM from NPC node
+            transport.send_dm(recipient_id, greeting)
+
+            # Log the greeting
+            log_message(
+                self.conn, node, "outbound", greeting, "npc_greeting",
+                sender_id=recipient_id,
+                recipient_id=recipient_id,
+                player_id=player_id,
+                metadata={"trigger": "town_command"},
+            )
+
+        self.engine.npc_dm_queue.clear()
+
+    def _generate_npc_greeting(self, npc: str, sender_id: str) -> str:
+        """Generate an NPC greeting for a town interaction.
+
+        Uses LLM if available, falls back to static greetings.
+        """
+        from src.generation.narrative import DummyBackend
+
+        backend = self.npc_handler.backend
+
+        # Try LLM generation for real backends
+        if not isinstance(backend, DummyBackend):
+            try:
+                player = player_model.get_player_by_mesh_id(self.conn, sender_id)
+                ctx = ""
+                if player:
+                    ctx = f" The player is {player['name']}, Lv{player['level']}."
+                prompt = (
+                    f"You are {npc.title()} from The Last Ember tavern. "
+                    f"Greet a player who just walked up to your area.{ctx} "
+                    f"One sentence, under 140 characters, stay in character. "
+                    f"No quotes around your response."
+                )
+                greeting = backend.complete(prompt, max_tokens=100)
+                if greeting and len(greeting.strip()) > 10:
+                    return greeting.strip()[:150]
+            except Exception as e:
+                logger.warning(f"LLM greeting generation failed for {npc}: {e}")
+
+        # Fallback to static greetings
+        greetings = NPC_GREETINGS.get(npc, ["..."])
+        return random.choice(greetings)
 
     def _handle_npc(self, node_name: str, npc: str, msg: MeshMessage) -> None:
         """Handle a message on an NPC node."""

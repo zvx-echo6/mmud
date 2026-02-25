@@ -8,9 +8,10 @@ Pipeline:
 
 import logging
 import sqlite3
+import time
 from typing import Optional
 
-from config import CLASSES
+from config import CLASSES, COMMAND_NPC_DM_MAP, NPC_GREETING_COOLDOWN, NPC_TO_NODE
 from src.core.actions import handle_action
 from src.models import player as player_model
 from src.systems import barkeep as barkeep_sys
@@ -26,6 +27,11 @@ class GameEngine:
 
     def __init__(self, conn: sqlite3.Connection):
         self.conn = conn
+        # NPC DM queue: populated by process_message, drained by router
+        # Each entry: (npc_name, recipient_mesh_id)
+        self.npc_dm_queue: list[tuple[str, str]] = []
+        # Per-player per-NPC cooldown timestamps {(mesh_id, npc): monotonic_time}
+        self._npc_dm_cooldowns: dict[tuple[str, str], float] = {}
 
     def process_message(self, sender_id: str, sender_name: str, text: str) -> Optional[str]:
         """Process an inbound message and return a response.
@@ -40,6 +46,9 @@ class GameEngine:
         Returns:
             Response string, or None if no response needed.
         """
+        # Clear NPC DM queue from previous call
+        self.npc_dm_queue.clear()
+
         # Parse command
         parsed = parse(text)
         if not parsed:
@@ -62,6 +71,9 @@ class GameEngine:
 
         # Execute action
         response = handle_action(self.conn, player, parsed.command, parsed.args)
+
+        # Queue NPC greeting DM if this command triggers one
+        self._maybe_queue_npc_dm(sender_id, player, parsed.command)
 
         # Prepend unseen tier 1 broadcasts
         news = broadcast_sys.deliver_unseen(self.conn, player["id"], limit=1)
@@ -114,3 +126,27 @@ class GameEngine:
 
         # First contact — show class picker
         return fmt("Welcome to meshMUD! Pick class: W)arrior G)uardian S)cout")
+
+    def _maybe_queue_npc_dm(
+        self, sender_id: str, player: dict, command: str
+    ) -> None:
+        """Queue an NPC greeting DM if the command triggers one and cooldown allows."""
+        if player["state"] != "town":
+            return
+
+        npc = COMMAND_NPC_DM_MAP.get(command)
+        if not npc:
+            return
+
+        # Check cooldown
+        now = time.monotonic()
+        cooldown_key = (sender_id, npc)
+        last_dm = self._npc_dm_cooldowns.get(cooldown_key, 0.0)
+        if (now - last_dm) < NPC_GREETING_COOLDOWN:
+            return
+
+        # Queue the DM and set cooldown
+        node = NPC_TO_NODE.get(npc)
+        if node:
+            self.npc_dm_queue.append((npc, sender_id))
+            self._npc_dm_cooldowns[cooldown_key] = now

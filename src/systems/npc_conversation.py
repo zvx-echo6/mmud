@@ -9,12 +9,19 @@ Players DM an NPC node directly. Three-tier rule check:
 Persistent memory: NPCs remember key facts about each player across sessions.
 Session memory: ephemeral chat history within a conversation window (TTL-based).
 Uses the pluggable LLM backend from src/generation/narrative.
+
+Transaction system: NPCs detect player intent for heal/buy/sell/browse/recap/hint
+via [TX:action:detail] tags. Two-message confirmation flow:
+  1. LLM detects intent → server validates → quote template
+  2. Player confirms → server executes → result
 """
 
 import logging
+import re
 import sqlite3
 import threading
 import time
+from dataclasses import dataclass, field
 from typing import Optional
 
 from config import (
@@ -24,10 +31,16 @@ from config import (
     NPC_LLM_TIMEOUT,
     NPC_NOT_IN_TOWN,
     NPC_SESSION_TTL,
+    NPC_TO_NODE,
     NPC_UNKNOWN_PLAYER,
+    SHOP_PRICES,
+    SELL_PRICE_PERCENT,
 )
 from src.generation.narrative import BackendInterface, DummyBackend, get_backend
 from src.models import player as player_model
+from src.systems import economy
+from src.systems import barkeep as barkeep_sys
+from src.transport.message_logger import log_message
 
 logger = logging.getLogger(__name__)
 
@@ -169,6 +182,118 @@ _MEMORY_EXTRACT_PROMPT = (
 )
 
 
+# ── Transaction System ──────────────────────────────────────────────────────
+
+# TX tag regex: [TX:action:detail] near start of LLM response.
+# Tolerates leading whitespace/newlines and optional markdown backtick wrapping.
+_TX_TAG_RE = re.compile(r'^\s*`?\[TX:(\w+):([^\]]*)\]`?\s*(.*)', re.DOTALL)
+
+# Valid TX actions per NPC
+_NPC_TX_ACTIONS = {
+    "maren": {"heal"},
+    "torval": {"buy", "sell", "browse"},
+    "grist": {"recap", "hint"},
+    "whisper": {"hint"},
+}
+
+# Confirm keywords — player says one of these to execute a pending TX
+_CONFIRM_KEYWORDS = {"y", "yes", "do it", "deal", "confirm", "go", "ok", "yep", "sure"}
+
+# DummyBackend keyword fallbacks (when no LLM available)
+_MAREN_TX_KEYWORDS = {"heal", "patch", "fix", "hurt", "wounded", "health", "help me"}
+_TORVAL_BUY_PREFIX = ("buy ", "purchase ")
+_TORVAL_SELL_PREFIX = ("sell ", "offload ", "dump ")
+_TORVAL_BROWSE_KEYWORDS = {"shop", "inventory", "stock", "wares", "what do you have", "browse"}
+_GRIST_RECAP_KEYWORDS = {"recap", "news", "story", "tale", "what happened", "catch me up"}
+_GRIST_HINT_KEYWORDS = {"hint", "tip", "spend token"}
+_WHISPER_HINT_KEYWORDS = {"hint", "secret", "reveal", "tell me", "what do you know"}
+
+# Quote templates (NPC, action) → format string
+_QUOTES = {
+    ("maren", "heal"):   "That's {cost}g to stitch. You have {gold}g. Say yes.",
+    ("torval", "buy"):   "{item}. {cost}g. You have {gold}g. Deal?",
+    ("torval", "sell"):  "I'll give {value}g for the {item}. Agreed?",
+    ("grist", "recap"):  "Costs a token. You have {tokens}. Want the news?",
+    ("grist", "hint"):   "Token for a tip. You have {tokens}. Worth it?",
+    ("whisper", "hint"):  "...a token. {tokens} left. Yes or silence.",
+}
+
+# Rejection templates (NPC, reason) → format string
+_REJECTIONS = {
+    ("maren", "full_hp"):    "You're whole. Don't waste my time or your gold.",
+    ("maren", "no_gold"):    "That's {cost}g. You have {gold}g. Can't stitch on credit.",
+    ("torval", "no_gold"):   "That's {cost}g. You have {gold}g. Math.",
+    ("torval", "not_found"): "Don't carry it. Don't know it.",
+    ("torval", "full_bag"):  "Carrying too much. Drop something first.",
+    ("torval", "no_item"):   "Not in your pack.",
+    ("grist", "no_tokens"):  "Stories cost tokens. You're dry.",
+    ("whisper", "no_tokens"): "...nothing to trade.",
+}
+
+# Success templates (DummyBackend fallback)
+_SUCCESS = {
+    ("maren", "heal"):   "Done. {hp_restored}HP mended. {gold_remaining}g left.",
+    ("torval", "buy"):   "{item}. Yours. {gold_remaining}g remains.",
+    ("torval", "sell"):  "{value}g for the {item}. Done.",
+    ("grist", "recap"):  "{recap_text}",
+    ("grist", "hint"):   "{hint_text}",
+    ("whisper", "hint"):  "{hint_text}",
+}
+
+# TX-aware system prompt addendum per NPC
+_TX_INSTRUCTIONS = {
+    "maren": (
+        "\n\nTRANSACTION DETECTION:\n"
+        "If the player wants healing, prefix your response with [TX:heal:_] "
+        "then continue with your in-character response.\n"
+        "If just chatting, do NOT include any tag."
+    ),
+    "torval": (
+        "\n\nTRANSACTION DETECTION:\n"
+        "If the player wants to buy, prefix with [TX:buy:<item name>]\n"
+        "If selling, prefix with [TX:sell:<item name>]\n"
+        "If browsing/asking about stock, prefix with [TX:browse:_]\n"
+        "Then continue with your in-character response.\n"
+        "If just chatting, do NOT include any tag."
+    ),
+    "grist": (
+        "\n\nTRANSACTION DETECTION:\n"
+        "If the player wants a recap of missed events, prefix with [TX:recap:_]\n"
+        "If the player wants to spend a token for a hint, prefix with [TX:hint:_]\n"
+        "Then continue with your in-character response.\n"
+        "If just chatting, do NOT include any tag."
+    ),
+    "whisper": (
+        "\n\nTRANSACTION DETECTION:\n"
+        "If the player wants a hint or secret (costs a token), prefix with [TX:hint:_]\n"
+        "Then continue with your in-character response.\n"
+        "If just chatting, do NOT include any tag."
+    ),
+}
+
+
+@dataclass
+class PendingTransaction:
+    """A transaction awaiting player confirmation."""
+    action: str          # heal, buy, sell, recap, hint
+    detail: str          # item name for buy/sell, "_" otherwise
+    npc: str
+    quoted_at: float     # time.monotonic()
+
+
+def _parse_tx_tag(text: str) -> tuple[str, str, str]:
+    """Parse [TX:action:detail] tag from start of text.
+
+    Returns:
+        (action, detail, clean_text) if tag found,
+        ("", "", text) if no tag.
+    """
+    m = _TX_TAG_RE.match(text)
+    if m:
+        return m.group(1).lower(), m.group(2).strip(), m.group(3).strip()
+    return "", "", text
+
+
 # ── Session Memory ───────────────────────────────────────────────────────────
 
 
@@ -182,6 +307,7 @@ class ConversationSession:
         self.created_at = time.monotonic()
         self.last_active = time.monotonic()
         self.ttl = ttl
+        self.pending: Optional[PendingTransaction] = None
 
     def is_expired(self) -> bool:
         return (time.monotonic() - self.last_active) > self.ttl
@@ -359,7 +485,35 @@ def _build_game_state(conn: sqlite3.Connection, player: dict) -> str:
     return " ".join(parts)
 
 
-def _build_system_prompt(npc: str, game_state: str, memory: str = "") -> str:
+def _build_player_state(conn: sqlite3.Connection, player: dict) -> str:
+    """Build player-specific state for transaction-aware NPC prompts."""
+    parts = [
+        f"Player gold: {player['gold_carried']}g carried, {player['gold_banked']}g banked.",
+        f"HP: {player['hp']}/{player['hp_max']}.",
+        f"Bard tokens: {player['bard_tokens']}.",
+    ]
+
+    # Inventory summary
+    items = economy.get_inventory(conn, player["id"])
+    equipped = [it["name"] for it in items if it["equipped"]]
+    backpack = [it["name"] for it in items if not it["equipped"]]
+    bp_count = len(backpack)
+    bp_max = 8  # BACKPACK_SIZE from config
+
+    if equipped:
+        parts.append(f"Equipped: {', '.join(equipped)}.")
+    if backpack:
+        parts.append(f"Backpack ({bp_count}/{bp_max}): {', '.join(backpack)}.")
+    else:
+        parts.append(f"Backpack: empty ({bp_count}/{bp_max}).")
+
+    return " ".join(parts)
+
+
+def _build_system_prompt(
+    conn: sqlite3.Connection, npc: str, game_state: str,
+    player: Optional[dict] = None, memory: str = "",
+) -> str:
     """Build the full system prompt for an NPC conversation."""
     personality = NPC_PERSONALITIES.get(npc, NPC_PERSONALITIES["grist"])
     examples = personality.get("example_lines", [])
@@ -377,6 +531,14 @@ def _build_system_prompt(npc: str, game_state: str, memory: str = "") -> str:
             f"{memory}"
         )
 
+    # Player state for transaction-aware NPCs
+    player_state_block = ""
+    if player and npc in _NPC_TX_ACTIONS:
+        player_state_block = f"\n\nPLAYER STATE: {_build_player_state(conn, player)}"
+
+    # TX detection instructions per NPC
+    tx_block = _TX_INSTRUCTIONS.get(npc, "")
+
     return (
         f"You are {personality['name']}, {personality['title']}.\n\n"
         f"PERSONALITY: {personality['voice']}\n\n"
@@ -384,7 +546,278 @@ def _build_system_prompt(npc: str, game_state: str, memory: str = "") -> str:
         f"{examples_block}"
         f"{memory_block}\n\n"
         f"CURRENT GAME STATE: {game_state}"
+        f"{player_state_block}"
+        f"{tx_block}"
         f"{_NPC_RULES}"
+    )
+
+
+# ── Transaction Validation ──────────────────────────────────────────────────
+
+
+def _validate_heal(conn: sqlite3.Connection, player: dict) -> tuple[bool, str]:
+    """Validate heal transaction. Returns (valid, rejection_reason)."""
+    if player["hp"] >= player["hp_max"]:
+        return False, "full_hp"
+    cost = economy.calc_heal_cost(player)
+    if player["gold_carried"] < cost:
+        return False, "no_gold"
+    return True, ""
+
+
+def _validate_buy(conn: sqlite3.Connection, player: dict, item_name: str) -> tuple[bool, str]:
+    """Validate buy transaction."""
+    epoch = conn.execute("SELECT day_number FROM epoch WHERE id = 1").fetchone()
+    day = epoch["day_number"] if epoch else 1
+    available = economy.get_shop_items(conn, day)
+    item = None
+    for i in available:
+        if i["name"].lower() == item_name.lower():
+            item = i
+            break
+    if not item:
+        return False, "not_found"
+    if player["gold_carried"] < item["price"]:
+        return False, "no_gold"
+    if economy.get_backpack_count(conn, player["id"]) >= 8:  # BACKPACK_SIZE
+        return False, "full_bag"
+    return True, ""
+
+
+def _validate_sell(conn: sqlite3.Connection, player: dict, item_name: str) -> tuple[bool, str]:
+    """Validate sell transaction."""
+    row = conn.execute(
+        """SELECT inv.id FROM inventory inv JOIN items it ON inv.item_id = it.id
+           WHERE inv.player_id = ? AND LOWER(it.name) = LOWER(?)
+           LIMIT 1""",
+        (player["id"], item_name),
+    ).fetchone()
+    if not row:
+        return False, "no_item"
+    return True, ""
+
+
+def _validate_recap(conn: sqlite3.Connection, player: dict) -> tuple[bool, str]:
+    """Validate recap (costs 1 bard token)."""
+    if player["bard_tokens"] < 1:
+        return False, "no_tokens"
+    return True, ""
+
+
+def _validate_hint(conn: sqlite3.Connection, player: dict) -> tuple[bool, str]:
+    """Validate hint (costs 1 bard token)."""
+    if player["bard_tokens"] < 1:
+        return False, "no_tokens"
+    return True, ""
+
+
+# ── Transaction Execution ───────────────────────────────────────────────────
+
+
+def _execute_heal(conn: sqlite3.Connection, player: dict) -> tuple[bool, str, dict]:
+    """Execute heal. Returns (success, message, metadata)."""
+    hp_before = player["hp"]
+    ok, msg = economy.heal_player(conn, player["id"], player)
+    if ok:
+        hp_restored = player["hp_max"] - hp_before
+        cost = economy.calc_heal_cost(player)
+        gold_remaining = player["gold_carried"] - cost
+        meta = {"hp_restored": hp_restored, "cost": cost, "gold_remaining": gold_remaining}
+        return True, _SUCCESS[("maren", "heal")].format(
+            hp_restored=hp_restored, gold_remaining=gold_remaining,
+        ), meta
+    return False, msg, {}
+
+
+def _execute_buy(conn: sqlite3.Connection, player: dict, item_name: str) -> tuple[bool, str, dict]:
+    """Execute buy."""
+    epoch = conn.execute("SELECT day_number FROM epoch WHERE id = 1").fetchone()
+    day = epoch["day_number"] if epoch else 1
+    ok, msg = economy.buy_item(conn, player["id"], item_name, day)
+    if ok:
+        # Re-fetch gold
+        p = conn.execute("SELECT gold_carried FROM players WHERE id = ?", (player["id"],)).fetchone()
+        gold_remaining = p["gold_carried"] if p else 0
+        meta = {"item": item_name, "gold_remaining": gold_remaining}
+        return True, _SUCCESS[("torval", "buy")].format(
+            item=item_name, gold_remaining=gold_remaining,
+        ), meta
+    return False, msg, {}
+
+
+def _execute_sell(conn: sqlite3.Connection, player: dict, item_name: str) -> tuple[bool, str, dict]:
+    """Execute sell."""
+    # Get sell price before executing
+    row = conn.execute(
+        """SELECT it.tier, it.name FROM inventory inv JOIN items it ON inv.item_id = it.id
+           WHERE inv.player_id = ? AND LOWER(it.name) = LOWER(?) LIMIT 1""",
+        (player["id"], item_name),
+    ).fetchone()
+    if not row:
+        return False, "Item not in inventory.", {}
+
+    buy_price = SHOP_PRICES.get(row["tier"], 100)
+    sell_value = max(1, buy_price * SELL_PRICE_PERCENT // 100)
+
+    ok, msg = economy.sell_item(conn, player["id"], item_name)
+    if ok:
+        meta = {"item": row["name"], "value": sell_value}
+        return True, _SUCCESS[("torval", "sell")].format(
+            value=sell_value, item=row["name"],
+        ), meta
+    return False, msg, {}
+
+
+def _execute_browse(conn: sqlite3.Connection, player: dict) -> str:
+    """Execute browse — immediate, no pending TX needed."""
+    epoch = conn.execute("SELECT day_number FROM epoch WHERE id = 1").fetchone()
+    day = epoch["day_number"] if epoch else 1
+    items = economy.get_shop_items(conn, day)
+    if not items:
+        return "Shop's empty. Check later."
+    listing = " ".join(f"{it['name']}({it['price']}g)" for it in items)
+    return listing[:200]
+
+
+def _execute_recap(conn: sqlite3.Connection, player: dict) -> tuple[bool, str, dict]:
+    """Execute recap (costs 1 bard token)."""
+    # Deduct token
+    conn.execute(
+        "UPDATE players SET bard_tokens = bard_tokens - 1 WHERE id = ?",
+        (player["id"],),
+    )
+    conn.commit()
+
+    recaps = barkeep_sys.get_recap(conn, player["id"])
+    if recaps:
+        recap_text = recaps[0][:150]
+    else:
+        recap_text = "Quiet day. Nothing to report."
+    meta = {"recap_text": recap_text}
+    return True, _SUCCESS[("grist", "recap")].format(recap_text=recap_text), meta
+
+
+def _execute_hint(conn: sqlite3.Connection, player: dict, npc: str) -> tuple[bool, str, dict]:
+    """Execute hint (costs 1 bard token)."""
+    ok, msg = barkeep_sys.spend_tokens(conn, player["id"], "1", "hint")
+    if ok:
+        meta = {"hint_text": msg}
+        template_key = (npc, "hint")
+        return True, _SUCCESS.get(template_key, "{hint_text}").format(hint_text=msg), meta
+    return False, msg, {}
+
+
+# ── Keyword Detection for DummyBackend ──────────────────────────────────────
+
+
+def _detect_dummy_tx(npc: str, text: str) -> tuple[str, str]:
+    """Detect transaction intent from keywords when using DummyBackend.
+
+    Returns (action, detail) or ("", "").
+    """
+    text_lower = text.lower().strip()
+
+    if npc == "maren":
+        for kw in _MAREN_TX_KEYWORDS:
+            if kw in text_lower:
+                return "heal", "_"
+
+    elif npc == "torval":
+        for prefix in _TORVAL_BUY_PREFIX:
+            if text_lower.startswith(prefix):
+                return "buy", text_lower[len(prefix):].strip()
+        for prefix in _TORVAL_SELL_PREFIX:
+            if text_lower.startswith(prefix):
+                return "sell", text_lower[len(prefix):].strip()
+        for kw in _TORVAL_BROWSE_KEYWORDS:
+            if kw in text_lower:
+                return "browse", "_"
+
+    elif npc == "grist":
+        for kw in _GRIST_RECAP_KEYWORDS:
+            if kw in text_lower:
+                return "recap", "_"
+        for kw in _GRIST_HINT_KEYWORDS:
+            if kw in text_lower:
+                return "hint", "_"
+
+    elif npc == "whisper":
+        for kw in _WHISPER_HINT_KEYWORDS:
+            if kw in text_lower:
+                return "hint", "_"
+
+    return "", ""
+
+
+# ── Quote and Rejection Builders ────────────────────────────────────────────
+
+
+def _build_quote(conn: sqlite3.Connection, npc: str, action: str, detail: str,
+                 player: dict) -> str:
+    """Build a quote string for a validated transaction."""
+    template_key = (npc, action)
+    template = _QUOTES.get(template_key, "Proceed? Say yes.")
+
+    if action == "heal":
+        cost = economy.calc_heal_cost(player)
+        return template.format(cost=cost, gold=player["gold_carried"])
+
+    elif action == "buy":
+        epoch = conn.execute("SELECT day_number FROM epoch WHERE id = 1").fetchone()
+        day = epoch["day_number"] if epoch else 1
+        items = economy.get_shop_items(conn, day)
+        item = None
+        for i in items:
+            if i["name"].lower() == detail.lower():
+                item = i
+                break
+        cost = item["price"] if item else 0
+        return template.format(item=detail, cost=cost, gold=player["gold_carried"])
+
+    elif action == "sell":
+        row = conn.execute(
+            """SELECT it.tier, it.name FROM inventory inv JOIN items it ON inv.item_id = it.id
+               WHERE inv.player_id = ? AND LOWER(it.name) = LOWER(?) LIMIT 1""",
+            (player["id"], detail),
+        ).fetchone()
+        if row:
+            buy_price = SHOP_PRICES.get(row["tier"], 100)
+            sell_value = max(1, buy_price * SELL_PRICE_PERCENT // 100)
+            return template.format(value=sell_value, item=row["name"])
+        return "Item not found."
+
+    elif action in ("recap", "hint"):
+        return template.format(tokens=player["bard_tokens"])
+
+    return "Proceed? Say yes."
+
+
+def _build_rejection(npc: str, reason: str, player: dict,
+                     conn: Optional[sqlite3.Connection] = None) -> str:
+    """Build a rejection string for a failed validation."""
+    template_key = (npc, reason)
+    template = _REJECTIONS.get(template_key, "Can't do that.")
+
+    if reason == "no_gold" and npc == "maren":
+        cost = economy.calc_heal_cost(player)
+        return template.format(cost=cost, gold=player["gold_carried"])
+    elif reason == "no_gold" and npc == "torval":
+        # Need the item price — but we may not have it here. Use generic.
+        return template.format(cost="?", gold=player["gold_carried"])
+
+    return template
+
+
+# ── Transaction Logging ─────────────────────────────────────────────────────
+
+
+def _log_tx(conn: sqlite3.Connection, npc: str, action: str, summary: str,
+            player_id: int, metadata: Optional[dict] = None) -> None:
+    """Log a completed transaction."""
+    node = NPC_TO_NODE.get(npc, npc.upper())
+    log_message(
+        conn, node, "npc_tx", summary, "npc_tx",
+        player_id=player_id, metadata=metadata,
     )
 
 
@@ -399,7 +832,7 @@ class NPCConversationHandler:
         self.backend = backend or get_backend()
         self.sessions = SessionStore()
         # Tracking attributes — set after each handle_message() call
-        self.last_result_type: Optional[str] = None  # npc_rule1, npc_rule2, npc_llm, npc_fallback
+        self.last_result_type: Optional[str] = None  # npc_rule1, npc_rule2, npc_llm, npc_fallback, npc_tx
         self.last_player_id: Optional[int] = None
         # Ensure npc_memory table exists (migration-safe)
         _ensure_npc_memory_table(conn)
@@ -446,23 +879,43 @@ class NPCConversationHandler:
             msg = msg.format(name=player["name"])
             return msg[:LLM_OUTPUT_CHAR_LIMIT]
 
-        # Rule 3: In town — full LLM conversation
+        # Rule 3: In town — full LLM conversation with transaction support
         # (last_result_type set in _llm_conversation)
         return self._llm_conversation(npc, player, text)
 
     def _llm_conversation(self, npc: str, player: dict, text: str) -> str:
-        """Run an LLM-powered conversation turn."""
+        """Run an LLM-powered conversation turn with transaction support."""
         session = self.sessions.get_or_create(player["id"], npc)
+
+        # ── Step 1: Check for confirm on pending TX ──
+        text_lower = text.lower().strip()
+        if session.pending and text_lower in _CONFIRM_KEYWORDS:
+            return self._execute_pending(session, player)
+
+        # If there's a pending TX but player didn't confirm, clear it
+        # (new message = new intent, or just conversation)
+        if session.pending:
+            session.pending = None
 
         # Add the player's message
         session.add_user_message(text)
 
-        # Load persistent memory for this player-NPC pair
-        memory = _get_npc_memory(self.conn, player["id"], npc)
+        # ── Step 2: Detect transaction intent ──
+        is_dummy = isinstance(self.backend, DummyBackend)
 
-        # Build context
+        if is_dummy:
+            # Keyword-based TX detection
+            action, detail = _detect_dummy_tx(npc, text)
+            if action:
+                return self._handle_tx_intent(session, npc, player, action, detail)
+            # No TX intent — fall through to DummyBackend.chat()
+
+        # ── Step 3: Call LLM (or DummyBackend for non-TX chat) ──
+        memory = _get_npc_memory(self.conn, player["id"], npc)
         game_state = _build_game_state(self.conn, player)
-        system_prompt = _build_system_prompt(npc, game_state, memory=memory)
+        system_prompt = _build_system_prompt(
+            self.conn, npc, game_state, player=player, memory=memory,
+        )
 
         try:
             response = self.backend.chat(
@@ -471,14 +924,22 @@ class NPCConversationHandler:
                 max_tokens=NPC_LLM_MAX_TOKENS,
             )
 
-            # Hard cap at 200 chars (absolute ceiling, never exceed)
+            # Parse TX tag from LLM response (only for real backends)
+            if not is_dummy:
+                action, detail, clean_text = _parse_tx_tag(response)
+                if action and action in _NPC_TX_ACTIONS.get(npc, set()):
+                    return self._handle_tx_intent(
+                        session, npc, player, action, detail,
+                    )
+
+            # No TX tag — normal conversation
             if len(response) > 200:
                 response = response[:197] + "..."
 
             session.add_assistant_message(response)
             self.last_result_type = "npc_llm"
 
-            # Update persistent memory in background (don't block the response)
+            # Update persistent memory in background
             _update_memory_async(
                 self.conn, self.backend,
                 player["id"], npc,
@@ -489,9 +950,95 @@ class NPCConversationHandler:
 
         except Exception as e:
             logger.warning(f"LLM error for {npc} conversation: {e}")
-            # Fallback to pre-generated dialogue
             self.last_result_type = "npc_fallback"
             return self._fallback_response(npc)
+
+    def _handle_tx_intent(
+        self, session: ConversationSession, npc: str,
+        player: dict, action: str, detail: str,
+    ) -> str:
+        """Handle a detected transaction intent: validate, quote or reject."""
+        # Browse is immediate — no confirmation needed
+        if action == "browse":
+            response = _execute_browse(self.conn, player)
+            session.add_assistant_message(response)
+            self.last_result_type = "npc_tx"
+            return response[:200]
+
+        # Validate the transaction
+        valid, reason = self._validate_tx(npc, action, detail, player)
+
+        if not valid:
+            response = _build_rejection(npc, reason, player, self.conn)
+            session.add_assistant_message(response)
+            self.last_result_type = "npc_llm"
+            return response[:200]
+
+        # Valid — create pending TX and return quote
+        session.pending = PendingTransaction(
+            action=action, detail=detail, npc=npc,
+            quoted_at=time.monotonic(),
+        )
+        response = _build_quote(self.conn, npc, action, detail, player)
+        session.add_assistant_message(response)
+        self.last_result_type = "npc_llm"
+        return response[:200]
+
+    def _validate_tx(
+        self, npc: str, action: str, detail: str, player: dict,
+    ) -> tuple[bool, str]:
+        """Validate a transaction. Returns (valid, rejection_reason)."""
+        if action == "heal":
+            return _validate_heal(self.conn, player)
+        elif action == "buy":
+            return _validate_buy(self.conn, player, detail)
+        elif action == "sell":
+            return _validate_sell(self.conn, player, detail)
+        elif action == "recap":
+            return _validate_recap(self.conn, player)
+        elif action == "hint":
+            return _validate_hint(self.conn, player)
+        return False, "unknown"
+
+    def _execute_pending(
+        self, session: ConversationSession, player: dict,
+    ) -> str:
+        """Execute a confirmed pending transaction."""
+        pending = session.pending
+        session.pending = None
+
+        # Re-fetch player state (may have changed)
+        player = player_model.get_player(self.conn, player["id"])
+
+        ok = False
+        response = "Something went wrong."
+        meta = {}
+
+        try:
+            if pending.action == "heal":
+                ok, response, meta = _execute_heal(self.conn, player)
+            elif pending.action == "buy":
+                ok, response, meta = _execute_buy(self.conn, player, pending.detail)
+            elif pending.action == "sell":
+                ok, response, meta = _execute_sell(self.conn, player, pending.detail)
+            elif pending.action == "recap":
+                ok, response, meta = _execute_recap(self.conn, player)
+            elif pending.action == "hint":
+                ok, response, meta = _execute_hint(self.conn, player, pending.npc)
+        except Exception as e:
+            logger.warning(f"TX execution error ({pending.action}): {e}")
+            response = "Something went wrong. Try again."
+
+        # Log the transaction
+        if ok:
+            summary = f"{pending.action}:{pending.detail} for player {player['name']}"
+            _log_tx(self.conn, pending.npc, pending.action, summary,
+                    player["id"], metadata=meta)
+
+        session.add_user_message("yes")
+        session.add_assistant_message(response)
+        self.last_result_type = "npc_tx"
+        return response[:200]
 
     def _fallback_response(self, npc: str) -> str:
         """Fall back to a pre-generated dialogue snippet from the DB."""

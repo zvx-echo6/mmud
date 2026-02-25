@@ -109,7 +109,7 @@ def test_look_in_town():
     register_player(engine)
 
     resp = engine.process_message("!test1234", "Tester", "look")
-    assert "Town" in resp or "town" in resp.lower()
+    assert "Last Ember" in resp or "town" in resp.lower()
     assert len(resp) <= MSG_CHAR_LIMIT
 
 

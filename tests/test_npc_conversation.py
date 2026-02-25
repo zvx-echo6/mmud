@@ -189,14 +189,14 @@ def test_town_player_all_npcs():
         assert len(result) <= LLM_OUTPUT_CHAR_LIMIT
 
 
-def test_response_under_150_chars():
+def test_response_under_200_chars():
     conn = make_test_db()
-    # Mock a backend that returns a long string
+    # Mock a backend that returns a long string — NPC DMs cap at 200 chars
     mock_backend = MagicMock()
-    mock_backend.chat.return_value = "x" * 200
+    mock_backend.chat.return_value = "x" * 300
     handler = NPCConversationHandler(conn, mock_backend)
     result = handler.handle_message("grist", "!town01", "Tell me everything")
-    assert len(result) <= LLM_OUTPUT_CHAR_LIMIT
+    assert len(result) <= 200
 
 
 # ── Session Memory ──
@@ -328,23 +328,26 @@ def test_game_state_includes_deaths():
 
 
 def test_system_prompt_contains_personality():
+    conn = make_test_db()
     state = "Epoch 1, Day 5."
-    prompt = _build_system_prompt("grist", state)
+    prompt = _build_system_prompt(conn, "grist", state)
     assert "Grist" in prompt
     assert "barkeep" in prompt.lower()
     assert "EXAMPLE RESPONSES" in prompt
 
 
 def test_system_prompt_contains_rules():
+    conn = make_test_db()
     state = "Epoch 1, Day 5."
-    prompt = _build_system_prompt("whisper", state)
-    assert "145 characters" in prompt
+    prompt = _build_system_prompt(conn, "whisper", state)
+    assert "100-200 characters" in prompt
     assert "NEVER break character" in prompt
 
 
 def test_system_prompt_contains_game_state():
+    conn = make_test_db()
     state = "Epoch 1, Day 5. Breach: sealed."
-    prompt = _build_system_prompt("maren", state)
+    prompt = _build_system_prompt(conn, "maren", state)
     assert "Epoch 1" in prompt
     assert "sealed" in prompt
 
@@ -447,9 +450,10 @@ def test_example_lines_under_150_chars():
 
 
 def test_system_prompt_includes_examples():
+    conn = make_test_db()
     state = "Epoch 1, Day 5."
     for npc in ("grist", "maren", "torval", "whisper"):
-        prompt = _build_system_prompt(npc, state)
+        prompt = _build_system_prompt(conn, npc, state)
         assert "EXAMPLE RESPONSES" in prompt
         for line in NPC_PERSONALITIES[npc]["example_lines"]:
             assert line in prompt

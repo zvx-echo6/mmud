@@ -8,7 +8,13 @@ import random
 import sqlite3
 from typing import Optional
 
-from config import CLASSES, DUNGEON_ACTIONS_PER_DAY, SOCIAL_ACTIONS_PER_DAY, STAT_POINTS_PER_LEVEL
+from config import (
+    CLASSES,
+    DUNGEON_ACTIONS_PER_DAY,
+    SOCIAL_ACTIONS_PER_DAY,
+    STAT_POINTS_PER_LEVEL,
+    TOWN_DESCRIPTIONS,
+)
 from src.core import combat as combat_engine
 from src.core import world as world_mgr
 from src.models import player as player_model
@@ -38,6 +44,7 @@ FREE_ACTIONS = {
     "shop", "buy", "sell", "heal", "bank", "deposit", "withdraw",
     "barkeep", "token", "spend", "train", "equip", "unequip", "drop",
     "enter", "town", "bounty", "read", "helpful", "message", "mail",
+    "healer", "merchant", "sage",
 }
 
 
@@ -69,6 +76,9 @@ def handle_action(
         "heal": action_heal,
         # Phase 3: Social Systems
         "barkeep": action_barkeep,
+        "healer": action_healer_desc,
+        "merchant": action_merchant_desc,
+        "sage": action_sage_desc,
         "token": action_token,
         "spend": action_spend,
         "bounty": action_bounty,
@@ -109,7 +119,7 @@ def _smart_error(player: dict) -> str:
 def action_look(conn: sqlite3.Connection, player: dict, args: list[str]) -> str:
     """Look at the current room or town."""
     if player["state"] == "town":
-        return fmt("Town square. Barkeep, Healer, Shop, Bank. Type ENTER to descend.")
+        return fmt(TOWN_DESCRIPTIONS["tavern"])
 
     if player["state"] == "dead":
         return fmt("You are dead. Respawning...")
@@ -549,14 +559,35 @@ def action_heal(conn: sqlite3.Connection, player: dict, args: list[str]) -> str:
 
 
 def action_barkeep(conn: sqlite3.Connection, player: dict, args: list[str]) -> str:
-    """Talk to Grist the barkeep. Free action, town only."""
+    """Visit Grist's bar. Free action, town only."""
     if player["state"] != "town":
         return fmt("Grist is in town. Head back first.")
 
-    recap = barkeep_sys.get_recap(conn, player["id"])
-    if recap:
-        return fmt(recap[0])
-    return fmt("Grist polishes a glass. 'Quiet day.'")
+    return fmt(TOWN_DESCRIPTIONS["grist"])
+
+
+def action_healer_desc(conn: sqlite3.Connection, player: dict, args: list[str]) -> str:
+    """Visit Maren's clinic. Free action, town only."""
+    if player["state"] != "town":
+        return fmt("Maren is in town. Head back first.")
+
+    return fmt(TOWN_DESCRIPTIONS["maren"])
+
+
+def action_merchant_desc(conn: sqlite3.Connection, player: dict, args: list[str]) -> str:
+    """Visit Torval's stall. Free action, town only."""
+    if player["state"] != "town":
+        return fmt("Torval is in town. Head back first.")
+
+    return fmt(TOWN_DESCRIPTIONS["torval"])
+
+
+def action_sage_desc(conn: sqlite3.Connection, player: dict, args: list[str]) -> str:
+    """Visit Whisper's corner. Free action, town only."""
+    if player["state"] != "town":
+        return fmt("Whisper is in town. Head back first.")
+
+    return fmt(TOWN_DESCRIPTIONS["whisper"])
 
 
 def action_token(conn: sqlite3.Connection, player: dict, args: list[str]) -> str:

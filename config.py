@@ -424,6 +424,8 @@ MESH_NODES = {
 # NPC CONVERSATION — LLM Chat Settings
 # =============================================================================
 
+NPC_TO_NODE = {"grist": "GRST", "maren": "MRN", "torval": "TRVL", "whisper": "WSPR"}
+
 NPC_LLM_MAX_TOKENS = 1024         # Let the model think freely; 150-char limit enforced in npc_conversation.py
 NPC_LLM_TIMEOUT = 10              # Seconds before fallback to pre-generated dialogue
 NPC_SESSION_TTL = 300              # 5 minutes — session memory TTL in seconds
@@ -460,3 +462,68 @@ BROADCAST_DRAIN_RATE_LIMIT = 3.0   # Minimum seconds between DCRG sends
 # =============================================================================
 
 MESSAGE_LOG_RETENTION_DAYS = 90    # Prune log entries older than this
+
+# =============================================================================
+# TOWN DESCRIPTIONS & NPC GREETINGS
+# =============================================================================
+
+NPC_GREETING_COOLDOWN = 60  # Seconds before same NPC can DM same player again
+
+# Town location descriptions — returned by EMBR on town keyword commands
+# All must be under 150 characters
+TOWN_DESCRIPTIONS = {
+    "tavern": (
+        "The Last Ember. Smoke-stained beams, a bar that's seen centuries, "
+        "four figures who never leave. The dungeon breathes below."
+    ),
+    "grist": (
+        "A scarred bartop, a thousand tallied names. Grist polishes a glass "
+        "and watches you like he's already writing your ending."
+    ),
+    "maren": (
+        "Lye and lavender. Maren's hands move over needle and thread. "
+        "She doesn't look up. She already knows how bad it is."
+    ),
+    "torval": (
+        "Furs, blades, and things that shouldn't exist yet. "
+        "Torval's eyes track your coin pouch before they track your face."
+    ),
+    "whisper": (
+        "The far corner is colder than it should be. Whisper sits in "
+        "moth-eaten silk, muttering about rooms you haven't reached."
+    ),
+}
+
+# Static NPC greetings — used for DummyBackend and LLM fallback
+NPC_GREETINGS = {
+    "grist": [
+        "New month. New dirt. Don't tell me your names yet\u2014let's see if you survive.",
+        "Back again? Pull up a stool. The ledger remembers you.",
+        "What'll it be? A drink, a story, or just the warmth?",
+    ],
+    "maren": [
+        "The herbs are different this time. Try not to bleed too much.",
+        "Sit. Let me look at you. ...you'll do. For now.",
+        "Back from the deep? Show me where it hurts.",
+    ],
+    "torval": [
+        "Browser or buyer? Either way, don't touch the merchandise.",
+        "New stock. New epoch. Prices are... fair. For me.",
+        "You look like you need something you can't afford.",
+    ],
+    "whisper": [
+        "...you again. The walls told me. Sit.",
+        "It moved the Heart. It's hiding because it remembers.",
+        "...don't speak yet. I'm listening to something else.",
+    ],
+}
+
+# Map EMBR commands → NPC that should send a greeting DM
+COMMAND_NPC_DM_MAP = {
+    "barkeep": "grist",
+    "healer": "maren",
+    "heal": "maren",
+    "merchant": "torval",
+    "shop": "torval",
+    "sage": "whisper",
+}
