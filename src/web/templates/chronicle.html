@@ -1,0 +1,149 @@
+{% extends "base.html" %}
+
+{% block title %}Chronicle{% endblock %}
+{% block page_class %} narrow{% endblock %}
+
+{% block nav %}
+  <nav class="nav-bar">
+    <a class="nav-home" href="{{ url_for('public.index') }}">The Last Ember</a>
+    <span class="nav-sep">·</span>
+    <a class="nav-link active" href="{{ url_for('public.chronicle') }}">Chronicle</a>
+    <a class="nav-link" href="{{ url_for('public.howto') }}">How to Play</a>
+  </nav>
+{% endblock %}
+
+{% block content %}
+  <div class="page-header">
+    <h1 class="page-title">Chronicle</h1>
+    <p class="page-subtitle">Every epoch leaves its mark. The dungeon forgets. We do not.</p>
+  </div>
+
+  {# ═══ CURRENT EPOCH ═══ #}
+  {% if epoch %}
+  <div class="divider">CURRENT EPOCH</div>
+
+  {% set mode_labels = {
+    'hold_the_line': 'Hold the Line',
+    'raid_boss': 'Raid Boss',
+    'retrieve_and_escape': 'Retrieve & Escape'
+  } %}
+
+  <div class="epoch-card current">
+    <div class="epoch-header">
+      <div>
+        <div class="epoch-number">EPOCH {{ epoch.epoch_number }} · DAY {{ epoch.day_number }} OF 30</div>
+        <div class="epoch-title">{{ epoch.epoch_title if epoch.epoch_title else 'The Current Epoch' }}</div>
+      </div>
+      <span class="epoch-outcome ongoing">In Progress</span>
+    </div>
+    <div class="epoch-meta">
+      <span class="epoch-meta-item">MODE: <span class="meta-val">{{ mode_labels.get(epoch.endgame_mode, 'Pending') }}</span></span>
+      {% if epoch.breach_open is not none %}
+      <span class="epoch-meta-item">BREACH: <span class="meta-val">{{ 'Open' if epoch.breach_open else 'Sealed' }}</span></span>
+      {% endif %}
+    </div>
+  </div>
+  {% endif %}
+
+  {# ═══ PAST EPOCHS ═══ #}
+  {% if history %}
+  <div class="divider">PAST EPOCHS</div>
+
+  {% for entry in history %}
+  <div class="epoch-card {{ 'victory' if entry.outcome == 'victory' else 'defeat' }}">
+    <div class="epoch-header">
+      <div>
+        <div class="epoch-number">EPOCH {{ entry.epoch_number }}{% if entry.duration_days %} · {{ entry.duration_days }} DAYS{% endif %}</div>
+        <div class="epoch-title">{{ entry.title if entry.title else 'Epoch ' ~ entry.epoch_number }}</div>
+      </div>
+      <span class="epoch-outcome {{ entry.outcome }}">{{ entry.outcome|capitalize }}</span>
+    </div>
+    <div class="epoch-meta">
+      {% if entry.endgame_mode %}
+      <span class="epoch-meta-item">MODE: <span class="meta-val">{{ mode_labels.get(entry.endgame_mode, entry.endgame_mode) }}</span></span>
+      {% endif %}
+      {% if entry.player_count %}
+      <span class="epoch-meta-item">PLAYERS: <span class="meta-val">{{ entry.player_count }}</span></span>
+      {% endif %}
+      {% if entry.secrets_found is not none %}
+      <span class="epoch-meta-item">SECRETS: <span class="meta-val">{{ entry.secrets_found }}/{{ entry.secrets_total|default(20) }}</span></span>
+      {% endif %}
+    </div>
+    {% if entry.summary %}
+    <div class="epoch-summary">
+      <p>{{ entry.summary }}</p>
+    </div>
+    {% endif %}
+    {% if entry.participants %}
+    <div class="epoch-roster">
+      ROSTER: <span class="roster-names">{{ entry.participants|map(attribute='handle')|join(' · ') }}</span>
+    </div>
+    {% endif %}
+  </div>
+  {% endfor %}
+  {% endif %}
+
+  {# ═══ JOURNALS ═══ #}
+  <div class="divider">NPC JOURNALS</div>
+
+  <div class="page-header" style="padding-top:12px;">
+    <p class="page-subtitle">Four voices. Same day. Different truths.</p>
+  </div>
+
+  {# NPC TABS #}
+  <div class="npc-tabs" id="npc-tabs">
+    <a class="npc-tab active" data-npc="grist" onclick="showJournal('grist')">
+      <span class="tab-icon">🍺</span>
+      Grist
+    </a>
+    <a class="npc-tab" data-npc="maren" onclick="showJournal('maren')">
+      <span class="tab-icon">🩸</span>
+      Maren
+    </a>
+    <a class="npc-tab" data-npc="torval" onclick="showJournal('torval')">
+      <span class="tab-icon">⚖</span>
+      Torval
+    </a>
+    <a class="npc-tab" data-npc="whisper" onclick="showJournal('whisper')">
+      <span class="tab-icon">👁</span>
+      Whisper
+    </a>
+  </div>
+
+  {# JOURNAL FEEDS #}
+  {% for npc in ['grist', 'maren', 'torval', 'whisper'] %}
+  <div class="journal-feed{% if npc == 'grist' %} active{% endif %}" id="journal-{{ npc }}">
+    {% for entry in journals.get(npc, []) %}
+    <div class="journal-entry {{ npc }}">
+      <div class="journal-date">EPOCH {{ entry.epoch_number }} · DAY {{ entry.day_number }}</div>
+      <div class="journal-text">
+        {{ entry.content|safe }}
+      </div>
+      <div class="journal-npc-sig">— {{ npc|capitalize }}</div>
+    </div>
+    {% else %}
+    <div style="color:var(--text-ghost);font-style:italic;font-size:14px;padding:24px 0;text-align:center;">
+      No journal entries from {{ npc|capitalize }} yet.
+    </div>
+    {% endfor %}
+  </div>
+  {% endfor %}
+{% endblock %}
+
+{% block ember_init %}
+  if (window.initEmbers) initEmbers(30, 0.4);
+{% endblock %}
+
+{% block scripts %}
+{{ super() }}
+<script>
+function showJournal(npc) {
+  document.querySelectorAll('.npc-tab').forEach(function(el) {
+    el.classList.toggle('active', el.dataset.npc === npc);
+  });
+  document.querySelectorAll('.journal-feed').forEach(function(el) {
+    el.classList.toggle('active', el.id === 'journal-' + npc);
+  });
+}
+</script>
+{% endblock %}

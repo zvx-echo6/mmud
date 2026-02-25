@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+
+{% block page_class %} narrow{% endblock %}
+
+{% block nav %}
+  <nav class="nav-bar">
+    <a class="nav-home" href="{{ url_for('public.index') }}">The Last Ember</a>
+    <span class="nav-sep">·</span>
+    <span class="admin-badge">OPERATOR</span>
+  </nav>
+
+  <nav class="admin-nav">
+    <a href="{{ url_for('admin.dashboard') }}" class="{% if request.endpoint == 'admin.dashboard' %}active{% endif %}">Dashboard</a>
+    <a href="{{ url_for('admin.nodes') }}" class="{% if request.endpoint in ('admin.nodes', 'admin.nodes_assign') %}active{% endif %}">Nodes</a>
+    <a href="{{ url_for('admin.players') }}" class="{% if request.endpoint == 'admin.players' %}active{% endif %}">Players</a>
+    <a href="{{ url_for('admin.epoch') }}" class="{% if request.endpoint == 'admin.epoch' %}active{% endif %}">Epoch</a>
+    <a href="{{ url_for('admin.system') }}" class="{% if request.endpoint == 'admin.system' %}active{% endif %}">System</a>
+    <a href="{{ url_for('admin.logout') }}" style="margin-left:auto;color:var(--blood-bright);">Logout</a>
+  </nav>
+{% endblock %}
+
+{% block content %}
+  {# Flash messages #}
+  {% with messages = get_flashed_messages(with_categories=true) %}
+  {% if messages %}
+  {% for category, message in messages %}
+  <div class="flash {{ category }}">{{ message }}</div>
+  {% endfor %}
+  {% endif %}
+  {% endwith %}
+
+  {% block admin_content %}{% endblock %}
+{% endblock %}
+
+{% block footer %}
+  <div class="page-footer">
+    <a href="{{ url_for('public.index') }}">The Last Ember</a> · Operator Console
+  </div>
+{% endblock %}
+
+{% block ember_init %}
+  if (window.initEmbers) initEmbers(15, 0.25);
+{% endblock %}

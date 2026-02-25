@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+
+{% block title %}Operator Console{% endblock %}
+
+{% block nav %}{% endblock %}
+
+{% block content %}
+<div style="display:flex;justify-content:center;align-items:center;min-height:60vh;">
+  <div style="background:var(--ash);border:1px solid var(--smoke-light);padding:36px 32px;width:340px;text-align:center;position:relative;">
+    <div style="position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,var(--ember),transparent);opacity:0.5;"></div>
+    <div style="font-family:'Cinzel',serif;font-size:14px;letter-spacing:0.2em;color:var(--parchment-faded);margin-bottom:24px;">OPERATOR CONSOLE</div>
+    <form method="post" action="{{ url_for('admin.login') }}">
+      <input type="text" name="callsign" class="admin-input" placeholder="callsign" autocomplete="off" spellcheck="false">
+      <input type="password" name="password" class="admin-input" placeholder="passphrase">
+      <button type="submit" class="admin-btn" style="width:100%;padding:10px;">AUTHENTICATE</button>
+    </form>
+    {% if error %}
+    <div style="font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--blood-bright);margin-top:8px;">{{ error }}</div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}
+
+{% block footer %}{% endblock %}
+
+{% block ember_init %}
+  if (window.initEmbers) initEmbers(20, 0.3);
+{% endblock %}

@@ -1,0 +1,82 @@
+{% extends "admin/base.html" %}
+
+{% block title %}Admin Dashboard{% endblock %}
+
+{% block admin_content %}
+  <div class="page-header" style="padding-top:20px;">
+    <h1 class="page-title" style="font-size:22px;">Dashboard</h1>
+  </div>
+
+  {# ═══ STAT CARDS ═══ #}
+  <div class="admin-stat-grid">
+    <div class="admin-stat-card">
+      <div class="admin-stat-label">Epoch Day</div>
+      <div class="admin-stat-value ember">{{ epoch.day_number if epoch else '—' }}</div>
+    </div>
+    <div class="admin-stat-card">
+      <div class="admin-stat-label">Players</div>
+      <div class="admin-stat-value">{{ player_count }}</div>
+    </div>
+    <div class="admin-stat-card">
+      <div class="admin-stat-label">Mode</div>
+      {% set mode_labels = {
+        'hold_the_line': 'HTL',
+        'raid_boss': 'RAID',
+        'retrieve_and_escape': 'R&E'
+      } %}
+      <div class="admin-stat-value">{{ mode_labels.get(epoch.endgame_mode, '—') if epoch else '—' }}</div>
+    </div>
+    <div class="admin-stat-card">
+      <div class="admin-stat-label">Days Left</div>
+      <div class="admin-stat-value">{{ 30 - epoch.day_number if epoch else '—' }}</div>
+    </div>
+  </div>
+
+  {# ═══ NODE STATUS ═══ #}
+  <div class="divider">SIM NODES</div>
+
+  <table class="admin-table">
+    <thead>
+      <tr>
+        <th>Role</th>
+        <th>Node ID</th>
+        <th>Status</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for node in nodes %}
+      <tr>
+        <td>{{ node.role }}</td>
+        <td>{{ node.mesh_node_id or '—' }}</td>
+        <td>{% if node.mesh_node_id %}assigned{% else %}<span style="color:var(--blood-bright);">unassigned</span>{% endif %}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  {# ═══ RECENT ADMIN LOG ═══ #}
+  <div class="divider">RECENT ACTIONS</div>
+
+  <table class="admin-table">
+    <thead>
+      <tr>
+        <th>Time</th>
+        <th>User</th>
+        <th>Action</th>
+        <th>Detail</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for entry in log %}
+      <tr>
+        <td>{{ entry.created_at }}</td>
+        <td>{{ entry.admin_user }}</td>
+        <td>{{ entry.action }}</td>
+        <td>{{ entry.detail }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="4" style="color:var(--text-ghost);font-style:italic;">No actions logged.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+{% endblock %}

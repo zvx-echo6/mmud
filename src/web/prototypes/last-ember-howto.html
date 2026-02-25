@@ -1,0 +1,915 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>The Last Ember — How to Play</title>
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=Crimson+Text:ital,wght@0,400;0,600;1,400&family=JetBrains+Mono:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --ember: #e8713a;
+    --ember-glow: #ff9d5c;
+    --ember-deep: #c44e1a;
+    --ash: #1a1714;
+    --charcoal: #0d0b09;
+    --smoke: #2a2520;
+    --smoke-light: #3d3630;
+    --parchment: #d4c4a8;
+    --parchment-dark: #b8a88c;
+    --parchment-faded: #a89878;
+    --bone: #c8b898;
+    --blood: #8b2020;
+    --blood-bright: #cc3333;
+    --gold: #c4a44a;
+    --gold-dim: #8a7a3a;
+    --frost: #7a9ab0;
+    --poison: #5a8a4a;
+    --text-bright: #e8dcc8;
+    --text-dim: #9a8e78;
+    --text-ghost: #5a5244;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--charcoal);
+    color: var(--text-bright);
+    font-family: 'Crimson Text', Georgia, serif;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  #ember-canvas {
+    position: fixed;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    pointer-events: none;
+    z-index: 0;
+    opacity: 0.35;
+  }
+
+  .page-wrap {
+    position: relative;
+    z-index: 2;
+    max-width: 720px;
+    margin: 0 auto;
+    padding: 0 24px;
+  }
+
+  /* ═══ NAV ═══ */
+  .nav-bar {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 32px;
+    padding: 20px 0;
+    border-bottom: 1px solid rgba(90,82,68,0.15);
+    margin-bottom: 12px;
+  }
+
+  .nav-link {
+    font-family: 'Cinzel', serif;
+    font-size: 10px;
+    letter-spacing: 0.25em;
+    color: var(--text-ghost);
+    text-decoration: none;
+    text-transform: uppercase;
+    padding: 6px 0;
+    border-bottom: 1px solid transparent;
+    transition: all 0.3s;
+  }
+
+  .nav-link:hover { color: var(--parchment-faded); }
+  .nav-link.active { color: var(--parchment); border-bottom-color: var(--ember); }
+
+  .nav-home {
+    font-family: 'Cinzel', serif;
+    font-size: 14px;
+    color: var(--parchment-faded);
+    text-decoration: none;
+    letter-spacing: 0.1em;
+    transition: color 0.3s;
+  }
+
+  .nav-home:hover { color: var(--ember-glow); }
+
+  /* ═══ HEADER ═══ */
+  .page-header {
+    text-align: center;
+    padding: 48px 0 12px;
+  }
+
+  .page-title {
+    font-family: 'Cinzel', serif;
+    font-size: clamp(22px, 4vw, 32px);
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    color: var(--parchment);
+    text-shadow: 0 0 30px rgba(232,113,58,0.2);
+    margin-bottom: 6px;
+  }
+
+  .page-subtitle {
+    font-size: 15px;
+    font-style: italic;
+    color: var(--text-ghost);
+    max-width: 460px;
+    margin: 0 auto;
+    line-height: 1.5;
+  }
+
+  .divider {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin: 36px 0 28px;
+    color: var(--text-ghost);
+    font-size: 10px;
+    letter-spacing: 0.25em;
+    font-family: 'Cinzel', serif;
+    text-transform: uppercase;
+  }
+
+  .divider::before, .divider::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--smoke-light), transparent);
+  }
+
+  /* ═══ PROSE SECTIONS ═══ */
+  .prose {
+    font-size: 17px;
+    line-height: 1.8;
+    color: var(--text-dim);
+    margin-bottom: 20px;
+  }
+
+  .prose strong {
+    color: var(--parchment);
+    font-weight: 600;
+  }
+
+  .prose em.place {
+    color: var(--ember-glow);
+    font-style: italic;
+  }
+
+  .prose em.npc {
+    color: var(--parchment-dark);
+    font-style: normal;
+    font-weight: 600;
+  }
+
+  .prose em.cmd {
+    color: var(--gold);
+    font-style: normal;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 14px;
+    background: rgba(196,164,74,0.08);
+    padding: 1px 6px;
+    border-radius: 2px;
+    border: 1px solid rgba(196,164,74,0.15);
+  }
+
+  .prose em.item {
+    color: var(--gold);
+    font-style: italic;
+  }
+
+  /* ═══ CALLOUT BOXES ═══ */
+  .callout {
+    padding: 20px 24px;
+    margin: 24px 0;
+    background: linear-gradient(135deg, rgba(26,23,20,0.95), rgba(42,37,32,0.7));
+    border: 1px solid var(--smoke-light);
+    border-radius: 2px;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .callout::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0;
+    width: 3px;
+    height: 100%;
+  }
+
+  .callout.ember::before { background: var(--ember); opacity: 0.5; }
+  .callout.gold::before { background: var(--gold); opacity: 0.5; }
+  .callout.frost::before { background: var(--frost); opacity: 0.5; }
+  .callout.blood::before { background: var(--blood-bright); opacity: 0.5; }
+
+  .callout-label {
+    font-family: 'Cinzel', serif;
+    font-size: 10px;
+    letter-spacing: 0.2em;
+    color: var(--text-ghost);
+    text-transform: uppercase;
+    margin-bottom: 10px;
+  }
+
+  .callout .prose { margin-bottom: 0; }
+  .callout .prose:not(:last-child) { margin-bottom: 12px; }
+
+  /* ═══ COMMAND REFERENCE ═══ */
+  .cmd-grid {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 4px 16px;
+    padding: 4px 0;
+  }
+
+  .cmd-key {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    color: var(--gold);
+    padding: 3px 0;
+    white-space: nowrap;
+  }
+
+  .cmd-desc {
+    font-size: 14px;
+    color: var(--text-dim);
+    padding: 3px 0;
+    line-height: 1.5;
+  }
+
+  .cmd-unlock {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9px;
+    color: var(--text-ghost);
+    background: rgba(90,82,68,0.15);
+    padding: 1px 6px;
+    border-radius: 1px;
+    margin-left: 6px;
+    vertical-align: middle;
+  }
+
+  /* ═══ CLASS CARDS ═══ */
+  .class-cards {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 16px;
+    margin: 20px 0;
+  }
+
+  @media (max-width: 560px) {
+    .class-cards { grid-template-columns: 1fr; }
+  }
+
+  .class-card {
+    padding: 20px 16px;
+    background: linear-gradient(180deg, rgba(26,23,20,0.95), rgba(13,11,9,0.95));
+    border: 1px solid var(--smoke-light);
+    border-radius: 2px;
+    text-align: center;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .class-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 2px;
+  }
+
+  .class-card.fighter::before { background: linear-gradient(90deg, transparent, var(--blood-bright), transparent); }
+  .class-card.caster::before { background: linear-gradient(90deg, transparent, var(--poison), transparent); }
+  .class-card.rogue::before { background: linear-gradient(90deg, transparent, var(--frost), transparent); }
+
+  .class-card-icon {
+    font-size: 28px;
+    margin-bottom: 8px;
+    opacity: 0.8;
+  }
+
+  .class-card-name {
+    font-family: 'Cinzel', serif;
+    font-size: 14px;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    color: var(--parchment);
+    margin-bottom: 2px;
+  }
+
+  .class-card-stat {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.1em;
+    margin-bottom: 10px;
+  }
+
+  .class-card.fighter .class-card-stat { color: var(--blood-bright); }
+  .class-card.caster .class-card-stat { color: var(--poison); }
+  .class-card.rogue .class-card-stat { color: var(--frost); }
+
+  .class-card-desc {
+    font-size: 13px;
+    line-height: 1.6;
+    color: var(--text-dim);
+  }
+
+  /* ═══ FLOW DIAGRAM ═══ */
+  .flow-steps {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    margin: 20px 0;
+  }
+
+  .flow-step {
+    display: flex;
+    gap: 16px;
+    align-items: flex-start;
+    padding: 14px 0;
+  }
+
+  .flow-step-num {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    border: 1px solid var(--smoke-light);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: var(--text-ghost);
+    flex-shrink: 0;
+    position: relative;
+  }
+
+  .flow-step:not(:last-child) .flow-step-num::after {
+    content: '';
+    position: absolute;
+    top: 28px;
+    left: 50%;
+    width: 1px;
+    height: calc(100% + 16px);
+    background: var(--smoke-light);
+    transform: translateX(-50%);
+  }
+
+  .flow-step-content {
+    padding-top: 3px;
+  }
+
+  .flow-step-label {
+    font-family: 'Cinzel', serif;
+    font-size: 12px;
+    letter-spacing: 0.1em;
+    color: var(--parchment-faded);
+    margin-bottom: 4px;
+  }
+
+  .flow-step-text {
+    font-size: 14px;
+    line-height: 1.6;
+    color: var(--text-dim);
+  }
+
+  .flow-step-text code {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    color: var(--gold);
+    background: rgba(196,164,74,0.08);
+    padding: 1px 5px;
+    border-radius: 2px;
+    border: 1px solid rgba(196,164,74,0.12);
+  }
+
+  /* ═══ MESSAGE EXAMPLE ═══ */
+  .msg-example {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    line-height: 2;
+    padding: 16px 20px;
+    background: rgba(13,11,9,0.9);
+    border: 1px solid var(--smoke-light);
+    border-radius: 2px;
+    margin: 16px 0;
+    overflow-x: auto;
+  }
+
+  .msg-server { color: var(--parchment-faded); }
+  .msg-player { color: var(--frost); }
+  .msg-system { color: var(--text-ghost); font-style: italic; }
+  .msg-broadcast { color: var(--ember-glow); }
+  .msg-gold { color: var(--gold); }
+
+  /* ═══ TIP STRIP ═══ */
+  .tip-strip {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    margin: 20px 0;
+  }
+
+  @media (max-width: 560px) {
+    .tip-strip { grid-template-columns: 1fr; }
+  }
+
+  .tip-card {
+    padding: 16px 18px;
+    background: linear-gradient(135deg, rgba(26,23,20,0.9), rgba(42,37,32,0.5));
+    border: 1px solid rgba(90,82,68,0.15);
+    border-radius: 2px;
+  }
+
+  .tip-card-label {
+    font-family: 'Cinzel', serif;
+    font-size: 10px;
+    letter-spacing: 0.15em;
+    color: var(--text-ghost);
+    text-transform: uppercase;
+    margin-bottom: 6px;
+  }
+
+  .tip-card-text {
+    font-size: 14px;
+    line-height: 1.6;
+    color: var(--text-dim);
+  }
+
+  /* ═══ NPC GUIDE ═══ */
+  .npc-guide {
+    display: flex;
+    gap: 16px;
+    align-items: flex-start;
+    padding: 16px 0;
+    border-bottom: 1px solid rgba(90,82,68,0.1);
+  }
+
+  .npc-guide:last-child { border-bottom: none; }
+
+  .npc-guide-icon {
+    font-size: 24px;
+    flex-shrink: 0;
+    opacity: 0.7;
+    margin-top: 2px;
+  }
+
+  .npc-guide-name {
+    font-family: 'Cinzel', serif;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--parchment);
+    margin-bottom: 2px;
+  }
+
+  .npc-guide-role {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9px;
+    color: var(--text-ghost);
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    margin-bottom: 6px;
+  }
+
+  .npc-guide-desc {
+    font-size: 14px;
+    line-height: 1.6;
+    color: var(--text-dim);
+  }
+
+  /* ═══ FOOTER ═══ */
+  .page-footer {
+    text-align: center;
+    padding: 36px 0 48px;
+    border-top: 1px solid rgba(90,82,68,0.15);
+    margin-top: 20px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    color: var(--text-ghost);
+    letter-spacing: 0.15em;
+  }
+
+  .page-footer a {
+    color: var(--text-ghost);
+    text-decoration: none;
+    transition: color 0.2s;
+  }
+
+  .page-footer a:hover { color: var(--ember); }
+</style>
+</head>
+<body>
+
+<canvas id="ember-canvas"></canvas>
+
+<div class="page-wrap">
+
+  <!-- NAV -->
+  <nav class="nav-bar">
+    <a class="nav-home" href="#">The Last Ember</a>
+    <span style="color:var(--smoke-light)">·</span>
+    <a class="nav-link" href="#">Board</a>
+    <a class="nav-link" href="#">Chronicle</a>
+    <a class="nav-link" href="#">Journals</a>
+    <a class="nav-link active">How to Play</a>
+  </nav>
+
+  <!-- HEADER -->
+  <div class="page-header">
+    <h1 class="page-title">How to Play</h1>
+    <p class="page-subtitle">A text adventure played over radio. Five minutes a day. Thirty days an epoch. No internet required.</p>
+  </div>
+
+  <!-- ════════════════════════════ -->
+  <!-- WHAT IS THIS                 -->
+  <!-- ════════════════════════════ -->
+  <div class="divider">What is meshMUD</div>
+
+  <p class="prose">meshMUD is a multiplayer text adventure that runs over <strong>Meshtastic</strong> — a long-range radio mesh network. There is no internet connection, no app store, no account creation. You play by sending short text messages from your Meshtastic node. The game responds. Everything happens in 150 characters or less.</p>
+
+  <p class="prose">It plays like the BBS door games of the early '90s — <em class="place">Legend of the Red Dragon</em>, <em class="place">TradeWars 2002</em> — adapted for radio. Short daily sessions. Asynchronous multiplayer. A shared world where you see evidence of other players without needing to be online at the same time. A dungeon that resets every 30 days.</p>
+
+  <p class="prose">You don't need to be a gamer. You don't need to be fast. You need a Meshtastic radio and five minutes.</p>
+
+  <div class="callout ember">
+    <div class="callout-label">The basics</div>
+    <p class="prose">You wake up in a tavern called <em class="place">The Last Ember</em>. Below it is a dungeon that changes every 30 days. You explore it, fight monsters, find secrets, and help other players push deeper — all by typing short commands over your radio. When the 30 days end, the dungeon resets. Your character persists. The stories stay.</p>
+  </div>
+
+  <!-- ════════════════════════════ -->
+  <!-- GETTING STARTED              -->
+  <!-- ════════════════════════════ -->
+  <div class="divider">Getting Started</div>
+
+  <p class="prose">If your mesh network is running meshMUD, the game server listens for direct messages from any node. Send it a DM and it responds. That's it.</p>
+
+  <div class="flow-steps">
+    <div class="flow-step">
+      <div class="flow-step-num">1</div>
+      <div class="flow-step-content">
+        <div class="flow-step-label">Send a DM to the game node</div>
+        <div class="flow-step-text">Find the meshMUD node on your Meshtastic client and send any message. The server responds with a welcome and asks you to pick a class.</div>
+      </div>
+    </div>
+    <div class="flow-step">
+      <div class="flow-step-num">2</div>
+      <div class="flow-step-content">
+        <div class="flow-step-label">Pick your class</div>
+        <div class="flow-step-text">One letter. <code>F</code> for Fighter, <code>C</code> for Caster, <code>R</code> for Rogue. That's your only creation choice — everything else emerges through play.</div>
+      </div>
+    </div>
+    <div class="flow-step">
+      <div class="flow-step-num">3</div>
+      <div class="flow-step-content">
+        <div class="flow-step-label">You're in</div>
+        <div class="flow-step-text">The server drops you in <em class="place">The Last Ember</em> with starting gear and a handful of gold. Type <code>L</code> to look around. Type <code>H</code> for help. You're playing.</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="msg-example">
+    <span class="msg-player">You → meshMUD:</span> <span class="msg-gold">hello</span><br>
+    <span class="msg-server">meshMUD:</span> Welcome to The Last Ember. Pick a class: (F)ighter (C)aster (R)ogue<br>
+    <span class="msg-player">You:</span> <span class="msg-gold">F</span><br>
+    <span class="msg-server">meshMUD:</span> Kael the Fighter. POW:5 DEF:4 SPD:3 HP:30. You stand in the tavern. Type L.<br>
+    <span class="msg-player">You:</span> <span class="msg-gold">L</span><br>
+    <span class="msg-server">meshMUD:</span> The Last Ember. Lanterns burn without oil. Grist polishes a glass. Exits: dungeon.<br>
+  </div>
+
+  <!-- ════════════════════════════ -->
+  <!-- CLASSES                      -->
+  <!-- ════════════════════════════ -->
+  <div class="divider">The Three Classes</div>
+
+  <p class="prose">Three stats govern everything: <strong>POW</strong> (offense), <strong>DEF</strong> (survivability), and <strong>SPD</strong> (evasion, initiative, spellcasting). Each class leans into one. You earn 2 stat points per level to allocate however you want — that's where your build takes shape.</p>
+
+  <div class="class-cards">
+    <div class="class-card fighter">
+      <div class="class-card-icon">⚔</div>
+      <div class="class-card-name">Fighter</div>
+      <div class="class-card-stat">POW-FOCUSED</div>
+      <div class="class-card-desc">High HP. Hits hard. Takes hits. Abilities like Strike, Bash, Rally, Cleave. Passive damage reduction. The front line.</div>
+    </div>
+    <div class="class-card caster">
+      <div class="class-card-icon">✦</div>
+      <div class="class-card-name">Caster</div>
+      <div class="class-card-stat">SPD-FOCUSED</div>
+      <div class="class-card-desc">Low HP. Spells scale on SPD. Bolt, Ward, Blast, Drain. Passive: see enemy stats. Knowledge is power. Fragile is the cost.</div>
+    </div>
+    <div class="class-card rogue">
+      <div class="class-card-icon">◈</div>
+      <div class="class-card-name">Rogue</div>
+      <div class="class-card-stat">SPD / BALANCED</div>
+      <div class="class-card-desc">Stealth and utility. Stab, Dodge, Ambush, Steal. Passive evasion chance. Thrives in the spaces between fights.</div>
+    </div>
+  </div>
+
+  <!-- ════════════════════════════ -->
+  <!-- A TYPICAL DAY                -->
+  <!-- ════════════════════════════ -->
+  <div class="divider">A Typical Day</div>
+
+  <p class="prose">A session takes <strong>five to fifteen minutes</strong>. You get 12 dungeon actions per day — enough to explore a few rooms, fight a few monsters, and make progress without burning out. Town actions are always free.</p>
+
+  <div class="flow-steps">
+    <div class="flow-step">
+      <div class="flow-step-num">1</div>
+      <div class="flow-step-content">
+        <div class="flow-step-label">Visit Grist</div>
+        <div class="flow-step-text">The barkeep tells you what happened while you were gone. Who died, what fell, what the front line looks like. Always free. This is how the world stays alive between sessions.</div>
+      </div>
+    </div>
+    <div class="flow-step">
+      <div class="flow-step-num">2</div>
+      <div class="flow-step-content">
+        <div class="flow-step-label">Check the bounty board</div>
+        <div class="flow-step-text">Shared objectives the whole server works toward. A monster with a communal HP pool. An exploration target. You chip away at it — so does everyone else.</div>
+      </div>
+    </div>
+    <div class="flow-step">
+      <div class="flow-step-num">3</div>
+      <div class="flow-step-content">
+        <div class="flow-step-label">Gear up</div>
+        <div class="flow-step-text">Buy supplies from Torval, heal up with Maren if you need it, spend a bard token at the bar for a hint or buff. All free actions.</div>
+      </div>
+    </div>
+    <div class="flow-step">
+      <div class="flow-step-num">4</div>
+      <div class="flow-step-content">
+        <div class="flow-step-label">Enter the dungeon</div>
+        <div class="flow-step-text">Move room to room, fight what you find, look for secrets, leave messages for other players. Each move or fight costs an action. Twelve per day — spend them wisely.</div>
+      </div>
+    </div>
+    <div class="flow-step">
+      <div class="flow-step-num">5</div>
+      <div class="flow-step-content">
+        <div class="flow-step-label">Return to town</div>
+        <div class="flow-step-text">Bank your gold before the dungeon takes it. Tomorrow the rooms may have changed, the bounty may be weaker, and someone may have left you a message you need to read.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ════════════════════════════ -->
+  <!-- THE TOWN                     -->
+  <!-- ════════════════════════════ -->
+  <div class="divider">The Last Ember — Your Town</div>
+
+  <p class="prose">The tavern is the one room that never changes. Epochs wipe the dungeon, reshuffle everything, reshape the world — but <em class="place">The Last Ember</em> stays. Same bar. Same people. Same lanterns that burn without oil and nobody questions anymore.</p>
+
+  <p class="prose">Four people live here. They remember you across every wipe.</p>
+
+  <div class="npc-guide">
+    <span class="npc-guide-icon">🍺</span>
+    <div>
+      <div class="npc-guide-name">Grist</div>
+      <div class="npc-guide-role">Barkeep</div>
+      <div class="npc-guide-desc">Knows everything that happens in the dungeon because everyone tells him and he never forgets. Visit him first every session — he'll catch you up on what you missed. He also runs the bounty board, handles the epoch vote, and trades bard tokens for hints, buffs, and secrets. He doesn't trade because he's kind. He trades because he collects.</div>
+    </div>
+  </div>
+
+  <div class="npc-guide">
+    <span class="npc-guide-icon">🩸</span>
+    <div>
+      <div class="npc-guide-name">Maren</div>
+      <div class="npc-guide-role">Healer</div>
+      <div class="npc-guide-desc">Used to be an adventurer. Went deeper than anyone. Came back done. Heals with her hands, not magic, and it hurts. She charges gold because free healing breeds carelessness. She's the reason you survive long enough to learn from your mistakes.</div>
+    </div>
+  </div>
+
+  <div class="npc-guide">
+    <span class="npc-guide-icon">⚖</span>
+    <div>
+      <div class="npc-guide-name">Torval</div>
+      <div class="npc-guide-role">Merchant</div>
+      <div class="npc-guide-desc">Buys and sells gear. Appraises items by weight and sound. His inventory somehow matches what's in the dungeon each epoch. Nobody asks how. His prices are fair and his stock is real, which is more than you can say for most people in a town built around a hole full of monsters.</div>
+    </div>
+  </div>
+
+  <div class="npc-guide">
+    <span class="npc-guide-icon">👁</span>
+    <div>
+      <div class="npc-guide-name">Whisper</div>
+      <div class="npc-guide-role">Sage</div>
+      <div class="npc-guide-desc">Sits in the same corner. Knows things about the dungeon that change each epoch — lore, connections, what the symbols mean. Speaks in fragments because that's how the information comes to her. Pay attention to her exact words. Players who dismiss her as flavor text miss half the game.</div>
+    </div>
+  </div>
+
+  <!-- ════════════════════════════ -->
+  <!-- THE DUNGEON                  -->
+  <!-- ════════════════════════════ -->
+  <div class="divider">The Dungeon</div>
+
+  <p class="prose">Four floors. Each one deeper, harder, and stranger than the last. Monsters get meaner. Secrets get subtler. The rooms change every epoch but the structure holds — floor one is where you learn, floor four is where legends are made.</p>
+
+  <p class="prose">You carry three pieces of gear: a <strong>weapon</strong>, <strong>armor</strong>, and a <strong>trinket</strong>. The trinket is the wildcard — it might grant a passive ability, boost an unexpected stat, or do something no other slot can. Six tiers of gear across the dungeon. The best stuff doesn't come from shops.</p>
+
+  <div class="callout frost">
+    <div class="callout-label">Death</div>
+    <p class="prose">Death costs you all the gold you're carrying. Not your gear. Not your level. Just your gold. The question is always the same: do you bank it before you go in, or carry it and risk losing everything? The dungeon teaches you the answer. Usually the hard way.</p>
+  </div>
+
+  <!-- ════════════════════════════ -->
+  <!-- MULTIPLAYER                  -->
+  <!-- ════════════════════════════ -->
+  <div class="divider">Playing Together</div>
+
+  <p class="prose">meshMUD is <strong>asynchronous multiplayer</strong>. You don't need to be online at the same time as anyone else. You see other players through what they leave behind — messages scratched on dungeon walls, bounty progress that wasn't there yesterday, broadcasts announcing who found what and who fell where.</p>
+
+  <div class="tip-strip">
+    <div class="tip-card">
+      <div class="tip-card-label">Bounties</div>
+      <div class="tip-card-text">Shared objectives with communal HP pools. You chip away at a target over days. Everyone who contributes shares the reward when it falls.</div>
+    </div>
+    <div class="tip-card">
+      <div class="tip-card-label">Messages</div>
+      <div class="tip-card-text">Leave 15-character notes in dungeon rooms for others to find. Warnings, tips, coordinates. Dark Souls soapstone, over LoRa.</div>
+    </div>
+    <div class="tip-card">
+      <div class="tip-card-label">Mail</div>
+      <div class="tip-card-text">Send direct messages to specific players through the barkeep. Coordinate strategy, share secrets, warn someone about what's ahead.</div>
+    </div>
+    <div class="tip-card">
+      <div class="tip-card-label">Broadcasts</div>
+      <div class="tip-card-text">Major events announce to the whole mesh. Boss kills, rare finds, deaths, front line changes. The world narrates itself.</div>
+    </div>
+  </div>
+
+  <p class="prose">There is no PvP. All competition runs through leaderboards, bounty races, and endgame objectives. On a small mesh network where everyone knows each other, cooperation is the game.</p>
+
+  <!-- ════════════════════════════ -->
+  <!-- EPOCHS                       -->
+  <!-- ════════════════════════════ -->
+  <div class="divider">The 30-Day Epoch</div>
+
+  <p class="prose">Every 30 days, the dungeon resets. New rooms, new monsters, new secrets, new narrative. Your character keeps their name and their history, but gear and gold start fresh. Each epoch has an <strong>endgame mode</strong> — a shared objective the whole server works toward. On day 30, players vote on the next epoch's mode.</p>
+
+  <div class="callout gold">
+    <div class="callout-label">Three endgame modes</div>
+    <p class="prose"><strong>Hold the Line</strong> — the dungeon regenerates rooms. Push the front line deeper, establish checkpoints that lock in progress. The whole server descends together.</p>
+    <p class="prose"><strong>Raid Boss</strong> — a massive enemy with thousands of HP squats on the lowest floor. The server chips away over days. Discover its weaknesses. Coordinate the kill.</p>
+    <p class="prose"><strong>Retrieve &amp; Escape</strong> — an artifact on floor four. Grab it, carry it to the surface. Something unkillable chases the carrier. Other players clear the path, block the pursuer, relay the objective hand-to-hand.</p>
+  </div>
+
+  <p class="prose">On day 15, the <strong>Breach</strong> opens — a surprise mini-zone between floors two and three with its own challenge, its own loot, and its own secrets. You don't know what's inside until it opens.</p>
+
+  <!-- ════════════════════════════ -->
+  <!-- SECRETS                      -->
+  <!-- ════════════════════════════ -->
+  <div class="divider">Secrets &amp; Discovery</div>
+
+  <p class="prose">Twenty secrets hide in the dungeon each epoch. Some are behind walls that need a strong arm to break. Some are puzzles spread across multiple rooms. Some are hidden in things Whisper says that nobody thinks to write down. Finding them isn't required — but every secret you uncover gives a real mechanical advantage, and some of them benefit the entire server.</p>
+
+  <p class="prose"><strong>Read the room descriptions carefully.</strong> The dungeon tells you where its secrets are. It just doesn't tell you plainly.</p>
+
+  <!-- ════════════════════════════ -->
+  <!-- COMMANDS                     -->
+  <!-- ════════════════════════════ -->
+  <div class="divider">Quick Command Reference</div>
+
+  <p class="prose">Every command fits in a short message. Most have single-letter shortcuts. New commands unlock as you level up — the game teaches you as you go.</p>
+
+  <div class="callout ember">
+    <div class="callout-label">Movement &amp; Awareness</div>
+    <div class="cmd-grid">
+      <span class="cmd-key">n s e w</span><span class="cmd-desc">Move north, south, east, west</span>
+      <span class="cmd-key">l</span><span class="cmd-desc">Look — describe current room, show exits</span>
+      <span class="cmd-key">x [thing]</span><span class="cmd-desc">Examine something in the room <span class="cmd-unlock">LV5</span></span>
+      <span class="cmd-key">who</span><span class="cmd-desc">List active players <span class="cmd-unlock">LV3</span></span>
+    </div>
+  </div>
+
+  <div class="callout blood">
+    <div class="callout-label">Combat</div>
+    <div class="cmd-grid">
+      <span class="cmd-key">f</span><span class="cmd-desc">Fight — engage the monster in this room</span>
+      <span class="cmd-key">a</span><span class="cmd-desc">Attack — basic melee/spell attack</span>
+      <span class="cmd-key">flee</span><span class="cmd-desc">Attempt to escape combat (SPD-based chance)</span>
+    </div>
+  </div>
+
+  <div class="callout gold">
+    <div class="callout-label">Town &amp; NPCs</div>
+    <div class="cmd-grid">
+      <span class="cmd-key">barkeep</span><span class="cmd-desc">Talk to Grist — recap, tokens, bounties <span class="cmd-unlock">LV3</span></span>
+      <span class="cmd-key">heal</span><span class="cmd-desc">Visit Maren — restore HP for gold <span class="cmd-unlock">LV3</span></span>
+      <span class="cmd-key">shop</span><span class="cmd-desc">Browse Torval's inventory <span class="cmd-unlock">LV3</span></span>
+      <span class="cmd-key">bank</span><span class="cmd-desc">Deposit gold safely <span class="cmd-unlock">LV3</span></span>
+      <span class="cmd-key">board</span><span class="cmd-desc">View active bounties <span class="cmd-unlock">LV3</span></span>
+    </div>
+  </div>
+
+  <div class="callout frost">
+    <div class="callout-label">Inventory &amp; Character</div>
+    <div class="cmd-grid">
+      <span class="cmd-key">i</span><span class="cmd-desc">Inventory — show gear and backpack <span class="cmd-unlock">LV2</span></span>
+      <span class="cmd-key">st</span><span class="cmd-desc">Stats — show POW, DEF, SPD, HP, gold, level</span>
+      <span class="cmd-key">equip [item]</span><span class="cmd-desc">Equip an item from your backpack <span class="cmd-unlock">LV2</span></span>
+      <span class="cmd-key">use [item]</span><span class="cmd-desc">Use a consumable <span class="cmd-unlock">LV2</span></span>
+    </div>
+  </div>
+
+  <div class="callout ember">
+    <div class="callout-label">Social</div>
+    <div class="cmd-grid">
+      <span class="cmd-key">msg [text]</span><span class="cmd-desc">Leave a 15-char message in this room <span class="cmd-unlock">LV5</span></span>
+      <span class="cmd-key">read</span><span class="cmd-desc">Read messages in this room</span>
+      <span class="cmd-key">rate</span><span class="cmd-desc">Mark a message as helpful</span>
+      <span class="cmd-key">mail</span><span class="cmd-desc">Check your inbox <span class="cmd-unlock">LV3</span></span>
+      <span class="cmd-key">mail [who] [text]</span><span class="cmd-desc">Send mail to a player <span class="cmd-unlock">LV3</span></span>
+    </div>
+  </div>
+
+  <div class="callout gold">
+    <div class="callout-label">Meta</div>
+    <div class="cmd-grid">
+      <span class="cmd-key">h</span><span class="cmd-desc">Help — list all available commands</span>
+      <span class="cmd-key">h [cmd]</span><span class="cmd-desc">Help on a specific command</span>
+      <span class="cmd-key">vote</span><span class="cmd-desc">Vote for next epoch's mode (day 30 only) <span class="cmd-unlock">LV1</span></span>
+    </div>
+  </div>
+
+  <!-- ════════════════════════════ -->
+  <!-- TIPS                         -->
+  <!-- ════════════════════════════ -->
+  <div class="divider">Grist's Advice for the New Arrival</div>
+
+  <div class="callout ember">
+    <div class="callout-label">Things nobody tells you</div>
+    <p class="prose"><strong>Bank before you descend.</strong> Death takes everything you're carrying. Not your gear, not your level — just your gold. The bank is free. Use it.</p>
+    <p class="prose"><strong>Visit Grist every session.</strong> His recap costs nothing and tells you everything you missed. The bounty board is there too. Five seconds of reading saves you from walking into something that killed Sable yesterday.</p>
+    <p class="prose"><strong>Leave messages.</strong> A 15-character note in a dangerous room saves someone's life tomorrow. This is a small network. Help each other.</p>
+    <p class="prose"><strong>Read room descriptions.</strong> The dungeon hides things in plain sight. If the text mentions scratches on a wall, there's a reason. If Whisper mumbles about the eastern branch, there's a reason. The game rewards attention.</p>
+    <p class="prose"><strong>You don't have to fight everything.</strong> Twelve actions is enough for a good day, not enough for a reckless one. Know when to push and when to walk away. The dungeon will be here tomorrow.</p>
+    <p class="prose"><strong>Bard tokens accrue whether you log in or not.</strong> One per day, cap at five. Spend them at the barkeep for things gold can't buy — hints, buffs, intel. A patient player who saves five tokens gets information that changes everything.</p>
+  </div>
+
+  <!-- FOOTER -->
+  <div class="page-footer">
+    <a href="#">The Last Ember</a> · meshMUD
+  </div>
+
+</div>
+
+<script>
+// ═══ EMBER PARTICLES ═══
+const canvas = document.getElementById('ember-canvas');
+const ctx = canvas.getContext('2d');
+let embers = [];
+
+function resize() {
+  canvas.width = window.innerWidth;
+  canvas.height = window.innerHeight;
+}
+resize();
+window.addEventListener('resize', resize);
+
+class Ember {
+  constructor() { this.reset(); }
+  reset() {
+    this.x = Math.random() * canvas.width;
+    this.y = canvas.height + 10;
+    this.size = Math.random() * 2 + 0.5;
+    this.speedY = -(Math.random() * 0.3 + 0.08);
+    this.speedX = (Math.random() - 0.5) * 0.2;
+    this.opacity = Math.random() * 0.35 + 0.1;
+    this.decay = Math.random() * 0.0007 + 0.0003;
+    this.wobble = Math.random() * Math.PI * 2;
+    this.wobbleSpeed = Math.random() * 0.015 + 0.003;
+    const t = Math.random();
+    this.r = Math.floor(200 + t * 55);
+    this.g = Math.floor(80 + t * 80);
+    this.b = Math.floor(20 + t * 30);
+  }
+  update() {
+    this.wobble += this.wobbleSpeed;
+    this.x += this.speedX + Math.sin(this.wobble) * 0.1;
+    this.y += this.speedY;
+    this.opacity -= this.decay;
+    if (this.opacity <= 0 || this.y < -20) this.reset();
+  }
+  draw() {
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(${this.r},${this.g},${this.b},${this.opacity})`;
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.size * 2.5, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(${this.r},${this.g},${this.b},${this.opacity * 0.1})`;
+    ctx.fill();
+  }
+}
+
+for (let i = 0; i < 25; i++) {
+  const e = new Ember();
+  e.y = Math.random() * canvas.height;
+  embers.push(e);
+}
+
+function animateEmbers() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  embers.forEach(e => { e.update(); e.draw(); });
+  requestAnimationFrame(animateEmbers);
+}
+animateEmbers();
+</script>
+
+</body>
+</html>

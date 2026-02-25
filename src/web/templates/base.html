@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{% block title %}The Last Ember{% endblock %} — meshMUD</title>
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=Crimson+Text:ital,wght@0,400;0,600;1,400&family=JetBrains+Mono:wght@300;400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/ember.css') }}">
+{% block head %}{% endblock %}
+</head>
+<body data-poll-status="{{ poll_status_interval }}" data-poll-broadcast="{{ poll_broadcast_interval }}">
+
+<canvas id="ember-canvas"></canvas>
+
+<div class="page-wrap{% block page_class %}{% endblock %}">
+  {% block nav %}{% endblock %}
+  {% block content %}{% endblock %}
+  {% block footer %}
+  <div class="page-footer">
+    <a href="{{ url_for('public.index') }}">The Last Ember</a> · meshMUD
+  </div>
+  {% endblock %}
+</div>
+
+<script src="{{ url_for('static', filename='js/embers.js') }}"></script>
+<script src="{{ url_for('static', filename='js/app.js') }}"></script>
+{% block scripts %}
+<script>
+  {% block ember_init %}
+  if (window.initEmbers) initEmbers(40, 0.6);
+  {% endblock %}
+</script>
+{% endblock %}
+</body>
+</html>

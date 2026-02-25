@@ -1,0 +1,823 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>The Last Ember — Chronicle</title>
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=Crimson+Text:ital,wght@0,400;0,600;1,400&family=JetBrains+Mono:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --ember: #e8713a;
+    --ember-glow: #ff9d5c;
+    --ember-deep: #c44e1a;
+    --ash: #1a1714;
+    --charcoal: #0d0b09;
+    --smoke: #2a2520;
+    --smoke-light: #3d3630;
+    --parchment: #d4c4a8;
+    --parchment-dark: #b8a88c;
+    --parchment-faded: #a89878;
+    --bone: #c8b898;
+    --blood: #8b2020;
+    --blood-bright: #cc3333;
+    --gold: #c4a44a;
+    --gold-dim: #8a7a3a;
+    --frost: #7a9ab0;
+    --poison: #5a8a4a;
+    --text-bright: #e8dcc8;
+    --text-dim: #9a8e78;
+    --text-ghost: #5a5244;
+    --victory: #5a8a4a;
+    --defeat: #8b2020;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--charcoal);
+    color: var(--text-bright);
+    font-family: 'Crimson Text', Georgia, serif;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  #ember-canvas {
+    position: fixed;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    pointer-events: none;
+    z-index: 0;
+    opacity: 0.4;
+  }
+
+  .page-wrap {
+    position: relative;
+    z-index: 2;
+    max-width: 800px;
+    margin: 0 auto;
+    padding: 0 24px;
+  }
+
+  /* ═══ NAV ═══ */
+  .nav-bar {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 32px;
+    padding: 20px 0;
+    border-bottom: 1px solid rgba(90,82,68,0.15);
+    margin-bottom: 12px;
+  }
+
+  .nav-link {
+    font-family: 'Cinzel', serif;
+    font-size: 10px;
+    letter-spacing: 0.25em;
+    color: var(--text-ghost);
+    text-decoration: none;
+    text-transform: uppercase;
+    padding: 6px 0;
+    border-bottom: 1px solid transparent;
+    transition: all 0.3s;
+    cursor: pointer;
+  }
+
+  .nav-link:hover { color: var(--parchment-faded); }
+  .nav-link.active {
+    color: var(--parchment);
+    border-bottom-color: var(--ember);
+  }
+
+  .nav-home {
+    font-family: 'Cinzel', serif;
+    font-size: 14px;
+    color: var(--parchment-faded);
+    text-decoration: none;
+    letter-spacing: 0.1em;
+    transition: color 0.3s;
+  }
+
+  .nav-home:hover { color: var(--ember-glow); }
+
+  /* ═══ PAGE HEADER ═══ */
+  .page-header {
+    text-align: center;
+    padding: 40px 0 12px;
+  }
+
+  .page-title {
+    font-family: 'Cinzel', serif;
+    font-size: clamp(22px, 4vw, 32px);
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    color: var(--parchment);
+    text-shadow: 0 0 30px rgba(232,113,58,0.2);
+    margin-bottom: 6px;
+  }
+
+  .page-subtitle {
+    font-size: 15px;
+    font-style: italic;
+    color: var(--text-ghost);
+    max-width: 500px;
+    margin: 0 auto;
+    line-height: 1.5;
+  }
+
+  .divider {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin: 28px 0;
+    color: var(--text-ghost);
+    font-size: 11px;
+    letter-spacing: 0.2em;
+    font-family: 'Cinzel', serif;
+  }
+
+  .divider::before, .divider::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--smoke-light), transparent);
+  }
+
+  /* ═══ CHRONICLE — EPOCH CARDS ═══ */
+  .epoch-card {
+    position: relative;
+    margin-bottom: 40px;
+    padding: 28px 32px;
+    background: linear-gradient(180deg, rgba(26,23,20,0.95), rgba(13,11,9,0.95));
+    border: 1px solid var(--smoke-light);
+    border-radius: 2px;
+    overflow: hidden;
+  }
+
+  .epoch-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 2px;
+  }
+
+  .epoch-card.victory::before {
+    background: linear-gradient(90deg, transparent, var(--victory), transparent);
+  }
+
+  .epoch-card.defeat::before {
+    background: linear-gradient(90deg, transparent, var(--defeat), transparent);
+  }
+
+  .epoch-card.current::before {
+    background: linear-gradient(90deg, transparent, var(--ember), transparent);
+    animation: current-pulse 3s ease-in-out infinite;
+  }
+
+  @keyframes current-pulse {
+    0%, 100% { opacity: 0.5; }
+    50% { opacity: 1; }
+  }
+
+  .epoch-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    margin-bottom: 16px;
+  }
+
+  .epoch-number {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.2em;
+    color: var(--text-ghost);
+    margin-bottom: 4px;
+  }
+
+  .epoch-title {
+    font-family: 'Cinzel', serif;
+    font-size: 20px;
+    font-weight: 600;
+    color: var(--parchment);
+    line-height: 1.3;
+  }
+
+  .epoch-outcome {
+    flex-shrink: 0;
+    padding: 4px 14px;
+    font-family: 'Cinzel', serif;
+    font-size: 10px;
+    letter-spacing: 0.2em;
+    border-radius: 1px;
+    text-transform: uppercase;
+  }
+
+  .epoch-outcome.victory {
+    border: 1px solid var(--victory);
+    color: var(--victory);
+    background: rgba(90,138,74,0.08);
+  }
+
+  .epoch-outcome.defeat {
+    border: 1px solid var(--defeat);
+    color: var(--blood-bright);
+    background: rgba(139,32,32,0.08);
+  }
+
+  .epoch-outcome.ongoing {
+    border: 1px solid var(--ember);
+    color: var(--ember-glow);
+    background: rgba(232,113,58,0.08);
+    animation: ongoing-pulse 2s ease-in-out infinite;
+  }
+
+  @keyframes ongoing-pulse {
+    0%, 100% { opacity: 0.7; }
+    50% { opacity: 1; }
+  }
+
+  .epoch-meta {
+    display: flex;
+    gap: 20px;
+    margin-bottom: 16px;
+    flex-wrap: wrap;
+  }
+
+  .epoch-meta-item {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    color: var(--text-ghost);
+    letter-spacing: 0.05em;
+  }
+
+  .epoch-meta-item .meta-val {
+    color: var(--text-dim);
+  }
+
+  .epoch-summary {
+    font-size: 16px;
+    line-height: 1.7;
+    color: var(--text-dim);
+  }
+
+  .epoch-summary p {
+    margin-bottom: 12px;
+  }
+
+  .epoch-summary p:last-child { margin-bottom: 0; }
+
+  .epoch-summary .name { color: var(--parchment); font-weight: 600; }
+  .epoch-summary .place { color: var(--ember-glow); font-style: italic; }
+  .epoch-summary .item { color: var(--gold); }
+
+  .epoch-roster {
+    margin-top: 16px;
+    padding-top: 12px;
+    border-top: 1px solid rgba(90,82,68,0.12);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    color: var(--text-ghost);
+    letter-spacing: 0.05em;
+  }
+
+  .epoch-roster .roster-names {
+    color: var(--text-dim);
+    margin-left: 4px;
+  }
+
+  /* ═══ JOURNALS — TAB SYSTEM ═══ */
+  .journal-section { display: none; }
+  .journal-section.active { display: block; }
+  .chronicle-section { display: none; }
+  .chronicle-section.active { display: block; }
+
+  .npc-tabs {
+    display: flex;
+    gap: 0;
+    margin-bottom: 28px;
+    border-bottom: 1px solid var(--smoke-light);
+  }
+
+  .npc-tab {
+    flex: 1;
+    text-align: center;
+    padding: 14px 8px;
+    font-family: 'Cinzel', serif;
+    font-size: 11px;
+    letter-spacing: 0.15em;
+    color: var(--text-ghost);
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    transition: all 0.3s;
+    position: relative;
+  }
+
+  .npc-tab:hover { color: var(--parchment-faded); }
+
+  .npc-tab.active {
+    color: var(--parchment);
+    border-bottom-color: var(--ember);
+  }
+
+  .npc-tab .tab-icon {
+    display: block;
+    font-size: 18px;
+    margin-bottom: 4px;
+    opacity: 0.6;
+  }
+
+  .npc-tab.active .tab-icon { opacity: 0.9; }
+
+  /* Journal entries */
+  .journal-feed { display: none; }
+  .journal-feed.active { display: block; }
+
+  .journal-entry {
+    margin-bottom: 32px;
+    padding: 24px 28px;
+    background: linear-gradient(180deg, rgba(26,23,20,0.9), rgba(13,11,9,0.9));
+    border: 1px solid var(--smoke-light);
+    border-radius: 2px;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .journal-entry::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0;
+    width: 3px; height: 100%;
+  }
+
+  .journal-entry.grist::before { background: var(--ember); opacity: 0.4; }
+  .journal-entry.maren::before { background: var(--blood-bright); opacity: 0.4; }
+  .journal-entry.torval::before { background: var(--gold); opacity: 0.4; }
+  .journal-entry.whisper::before { background: var(--frost); opacity: 0.4; }
+
+  .journal-date {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    color: var(--text-ghost);
+    letter-spacing: 0.15em;
+    margin-bottom: 12px;
+  }
+
+  .journal-text {
+    font-size: 16px;
+    line-height: 1.75;
+    color: var(--text-dim);
+  }
+
+  .journal-text p {
+    margin-bottom: 10px;
+    text-indent: 1.5em;
+  }
+
+  .journal-text p:first-child { text-indent: 0; }
+  .journal-text p:last-child { margin-bottom: 0; }
+
+  /* Voice-specific styling */
+  .journal-entry.grist .journal-text {
+    font-size: 15px;
+    line-height: 1.65;
+  }
+
+  .journal-entry.whisper .journal-text {
+    font-style: italic;
+    letter-spacing: 0.01em;
+  }
+
+  .journal-entry.maren .journal-text {
+    font-size: 15px;
+  }
+
+  .journal-entry.torval .journal-text {
+    font-size: 16px;
+  }
+
+  .journal-npc-sig {
+    margin-top: 14px;
+    text-align: right;
+    font-family: 'Cinzel', serif;
+    font-size: 11px;
+    color: var(--text-ghost);
+    letter-spacing: 0.1em;
+    font-style: italic;
+  }
+
+  /* ═══ FOOTER ═══ */
+  .page-footer {
+    text-align: center;
+    padding: 32px 0 48px;
+    border-top: 1px solid rgba(90,82,68,0.15);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    color: var(--text-ghost);
+    letter-spacing: 0.15em;
+  }
+
+  .page-footer a {
+    color: var(--text-ghost);
+    text-decoration: none;
+    transition: color 0.2s;
+  }
+
+  .page-footer a:hover { color: var(--ember); }
+
+  /* Responsive */
+  @media (max-width: 600px) {
+    .epoch-header { flex-direction: column; gap: 10px; }
+    .epoch-card { padding: 20px; }
+    .journal-entry { padding: 18px 20px; }
+    .npc-tab { font-size: 9px; padding: 10px 4px; }
+    .npc-tab .tab-icon { font-size: 16px; }
+  }
+</style>
+</head>
+<body>
+
+<canvas id="ember-canvas"></canvas>
+
+<div class="page-wrap">
+
+  <!-- NAV -->
+  <nav class="nav-bar">
+    <a class="nav-home" href="#">The Last Ember</a>
+    <span style="color:var(--smoke-light)">·</span>
+    <a class="nav-link active" data-page="chronicle" onclick="showPage('chronicle')">Chronicle</a>
+    <a class="nav-link" data-page="journals" onclick="showPage('journals')">Journals</a>
+    <a class="nav-link" href="#">Board</a>
+  </nav>
+
+  <!-- ════════════════════════════════════ -->
+  <!-- CHRONICLE PAGE                       -->
+  <!-- ════════════════════════════════════ -->
+  <div class="chronicle-section active" id="page-chronicle">
+
+    <div class="page-header">
+      <h1 class="page-title">Chronicle</h1>
+      <p class="page-subtitle">Every epoch leaves its mark. The dungeon forgets. We do not.</p>
+    </div>
+
+    <div class="divider">CURRENT EPOCH</div>
+
+    <!-- CURRENT EPOCH -->
+    <div class="epoch-card current">
+      <div class="epoch-header">
+        <div>
+          <div class="epoch-number">EPOCH VII · DAY 17 OF 30</div>
+          <div class="epoch-title">The Siege of the Drowned Mines</div>
+        </div>
+        <span class="epoch-outcome ongoing">In Progress</span>
+      </div>
+      <div class="epoch-meta">
+        <span class="epoch-meta-item">MODE: <span class="meta-val">Hold the Line</span></span>
+        <span class="epoch-meta-item">BREACH: <span class="meta-val">The Emergence (open)</span></span>
+        <span class="epoch-meta-item">PLAYERS: <span class="meta-val">7</span></span>
+        <span class="epoch-meta-item">SECRETS: <span class="meta-val">11/20</span></span>
+      </div>
+      <div class="epoch-summary">
+        <p>Seventeen days in and the water still rises. <span class="name">Kael</span> has led the push through the second depth, establishing <span class="place">Checkpoint Alpha</span> through sheer attrition — three deaths, two retreats, and a final dawn push that cleared the cluster in a single session. The Bounty Troll that haunted <span class="place">the Sunken Gallery</span> for nine days fell to a combined effort, its last breath echoing through flooded corridors that have already begun to reclaim the rooms behind the front line.</p>
+        <p><span class="name">Mira</span> has proven the epoch's quiet weapon — twelve secrets uncovered, including the <span class="item">Ancient Ward</span> that halved the second floor's regen and gave the fighters a window they desperately needed. The Breach opened two days ago and something massive stirs within. Floor 3 is barely mapped. Floor 4 is a rumor. Thirteen days remain, and the mines are not finished with them yet.</p>
+      </div>
+      <div class="epoch-roster">
+        ROSTER: <span class="roster-names">Kael · Mira · Torr · Sable · Dren · Ash · Vex</span>
+      </div>
+    </div>
+
+    <div class="divider">PAST EPOCHS</div>
+
+    <!-- EPOCH VI — VICTORY -->
+    <div class="epoch-card victory">
+      <div class="epoch-header">
+        <div>
+          <div class="epoch-number">EPOCH VI · 30 DAYS · FEB 2026</div>
+          <div class="epoch-title">The Crown of the Ember Wyrm</div>
+        </div>
+        <span class="epoch-outcome victory">Victory</span>
+      </div>
+      <div class="epoch-meta">
+        <span class="epoch-meta-item">MODE: <span class="meta-val">Retrieve & Escape</span></span>
+        <span class="epoch-meta-item">BREACH: <span class="meta-val">The Resonance</span></span>
+        <span class="epoch-meta-item">PLAYERS: <span class="meta-val">9</span></span>
+        <span class="epoch-meta-item">SECRETS: <span class="meta-val">18/20</span></span>
+      </div>
+      <div class="epoch-summary">
+        <p>They called it the impossible run. <span class="name">Torr</span> claimed the <span class="item">Crown of the Ember Wyrm</span> on the twenty-second day, four floors deep in chambers that burned with a heat that had no source. The Pursuer awakened three rooms behind — an eyeless thing that moved without sound and killed without hesitation. <span class="name">Mira</span> had spent six days warding the third floor, and <span class="name">Sable</span> held the chokepoint between the second and third depths for eleven hours before the Pursuer caught her. She died on her feet. The Crown passed to <span class="name">Ash</span> through the relay, and the final sprint through the first floor took four minutes of real time and a year off everyone's nerves.</p>
+        <p>The Resonance Breach had been the epoch's turning point — a puzzle dungeon between floors two and three that <span class="name">Dren</span> solved alone over three quiet days while the rest of the server fought for every room. The shortcut it opened shaved two floors off the escape route and made the impossible merely improbable. Eighteen of twenty secrets fell. The last two died with the epoch, their locations known to no one. <span class="name">Kael</span> finished at level ten — the first to cap since Epoch III. The Crown rests in the Hall. The Wyrm's chambers have already begun to reshape.</p>
+      </div>
+      <div class="epoch-roster">
+        ROSTER: <span class="roster-names">Kael · Mira · Torr · Sable · Dren · Ash · Vex · Lira · Puck</span>
+      </div>
+    </div>
+
+    <!-- EPOCH V — DEFEAT -->
+    <div class="epoch-card defeat">
+      <div class="epoch-header">
+        <div>
+          <div class="epoch-number">EPOCH V · 30 DAYS · JAN 2026</div>
+          <div class="epoch-title">The Warden of the Bone Pits</div>
+        </div>
+        <span class="epoch-outcome defeat">Defeat</span>
+      </div>
+      <div class="epoch-meta">
+        <span class="epoch-meta-item">MODE: <span class="meta-val">Hold the Line</span></span>
+        <span class="epoch-meta-item">BREACH: <span class="meta-val">The Incursion</span></span>
+        <span class="epoch-meta-item">PLAYERS: <span class="meta-val">5</span></span>
+        <span class="epoch-meta-item">SECRETS: <span class="meta-val">13/20</span></span>
+      </div>
+      <div class="epoch-summary">
+        <p>Five adventurers against a dungeon that fought back with everything it had. The <span class="place">Bone Pits</span> earned their name — floors slick with calcite, walls studded with things that used to be alive, and a regen rate on the third depth that three players simply could not outpace. <span class="name">Kael</span> and <span class="name">Mira</span> held the second floor for twelve consecutive days, a feat of endurance that the barkeep still recounts to anyone who'll listen, but the third floor's checkpoints required a coordination window that never came. The Incursion Breach on day fifteen made it worse — monsters pouring upward through the new passage, forcing <span class="name">Torr</span> to abandon the push and defend cleared ground.</p>
+        <p>The Warden never spawned. They never reached it. On day twenty-eight, the front line collapsed back to <span class="place">Checkpoint Beta</span> on floor two and held there, grim and exhausted, while the last rooms fell dark around them. <span class="name">Dren</span> joined on day nineteen — too late to turn the tide, but early enough to witness the slow retreat. Thirteen secrets found, seven left buried. The epoch ended not with a killing blow but with a long silence, the dungeon reclaiming what it had never truly lost. Grist poured five drinks that night. Nobody ordered them.</p>
+      </div>
+      <div class="epoch-roster">
+        ROSTER: <span class="roster-names">Kael · Mira · Torr · Dren · Sable</span>
+      </div>
+    </div>
+
+    <!-- EPOCH IV — VICTORY -->
+    <div class="epoch-card victory">
+      <div class="epoch-header">
+        <div>
+          <div class="epoch-number">EPOCH IV · 30 DAYS · DEC 2025</div>
+          <div class="epoch-title">The Fall of the Iron Colossus</div>
+        </div>
+        <span class="epoch-outcome victory">Victory</span>
+      </div>
+      <div class="epoch-meta">
+        <span class="epoch-meta-item">MODE: <span class="meta-val">Raid Boss</span></span>
+        <span class="epoch-meta-item">BREACH: <span class="meta-val">The Heist</span></span>
+        <span class="epoch-meta-item">PLAYERS: <span class="meta-val">11</span></span>
+        <span class="epoch-meta-item">SECRETS: <span class="meta-val">20/20</span></span>
+      </div>
+      <div class="epoch-summary">
+        <p>Eleven adventurers. Three thousand three hundred hit points of ancient iron and malice squatting in the deepest chamber of the fourth floor. The <span class="place">Iron Colossus</span> rolled Armor Phase and No Escape — a combination that meant once you committed below twenty-five percent, you were finishing the fight or dying in it. The first week was pure scouting. <span class="name">Lira</span> lost two days' gold learning what the phase transitions looked like. <span class="name">Puck</span> discovered the armor weakness on day nine — a ritual hidden behind a stat-gated secret on floor three that permanently stripped the Colossus's defenses. The tide turned.</p>
+        <p>By day twenty, every player on the server had contributed damage. The final phase began on a Tuesday morning when <span class="name">Kael</span> pushed it below the threshold and the exits sealed. He died. <span class="name">Vex</span> went in next and died. <span class="name">Ash</span> went in third with stacked discovery buffs, two consumables, and a borrowed <span class="item">Runed Maul</span> from Torval's back shelf. The Colossus fell in six rounds. The only epoch where every secret was found. <span class="name">Mira</span> found the twentieth on day twenty-nine — a lore secret hidden in something Whisper had said on day three that nobody thought to write down.</p>
+      </div>
+      <div class="epoch-roster">
+        ROSTER: <span class="roster-names">Kael · Mira · Torr · Sable · Dren · Ash · Vex · Lira · Puck · Strand · Wick</span>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ════════════════════════════════════ -->
+  <!-- JOURNALS PAGE                        -->
+  <!-- ════════════════════════════════════ -->
+  <div class="journal-section" id="page-journals">
+
+    <div class="page-header">
+      <h1 class="page-title">Journals</h1>
+      <p class="page-subtitle">Four voices. Same day. Different truths.</p>
+    </div>
+
+    <!-- NPC TABS -->
+    <div class="npc-tabs">
+      <div class="npc-tab active" data-npc="grist" onclick="showJournal('grist')">
+        <span class="tab-icon">🍺</span>
+        Grist
+      </div>
+      <div class="npc-tab" data-npc="maren" onclick="showJournal('maren')">
+        <span class="tab-icon">🩸</span>
+        Maren
+      </div>
+      <div class="npc-tab" data-npc="torval" onclick="showJournal('torval')">
+        <span class="tab-icon">⚖</span>
+        Torval
+      </div>
+      <div class="npc-tab" data-npc="whisper" onclick="showJournal('whisper')">
+        <span class="tab-icon">👁</span>
+        Whisper
+      </div>
+    </div>
+
+    <!-- GRIST'S JOURNAL -->
+    <div class="journal-feed active" id="journal-grist">
+
+      <div class="journal-entry grist">
+        <div class="journal-date">EPOCH VII · DAY 17</div>
+        <div class="journal-text">
+          <p>Kael came in bloody again. Wouldn't say from what. Ordered two drinks, finished one, stared at the wall for ten minutes, then asked about the bounty board. I told him the troll was done. He already knew. He's the one who killed it.</p>
+          <p>Mira stopped by after. She found something on the second floor — wouldn't say what exactly, but she had that look. The one where she knows something the dungeon doesn't want her to know. Traded a token for a hint about floor three. I gave her what I had. She'll figure out the rest.</p>
+          <p>Sable came in late. Died again. Third time this epoch. Didn't want to talk about it. I poured her something warm and told her the front line held. It did. Barely. Floor two lost two rooms overnight but Alpha's holding. That checkpoint isn't going anywhere.</p>
+          <p>Seven of them now. Seven against whatever's down there. Thirteen days left. The Breach opened yesterday and something's moving inside it. Big. They can feel it through the floor when it shifts. I can feel it through the bar.</p>
+        </div>
+        <div class="journal-npc-sig">— Grist</div>
+      </div>
+
+      <div class="journal-entry grist">
+        <div class="journal-date">EPOCH VII · DAY 16</div>
+        <div class="journal-text">
+          <p>The troll died today. Took nine days. Kael landed the killing blow but Mira and Torr chipped it down to nothing over the past week. That thing regenerated every night and every morning someone went back in. That's what this place does to people. It makes them stubborn.</p>
+          <p>New bounty went up. Spiders on the eastern branch of floor two. Six of them. Torr's already on it. He likes the quiet work — finds the nest, clears what he can, gets out. No glory, just progress. Good kid.</p>
+          <p>The Breach cracked open sometime after midnight. I heard it. Everyone heard it. The lanterns flickered for the first time in longer than I can remember. Something poured through that crack that wasn't light and wasn't dark. Dren was the first one down to look. Hasn't come back to report yet.</p>
+        </div>
+        <div class="journal-npc-sig">— Grist</div>
+      </div>
+
+      <div class="journal-entry grist">
+        <div class="journal-date">EPOCH VII · DAY 15</div>
+        <div class="journal-text">
+          <p>Told them. Three days I've been saying the walls were getting thin. Nobody listens to the barkeep until the ground starts shaking. The Breach is open. The passage sits between the second and third depths, and whatever's inside it is not from either floor.</p>
+          <p>Quiet day otherwise. Everyone's saving their actions for tomorrow. Smart. The dungeon doesn't care about smart, but it helps.</p>
+        </div>
+        <div class="journal-npc-sig">— Grist</div>
+      </div>
+
+    </div>
+
+    <!-- MAREN'S JOURNAL -->
+    <div class="journal-feed" id="journal-maren">
+
+      <div class="journal-entry maren">
+        <div class="journal-date">EPOCH VII · DAY 17</div>
+        <div class="journal-text">
+          <p>Three today. Kael first — deep lacerations across the forearms, consistent with something that grabs before it bites. He sat still while I worked. Didn't flinch. That's not bravery. That's numbness. I've seen the difference.</p>
+          <p>Sable second. Blunt force trauma to the ribs, probably from a charging attack she didn't sidestep. I asked her why she rushed the room. She said she thought she could make it. They always think they can make it. I set the rib and told her to stay above floor one for two days. She won't.</p>
+          <p>Torr came in for a routine patch. Minor cuts, nothing structural. He's careful. Moves like someone who's been hurt enough times to know exactly how much it costs. I appreciate that. More of them should learn it before they learn it the hard way.</p>
+          <p>The Breach is open. I can smell it from here — ozone and something older. I know what's on the other side of cracks like that. I know what lives in the spaces between floors. I went there once. I'm not going back. But they will. And I'll be here when they crawl out.</p>
+        </div>
+        <div class="journal-npc-sig">— Maren</div>
+      </div>
+
+      <div class="journal-entry maren">
+        <div class="journal-date">EPOCH VII · DAY 16</div>
+        <div class="journal-text">
+          <p>Sable again. That's twice in three days. This time it was the Gallery — took a hit from the troll's replacement spawn that she wasn't expecting. The original was stronger, she said. As if that's an excuse for not respecting the weaker one. The weaker ones still kill you. I've stitched enough of them to know.</p>
+          <p>No other patients. The troll's death seems to have given them confidence. Confidence is when I get busy.</p>
+        </div>
+        <div class="journal-npc-sig">— Maren</div>
+      </div>
+
+      <div class="journal-entry maren">
+        <div class="journal-date">EPOCH VII · DAY 15</div>
+        <div class="journal-text">
+          <p>No injuries today. Unusual. They're all resting, saving themselves for whatever the Breach brings. The smart ones prepare. The others will be my patients tomorrow.</p>
+          <p>The scar on my palm aches when the dungeon shifts. It ached all night.</p>
+        </div>
+        <div class="journal-npc-sig">— Maren</div>
+      </div>
+
+    </div>
+
+    <!-- TORVAL'S JOURNAL -->
+    <div class="journal-feed" id="journal-torval">
+
+      <div class="journal-entry torval">
+        <div class="journal-date">EPOCH VII · DAY 17</div>
+        <div class="journal-text">
+          <p>Good day! Sold a reinforced buckler to Sable — she needed it after, well, you know. Third death this run. I didn't mention that. Just told her the buckler was "lightly used, deeply reliable." She didn't laugh. They never do. But she bought it, and that's what matters. For her, I mean. Protection. Very important.</p>
+          <p>Kael came in to appraise something from the second floor. Tapped it on the counter. Listened. Heavy, good ring, slight harmonic on the follow-through. Tier four, easily. Named a fair price. He sold it back for the upgrade fund. Practical man, Kael. No sentiment about gear. I respect that. I also profit from it, which I respect slightly more.</p>
+          <p>Dren bought three smoke bombs. Three. For one person. I asked if he was planning something specific. He said "the Breach." I said "ah." I wrapped them carefully. Something about the way he said it made me think he might actually need all three.</p>
+          <p>The ledger gains another page. The pages at the front are still unreadable. I've stopped trying.</p>
+        </div>
+        <div class="journal-npc-sig">— Torval</div>
+      </div>
+
+      <div class="journal-entry torval">
+        <div class="journal-date">EPOCH VII · DAY 16</div>
+        <div class="journal-text">
+          <p>Inventory refresh day! Somehow the stock always matches what they'll need. I've stopped questioning it. New shipment includes tier three weapons appropriate for the second floor push and a few trinkets I haven't seen before. One of them hums. Not loudly. Not unpleasantly. But it hums. Priced it accordingly.</p>
+          <p>The troll is dead. Good for morale, bad for my potion sales. When the big threat goes away, they get brave and stop buying healing supplies. I'll give it two days before Sable's back at my counter buying bandages.</p>
+        </div>
+        <div class="journal-npc-sig">— Torval</div>
+      </div>
+
+      <div class="journal-entry torval">
+        <div class="journal-date">EPOCH VII · DAY 15</div>
+        <div class="journal-text">
+          <p>The ground cracked. Stock fell off two shelves. Nothing broke — I pack carefully, because I know where I work. The Breach is open. New territory means new drops means new customers means new pages in the ledger. I love this job.</p>
+          <p>Restocked the smoke bombs. I have a feeling.</p>
+        </div>
+        <div class="journal-npc-sig">— Torval</div>
+      </div>
+
+    </div>
+
+    <!-- WHISPER'S JOURNAL -->
+    <div class="journal-feed" id="journal-whisper">
+
+      <div class="journal-entry whisper">
+        <div class="journal-date">EPOCH VII · DAY 17</div>
+        <div class="journal-text">
+          <p>The second floor remembers being whole. It pushes back at night — not the monsters, the stone itself. Rooms seal shut like wounds closing. Two lost since dawn. Alpha holds because something older than the mine agreed it should. I don't know what. I heard it once, through the wall between the second and third depths. It was counting.</p>
+          <p>Mira came to the corner today. She found the ward — I could see it on her, the residue of old mechanisms waking up. She asked about the eastern branch. I told her what I could. The words come in pieces. A door. A serpent that isn't a serpent. The sound of water where no water runs. She wrote it down. Good. I can't always say it twice.</p>
+          <p>The Breach breathes. I can hear it from here. Two floors away and I can hear it like it's sitting next to me. Something large. Something that was here before the mines. Before the bar. Before the lanterns. Not before me. I was here first. I think. The memory is thin today.</p>
+        </div>
+        <div class="journal-npc-sig">— Whisper</div>
+      </div>
+
+      <div class="journal-entry whisper">
+        <div class="journal-date">EPOCH VII · DAY 16</div>
+        <div class="journal-text">
+          <p>The troll stopped. Its voice left the stone. A small silence where there used to be weight. Kael ended it but the dungeon let it end. Some things are allowed to die. Others aren't. The replacement is weaker — a shadow of a shadow. It serves the room but the room doesn't respect it.</p>
+          <p>Three secrets on the eastern branch. I can feel them like teeth in a jaw. The first is behind something carved. The second requires a key that isn't a key. The third — I lose the third when I try to look at it directly. It moves. Or I move. One of us does.</p>
+        </div>
+        <div class="journal-npc-sig">— Whisper</div>
+      </div>
+
+      <div class="journal-entry whisper">
+        <div class="journal-date">EPOCH VII · DAY 15</div>
+        <div class="journal-text">
+          <p>It opened. The thin place between. I told Grist three days ago. He listens, in his way. He told them. They listened, in theirs.</p>
+          <p>What came through the crack is not new. It has been waiting underneath the underneath, patient as geology. The rooms between the floors are not rooms. They are the dungeon dreaming about itself. The secrets in there are different — not hidden, just not yet decided. They will become what they need to become when someone looks at them long enough.</p>
+          <p>The lanterns flickered. They have never flickered. I watched them very carefully afterward to make sure they were still the same lanterns. They are. But they noticed too.</p>
+        </div>
+        <div class="journal-npc-sig">— Whisper</div>
+      </div>
+
+    </div>
+
+  </div>
+
+  <!-- FOOTER -->
+  <div class="page-footer">
+    <a href="#">The Last Ember</a> · meshMUD
+  </div>
+
+</div>
+
+<script>
+// ═══ EMBER PARTICLES (same as main page) ═══
+const canvas = document.getElementById('ember-canvas');
+const ctx = canvas.getContext('2d');
+let embers = [];
+
+function resize() {
+  canvas.width = window.innerWidth;
+  canvas.height = window.innerHeight;
+}
+resize();
+window.addEventListener('resize', resize);
+
+class Ember {
+  constructor() { this.reset(); }
+  reset() {
+    this.x = Math.random() * canvas.width;
+    this.y = canvas.height + 10;
+    this.size = Math.random() * 2 + 0.5;
+    this.speedY = -(Math.random() * 0.3 + 0.08);
+    this.speedX = (Math.random() - 0.5) * 0.2;
+    this.opacity = Math.random() * 0.4 + 0.15;
+    this.decay = Math.random() * 0.0008 + 0.0003;
+    this.wobble = Math.random() * Math.PI * 2;
+    this.wobbleSpeed = Math.random() * 0.015 + 0.003;
+    const t = Math.random();
+    this.r = Math.floor(200 + t * 55);
+    this.g = Math.floor(80 + t * 80);
+    this.b = Math.floor(20 + t * 30);
+  }
+  update() {
+    this.wobble += this.wobbleSpeed;
+    this.x += this.speedX + Math.sin(this.wobble) * 0.12;
+    this.y += this.speedY;
+    this.opacity -= this.decay;
+    if (this.opacity <= 0 || this.y < -20) this.reset();
+  }
+  draw() {
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(${this.r},${this.g},${this.b},${this.opacity})`;
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.size * 2.5, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(${this.r},${this.g},${this.b},${this.opacity * 0.12})`;
+    ctx.fill();
+  }
+}
+
+for (let i = 0; i < 30; i++) {
+  const e = new Ember();
+  e.y = Math.random() * canvas.height;
+  embers.push(e);
+}
+
+function animateEmbers() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  embers.forEach(e => { e.update(); e.draw(); });
+  requestAnimationFrame(animateEmbers);
+}
+animateEmbers();
+
+// ═══ PAGE SWITCHING ═══
+function showPage(page) {
+  document.querySelectorAll('.chronicle-section, .journal-section').forEach(el => el.classList.remove('active'));
+  document.getElementById('page-' + page).classList.add('active');
+  document.querySelectorAll('.nav-link[data-page]').forEach(el => {
+    el.classList.toggle('active', el.dataset.page === page);
+  });
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+// ═══ NPC JOURNAL TABS ═══
+function showJournal(npc) {
+  document.querySelectorAll('.npc-tab').forEach(el => {
+    el.classList.toggle('active', el.dataset.npc === npc);
+  });
+  document.querySelectorAll('.journal-feed').forEach(el => {
+    el.classList.toggle('active', el.id === 'journal-' + npc);
+  });
+}
+</script>
+
+</body>
+</html>

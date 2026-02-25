@@ -1,0 +1,1442 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>The Last Ember — meshMUD</title>
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=Crimson+Text:ital,wght@0,400;0,600;1,400&family=JetBrains+Mono:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --ember: #e8713a;
+    --ember-glow: #ff9d5c;
+    --ember-deep: #c44e1a;
+    --ash: #1a1714;
+    --charcoal: #0d0b09;
+    --smoke: #2a2520;
+    --smoke-light: #3d3630;
+    --parchment: #d4c4a8;
+    --parchment-dark: #b8a88c;
+    --parchment-faded: #a89878;
+    --bone: #c8b898;
+    --blood: #8b2020;
+    --blood-bright: #cc3333;
+    --gold: #c4a44a;
+    --gold-dim: #8a7a3a;
+    --frost: #7a9ab0;
+    --poison: #5a8a4a;
+    --text-bright: #e8dcc8;
+    --text-dim: #9a8e78;
+    --text-ghost: #5a5244;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--charcoal);
+    color: var(--text-bright);
+    font-family: 'Crimson Text', Georgia, serif;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* ═══ EMBER PARTICLE CANVAS ═══ */
+  #ember-canvas {
+    position: fixed;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    pointer-events: none;
+    z-index: 0;
+    opacity: 0.6;
+  }
+
+  /* ═══ TEXTURE OVERLAY ═══ */
+  body::before {
+    content: '';
+    position: fixed;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    background:
+      repeating-linear-gradient(
+        0deg,
+        transparent,
+        transparent 2px,
+        rgba(0,0,0,0.03) 2px,
+        rgba(0,0,0,0.03) 4px
+      );
+    pointer-events: none;
+    z-index: 1;
+  }
+
+  .page-wrap {
+    position: relative;
+    z-index: 2;
+    max-width: 1000px;
+    margin: 0 auto;
+    padding: 0 24px;
+  }
+
+  /* ═══ HEADER ═══ */
+  .tavern-header {
+    text-align: center;
+    padding: 60px 0 20px;
+    position: relative;
+  }
+
+  .tavern-sigil {
+    width: 48px;
+    height: 48px;
+    margin: 0 auto 20px;
+    position: relative;
+  }
+
+  .tavern-sigil::before {
+    content: '🜂';
+    font-size: 42px;
+    display: block;
+    filter: drop-shadow(0 0 12px rgba(232, 113, 58, 0.6));
+    animation: sigil-pulse 4s ease-in-out infinite;
+  }
+
+  @keyframes sigil-pulse {
+    0%, 100% { opacity: 0.7; filter: drop-shadow(0 0 8px rgba(232, 113, 58, 0.4)); }
+    50% { opacity: 1; filter: drop-shadow(0 0 16px rgba(232, 113, 58, 0.8)); }
+  }
+
+  .tavern-name {
+    font-family: 'Cinzel', serif;
+    font-size: clamp(28px, 5vw, 44px);
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    color: var(--parchment);
+    text-shadow:
+      0 0 40px rgba(232, 113, 58, 0.3),
+      0 2px 4px rgba(0,0,0,0.5);
+    margin-bottom: 6px;
+  }
+
+  .tavern-subtitle {
+    font-family: 'Cinzel', serif;
+    font-size: 13px;
+    letter-spacing: 0.3em;
+    color: var(--text-ghost);
+    text-transform: uppercase;
+  }
+
+  .divider {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin: 28px 0;
+    color: var(--text-ghost);
+    font-size: 11px;
+    letter-spacing: 0.2em;
+  }
+
+  .divider::before, .divider::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--smoke-light), transparent);
+  }
+
+  /* ═══ EPOCH STATUS BAR ═══ */
+  .epoch-bar {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    align-items: center;
+    gap: 20px;
+    padding: 16px 24px;
+    background: linear-gradient(135deg, rgba(26,23,20,0.9), rgba(42,37,32,0.7));
+    border: 1px solid var(--smoke-light);
+    border-radius: 2px;
+    margin-bottom: 32px;
+    position: relative;
+  }
+
+  .epoch-bar::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--ember), transparent);
+    opacity: 0.4;
+  }
+
+  .epoch-stat {
+    text-align: center;
+  }
+
+  .epoch-stat .label {
+    font-family: 'Cinzel', serif;
+    font-size: 9px;
+    letter-spacing: 0.25em;
+    color: var(--text-ghost);
+    text-transform: uppercase;
+    margin-bottom: 4px;
+  }
+
+  .epoch-stat .value {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 18px;
+    font-weight: 500;
+    color: var(--parchment);
+  }
+
+  .epoch-stat .value.ember { color: var(--ember-glow); }
+  .epoch-stat .value.gold { color: var(--gold); }
+
+  .epoch-center-divider {
+    width: 1px;
+    height: 36px;
+    background: var(--smoke-light);
+  }
+
+  .epoch-mode-badge {
+    display: inline-block;
+    padding: 3px 12px;
+    border: 1px solid var(--gold-dim);
+    font-family: 'Cinzel', serif;
+    font-size: 11px;
+    letter-spacing: 0.15em;
+    color: var(--gold);
+    margin-top: 4px;
+  }
+
+  .breach-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: var(--text-ghost);
+    margin-top: 4px;
+  }
+
+  .breach-status .dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: var(--text-ghost);
+  }
+
+  .breach-status .dot.open {
+    background: var(--ember);
+    box-shadow: 0 0 6px var(--ember);
+    animation: dot-pulse 2s ease-in-out infinite;
+  }
+
+  .breach-status .dot.sealed {
+    background: var(--smoke-light);
+  }
+
+  @keyframes dot-pulse {
+    0%, 100% { opacity: 0.6; }
+    50% { opacity: 1; }
+  }
+
+  /* ═══ MAIN GRID ═══ */
+  .board-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 24px;
+    margin-bottom: 32px;
+  }
+
+  @media (max-width: 700px) {
+    .board-grid { grid-template-columns: 1fr; }
+  }
+
+  .board-panel {
+    background: linear-gradient(180deg, rgba(26,23,20,0.95), rgba(13,11,9,0.95));
+    border: 1px solid var(--smoke-light);
+    border-radius: 2px;
+    overflow: hidden;
+    position: relative;
+  }
+
+  .board-panel::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--smoke-light), transparent);
+  }
+
+  .panel-header {
+    padding: 14px 18px 10px;
+    border-bottom: 1px solid rgba(90,82,68,0.2);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .panel-title {
+    font-family: 'Cinzel', serif;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.2em;
+    color: var(--parchment-faded);
+    text-transform: uppercase;
+  }
+
+  .panel-icon {
+    font-size: 14px;
+    opacity: 0.5;
+  }
+
+  .panel-body {
+    padding: 14px 18px 18px;
+  }
+
+  /* ═══ LEADERBOARD ═══ */
+  .leaderboard-entry {
+    display: grid;
+    grid-template-columns: 20px 1fr auto;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 0;
+    border-bottom: 1px solid rgba(90,82,68,0.1);
+  }
+
+  .leaderboard-entry:last-child { border-bottom: none; }
+
+  .lb-rank {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: var(--text-ghost);
+    text-align: center;
+  }
+
+  .lb-rank.first { color: var(--gold); }
+  .lb-rank.second { color: var(--parchment-dark); }
+  .lb-rank.third { color: var(--ember-deep); }
+
+  .lb-name {
+    font-family: 'Crimson Text', serif;
+    font-size: 15px;
+    color: var(--text-bright);
+  }
+
+  .lb-title {
+    font-size: 12px;
+    font-style: italic;
+    color: var(--text-ghost);
+  }
+
+  .lb-stats {
+    display: flex;
+    gap: 12px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    color: var(--text-dim);
+  }
+
+  .lb-stat-val { color: var(--parchment-dark); }
+
+  .class-badge {
+    display: inline-block;
+    padding: 1px 5px;
+    border-radius: 1px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9px;
+    letter-spacing: 0.05em;
+    margin-left: 6px;
+    vertical-align: middle;
+  }
+
+  .class-badge.fighter { background: rgba(139,32,32,0.3); color: var(--blood-bright); border: 1px solid rgba(139,32,32,0.4); }
+  .class-badge.caster { background: rgba(90,138,74,0.2); color: var(--poison); border: 1px solid rgba(90,138,74,0.3); }
+  .class-badge.rogue { background: rgba(122,154,176,0.2); color: var(--frost); border: 1px solid rgba(122,154,176,0.3); }
+
+  /* ═══ BROADCAST LOG ═══ */
+  .broadcast-log {
+    max-height: 320px;
+    overflow-y: auto;
+    scrollbar-width: thin;
+    scrollbar-color: var(--smoke-light) transparent;
+  }
+
+  .broadcast-entry {
+    padding: 7px 0;
+    border-bottom: 1px solid rgba(90,82,68,0.08);
+    display: flex;
+    gap: 8px;
+    align-items: flex-start;
+    animation: broadcast-in 0.4s ease-out;
+  }
+
+  @keyframes broadcast-in {
+    from { opacity: 0; transform: translateY(-4px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  .broadcast-entry:last-child { border-bottom: none; }
+
+  .bc-icon { font-size: 13px; flex-shrink: 0; margin-top: 1px; }
+
+  .bc-text {
+    font-size: 14px;
+    line-height: 1.4;
+    color: var(--text-dim);
+  }
+
+  .bc-text .bc-name { color: var(--parchment); font-weight: 600; }
+  .bc-text .bc-highlight { color: var(--ember-glow); }
+  .bc-text .bc-item { color: var(--gold); font-style: italic; }
+
+  .bc-time {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9px;
+    color: var(--text-ghost);
+    margin-left: auto;
+    flex-shrink: 0;
+    margin-top: 3px;
+  }
+
+  /* ═══ BOUNTY BOARD ═══ */
+  .bounty-card {
+    padding: 12px 0;
+    border-bottom: 1px solid rgba(90,82,68,0.15);
+  }
+
+  .bounty-card:last-child { border-bottom: none; }
+
+  .bounty-name {
+    font-family: 'Cinzel', serif;
+    font-size: 13px;
+    color: var(--parchment);
+    margin-bottom: 2px;
+  }
+
+  .bounty-location {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    color: var(--text-ghost);
+    margin-bottom: 8px;
+  }
+
+  .hp-bar-wrap {
+    height: 8px;
+    background: var(--smoke);
+    border-radius: 1px;
+    overflow: hidden;
+    position: relative;
+    margin-bottom: 4px;
+  }
+
+  .hp-bar-fill {
+    height: 100%;
+    border-radius: 1px;
+    transition: width 1s ease;
+    position: relative;
+  }
+
+  .hp-bar-fill.high { background: linear-gradient(90deg, var(--blood), var(--blood-bright)); }
+  .hp-bar-fill.mid { background: linear-gradient(90deg, var(--ember-deep), var(--ember)); }
+  .hp-bar-fill.low { background: linear-gradient(90deg, var(--gold-dim), var(--gold)); }
+
+  .hp-bar-fill::after {
+    content: '';
+    position: absolute;
+    right: 0; top: 0; bottom: 0;
+    width: 20px;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.15));
+  }
+
+  .bounty-hp-text {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    color: var(--text-dim);
+    display: flex;
+    justify-content: space-between;
+  }
+
+  .bounty-contributors {
+    font-size: 11px;
+    color: var(--text-ghost);
+    margin-top: 4px;
+    font-style: italic;
+  }
+
+  /* ═══ MODE STATUS (FULL WIDTH) ═══ */
+  .board-full {
+    grid-column: 1 / -1;
+  }
+
+  /* Hold the Line bars */
+  .floor-row {
+    display: grid;
+    grid-template-columns: 70px 1fr 50px;
+    align-items: center;
+    gap: 12px;
+    padding: 8px 0;
+  }
+
+  .floor-label {
+    font-family: 'Cinzel', serif;
+    font-size: 11px;
+    color: var(--text-dim);
+    letter-spacing: 0.1em;
+  }
+
+  .floor-bar-wrap {
+    height: 14px;
+    background: var(--smoke);
+    border-radius: 1px;
+    overflow: hidden;
+    position: relative;
+  }
+
+  .floor-bar-fill {
+    height: 100%;
+    transition: width 1.5s ease;
+    position: relative;
+  }
+
+  .floor-bar-fill.f1 { background: linear-gradient(90deg, #2a4a2a, #4a8a4a); }
+  .floor-bar-fill.f2 { background: linear-gradient(90deg, #4a3a1a, #8a7a3a); }
+  .floor-bar-fill.f3 { background: linear-gradient(90deg, #5a2a1a, #c44e1a); }
+  .floor-bar-fill.f4 { background: linear-gradient(90deg, #3a1a1a, #8b2020); }
+
+  .floor-checkpoint {
+    position: absolute;
+    top: 0; bottom: 0;
+    width: 2px;
+    background: var(--gold);
+    opacity: 0.6;
+  }
+
+  .floor-checkpoint.locked {
+    opacity: 1;
+    box-shadow: 0 0 4px var(--gold);
+  }
+
+  .floor-pct {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    color: var(--text-dim);
+    text-align: right;
+  }
+
+  /* Raid boss bar */
+  .raid-boss-section { text-align: center; padding: 8px 0; }
+
+  .raid-boss-name {
+    font-family: 'Cinzel', serif;
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--parchment);
+    margin-bottom: 4px;
+  }
+
+  .raid-boss-phase {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    color: var(--ember);
+    letter-spacing: 0.15em;
+    margin-bottom: 12px;
+  }
+
+  .raid-hp-bar-wrap {
+    height: 20px;
+    background: var(--smoke);
+    border-radius: 1px;
+    overflow: hidden;
+    position: relative;
+    margin-bottom: 6px;
+  }
+
+  .raid-hp-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--blood), var(--blood-bright), var(--ember-deep));
+    transition: width 2s ease;
+    position: relative;
+  }
+
+  .raid-hp-fill::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: repeating-linear-gradient(
+      90deg,
+      transparent,
+      transparent 30px,
+      rgba(0,0,0,0.15) 30px,
+      rgba(0,0,0,0.15) 31px
+    );
+  }
+
+  .raid-hp-markers {
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    pointer-events: none;
+  }
+
+  .raid-phase-marker {
+    position: absolute;
+    top: 0; bottom: 0;
+    width: 2px;
+    background: rgba(255,255,255,0.3);
+  }
+
+  .raid-hp-text {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    color: var(--text-dim);
+  }
+
+  .raid-contributors {
+    font-size: 12px;
+    color: var(--text-ghost);
+    margin-top: 8px;
+    font-style: italic;
+  }
+
+  /* R&E carrier tracker */
+  .re-tracker {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 12px 0;
+    justify-content: center;
+  }
+
+  .re-floor {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .re-floor-label {
+    font-family: 'Cinzel', serif;
+    font-size: 9px;
+    color: var(--text-ghost);
+    letter-spacing: 0.1em;
+  }
+
+  .re-rooms {
+    display: flex;
+    gap: 2px;
+  }
+
+  .re-room {
+    width: 12px; height: 12px;
+    border: 1px solid var(--smoke-light);
+    border-radius: 1px;
+    background: var(--smoke);
+    position: relative;
+    transition: all 0.3s ease;
+  }
+
+  .re-room.carrier {
+    background: var(--ember);
+    border-color: var(--ember-glow);
+    box-shadow: 0 0 6px var(--ember);
+  }
+
+  .re-room.pursuer {
+    background: var(--blood);
+    border-color: var(--blood-bright);
+    box-shadow: 0 0 6px var(--blood);
+  }
+
+  .re-room.cleared {
+    background: rgba(74,138,74,0.3);
+    border-color: rgba(74,138,74,0.5);
+  }
+
+  .re-room.warded {
+    background: rgba(90,138,74,0.2);
+    border-color: var(--poison);
+  }
+
+  .re-floor-sep {
+    width: 20px;
+    height: 1px;
+    background: var(--smoke-light);
+    margin: 0 4px;
+    margin-top: 14px;
+  }
+
+  .re-legend {
+    display: flex;
+    gap: 16px;
+    justify-content: center;
+    margin-top: 12px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9px;
+    color: var(--text-ghost);
+  }
+
+  .re-legend-item {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .re-legend-dot {
+    width: 8px; height: 8px;
+    border-radius: 1px;
+  }
+
+  .re-legend-dot.carrier-dot { background: var(--ember); }
+  .re-legend-dot.pursuer-dot { background: var(--blood); }
+  .re-legend-dot.cleared-dot { background: rgba(74,138,74,0.5); }
+
+  .re-status-text {
+    text-align: center;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: var(--ember-glow);
+    margin-top: 8px;
+  }
+
+  /* ═══ NPC STRIP ═══ */
+  .npc-strip {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 16px;
+    margin-bottom: 32px;
+  }
+
+  @media (max-width: 700px) {
+    .npc-strip { grid-template-columns: repeat(2, 1fr); }
+  }
+
+  .npc-card {
+    text-align: center;
+    padding: 16px 12px;
+    background: linear-gradient(180deg, rgba(42,37,32,0.4), rgba(13,11,9,0.6));
+    border: 1px solid rgba(90,82,68,0.15);
+    border-radius: 2px;
+    transition: border-color 0.3s ease;
+  }
+
+  .npc-card:hover {
+    border-color: rgba(232,113,58,0.3);
+  }
+
+  .npc-sigil {
+    font-size: 24px;
+    margin-bottom: 8px;
+    opacity: 0.7;
+  }
+
+  .npc-name {
+    font-family: 'Cinzel', serif;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--parchment);
+    letter-spacing: 0.1em;
+    margin-bottom: 2px;
+  }
+
+  .npc-role {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9px;
+    color: var(--text-ghost);
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+  }
+
+  /* ═══ FOOTER ═══ */
+  .tavern-footer {
+    text-align: center;
+    padding: 24px 0 48px;
+    border-top: 1px solid rgba(90,82,68,0.15);
+  }
+
+  .footer-mesh {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    color: var(--text-ghost);
+    letter-spacing: 0.15em;
+    margin-bottom: 16px;
+  }
+
+  .footer-mesh a {
+    color: var(--text-ghost);
+    text-decoration: none;
+    transition: color 0.2s;
+  }
+
+  .footer-mesh a:hover { color: var(--ember); }
+
+  .admin-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 20px;
+    background: transparent;
+    border: 1px solid var(--smoke-light);
+    color: var(--text-ghost);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.15em;
+    text-decoration: none;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    border-radius: 1px;
+  }
+
+  .admin-link:hover {
+    border-color: var(--ember-deep);
+    color: var(--ember);
+    background: rgba(232,113,58,0.05);
+  }
+
+  .admin-lock {
+    font-size: 11px;
+    opacity: 0.5;
+  }
+
+  /* ═══ ADMIN MODAL ═══ */
+  .modal-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.85);
+    z-index: 100;
+    justify-content: center;
+    align-items: center;
+    backdrop-filter: blur(4px);
+  }
+
+  .modal-overlay.active { display: flex; }
+
+  .modal-box {
+    background: var(--ash);
+    border: 1px solid var(--smoke-light);
+    padding: 36px 32px;
+    width: 340px;
+    text-align: center;
+    position: relative;
+    animation: modal-in 0.3s ease-out;
+  }
+
+  @keyframes modal-in {
+    from { opacity: 0; transform: translateY(12px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  .modal-box::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--ember), transparent);
+    opacity: 0.5;
+  }
+
+  .modal-title {
+    font-family: 'Cinzel', serif;
+    font-size: 14px;
+    letter-spacing: 0.2em;
+    color: var(--parchment-faded);
+    margin-bottom: 24px;
+  }
+
+  .modal-input {
+    width: 100%;
+    padding: 10px 14px;
+    background: var(--charcoal);
+    border: 1px solid var(--smoke-light);
+    color: var(--text-bright);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    outline: none;
+    margin-bottom: 12px;
+    border-radius: 1px;
+    transition: border-color 0.2s;
+  }
+
+  .modal-input:focus {
+    border-color: var(--ember-deep);
+  }
+
+  .modal-input::placeholder {
+    color: var(--text-ghost);
+  }
+
+  .modal-btn {
+    width: 100%;
+    padding: 10px;
+    background: linear-gradient(135deg, var(--ember-deep), var(--ember));
+    border: none;
+    color: var(--charcoal);
+    font-family: 'Cinzel', serif;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.15em;
+    cursor: pointer;
+    transition: all 0.2s;
+    border-radius: 1px;
+  }
+
+  .modal-btn:hover {
+    filter: brightness(1.1);
+    transform: translateY(-1px);
+  }
+
+  .modal-close {
+    position: absolute;
+    top: 12px; right: 14px;
+    background: none;
+    border: none;
+    color: var(--text-ghost);
+    font-size: 18px;
+    cursor: pointer;
+    transition: color 0.2s;
+  }
+
+  .modal-close:hover { color: var(--text-bright); }
+
+  .modal-error {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    color: var(--blood-bright);
+    margin-top: 8px;
+    min-height: 14px;
+  }
+
+  /* ═══ DAILY DIGEST ═══ */
+  .digest-bar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 18px;
+    background: rgba(196,164,74,0.05);
+    border: 1px solid rgba(196,164,74,0.15);
+    border-radius: 2px;
+    margin-bottom: 24px;
+    font-size: 13px;
+    color: var(--text-dim);
+  }
+
+  .digest-icon { font-size: 14px; }
+
+  .digest-text .digest-hl { color: var(--parchment); font-weight: 600; }
+
+  /* ═══ SECRETS COUNTER ═══ */
+  .secrets-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-top: 12px;
+    padding-top: 10px;
+    border-top: 1px solid rgba(90,82,68,0.1);
+  }
+
+  .secrets-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    color: var(--text-ghost);
+    letter-spacing: 0.1em;
+  }
+
+  .secrets-dots {
+    display: flex;
+    gap: 3px;
+  }
+
+  .secret-dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: var(--smoke);
+    border: 1px solid var(--smoke-light);
+    transition: all 0.3s;
+  }
+
+  .secret-dot.found {
+    background: var(--gold);
+    border-color: var(--gold);
+    box-shadow: 0 0 4px rgba(196,164,74,0.4);
+  }
+
+  /* scrollbar */
+  .broadcast-log::-webkit-scrollbar { width: 4px; }
+  .broadcast-log::-webkit-scrollbar-track { background: transparent; }
+  .broadcast-log::-webkit-scrollbar-thumb { background: var(--smoke-light); border-radius: 2px; }
+
+  /* ═══ LOADING STATES ═══ */
+  .skeleton {
+    background: linear-gradient(90deg, var(--smoke) 25%, var(--smoke-light) 50%, var(--smoke) 75%);
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite;
+    border-radius: 2px;
+  }
+
+  @keyframes shimmer {
+    0% { background-position: -200% 0; }
+    100% { background-position: 200% 0; }
+  }
+</style>
+</head>
+<body>
+
+<canvas id="ember-canvas"></canvas>
+
+<div class="page-wrap">
+
+  <!-- HEADER -->
+  <header class="tavern-header">
+    <div class="tavern-sigil"></div>
+    <h1 class="tavern-name">The Last Ember</h1>
+    <div class="tavern-subtitle">meshMUD</div>
+  </header>
+
+  <div class="divider">◆</div>
+
+  <!-- EPOCH STATUS BAR -->
+  <div class="epoch-bar">
+    <div class="epoch-stat">
+      <div class="label">Epoch Day</div>
+      <div class="value ember" id="epoch-day">17</div>
+      <div class="breach-status">
+        <span class="dot open" id="breach-dot"></span>
+        <span id="breach-text">BREACH OPEN</span>
+      </div>
+    </div>
+    <div class="epoch-center-divider"></div>
+    <div class="epoch-stat">
+      <div class="label">Active Mode</div>
+      <div class="epoch-mode-badge" id="epoch-mode">HOLD THE LINE</div>
+      <div style="margin-top:6px">
+        <span class="breach-status">
+          <span style="font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--text-ghost);" id="players-online">7 adventurers this epoch</span>
+        </span>
+      </div>
+    </div>
+    <div class="epoch-center-divider"></div>
+    <div class="epoch-stat">
+      <div class="label">Days Remain</div>
+      <div class="value gold" id="days-remain">13</div>
+      <div class="breach-status">
+        <span style="font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--text-ghost);" id="epoch-timer">ends Mar 10</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- DAILY DIGEST -->
+  <div class="digest-bar">
+    <span class="digest-icon">📜</span>
+    <span class="digest-text">
+      <span class="digest-hl">Day 16:</span> 3 battles fought, 1 death. The Bounty Troll fell at last.
+      <span class="digest-hl">Kael</span> leads at Lv8. Floor 2 holding at 71%.
+    </span>
+  </div>
+
+  <!-- MAIN GRID -->
+  <div class="board-grid">
+
+    <!-- LEADERBOARD -->
+    <div class="board-panel">
+      <div class="panel-header">
+        <span class="panel-title">Leaderboard</span>
+        <span class="panel-icon">⚔</span>
+      </div>
+      <div class="panel-body">
+        <div class="leaderboard-entry">
+          <span class="lb-rank first">1</span>
+          <div>
+            <span class="lb-name">Kael</span>
+            <span class="class-badge fighter">FGT</span>
+            <div class="lb-title">the Unyielding</div>
+          </div>
+          <div class="lb-stats">
+            <span>Lv<span class="lb-stat-val">8</span></span>
+            <span>K:<span class="lb-stat-val">47</span></span>
+            <span>S:<span class="lb-stat-val">9</span></span>
+          </div>
+        </div>
+        <div class="leaderboard-entry">
+          <span class="lb-rank second">2</span>
+          <div>
+            <span class="lb-name">Mira</span>
+            <span class="class-badge caster">CST</span>
+            <div class="lb-title">the Keen-Eyed</div>
+          </div>
+          <div class="lb-stats">
+            <span>Lv<span class="lb-stat-val">7</span></span>
+            <span>K:<span class="lb-stat-val">31</span></span>
+            <span>S:<span class="lb-stat-val">12</span></span>
+          </div>
+        </div>
+        <div class="leaderboard-entry">
+          <span class="lb-rank third">3</span>
+          <div>
+            <span class="lb-name">Torr</span>
+            <span class="class-badge rogue">ROG</span>
+            <div class="lb-title">the Quiet</div>
+          </div>
+          <div class="lb-stats">
+            <span>Lv<span class="lb-stat-val">6</span></span>
+            <span>K:<span class="lb-stat-val">28</span></span>
+            <span>S:<span class="lb-stat-val">7</span></span>
+          </div>
+        </div>
+        <div class="leaderboard-entry">
+          <span class="lb-rank">4</span>
+          <div>
+            <span class="lb-name">Sable</span>
+            <span class="class-badge fighter">FGT</span>
+          </div>
+          <div class="lb-stats">
+            <span>Lv<span class="lb-stat-val">5</span></span>
+            <span>K:<span class="lb-stat-val">19</span></span>
+            <span>S:<span class="lb-stat-val">4</span></span>
+          </div>
+        </div>
+        <div class="leaderboard-entry">
+          <span class="lb-rank">5</span>
+          <div>
+            <span class="lb-name">Dren</span>
+            <span class="class-badge caster">CST</span>
+          </div>
+          <div class="lb-stats">
+            <span>Lv<span class="lb-stat-val">4</span></span>
+            <span>K:<span class="lb-stat-val">12</span></span>
+            <span>S:<span class="lb-stat-val">3</span></span>
+          </div>
+        </div>
+
+        <!-- Secrets found (server-wide) -->
+        <div class="secrets-bar">
+          <span class="secrets-label">SECRETS FOUND: 11/20</span>
+          <div class="secrets-dots" id="secret-dots">
+            <!-- filled by JS -->
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- BROADCAST LOG -->
+    <div class="board-panel">
+      <div class="panel-header">
+        <span class="panel-title">Broadcasts</span>
+        <span class="panel-icon">📡</span>
+      </div>
+      <div class="panel-body">
+        <div class="broadcast-log" id="broadcast-log">
+          <div class="broadcast-entry">
+            <span class="bc-icon">🏰</span>
+            <span class="bc-text">Floor 2 <span class="bc-highlight">Checkpoint Alpha</span> established. The darkness cannot pass.</span>
+            <span class="bc-time">2h</span>
+          </div>
+          <div class="broadcast-entry">
+            <span class="bc-icon">🎯</span>
+            <span class="bc-text"><span class="bc-name">Kael</span> finished the <span class="bc-highlight">Bounty Troll</span>. Contributors: Kael, Mira, Torr.</span>
+            <span class="bc-time">4h</span>
+          </div>
+          <div class="broadcast-entry">
+            <span class="bc-icon">🔍</span>
+            <span class="bc-text"><span class="bc-name">Mira</span> activated the <span class="bc-item">Ancient Ward</span>! Dungeon regen halved for 24h.</span>
+            <span class="bc-time">5h</span>
+          </div>
+          <div class="broadcast-entry">
+            <span class="bc-icon">💀</span>
+            <span class="bc-text"><span class="bc-name">Sable</span> fell on Floor 2. 34g lost to the depths.</span>
+            <span class="bc-time">6h</span>
+          </div>
+          <div class="broadcast-entry">
+            <span class="bc-icon">⚡</span>
+            <span class="bc-text">The Breach stirs. Strange light pulses from between Floors 2 and 3.</span>
+            <span class="bc-time">8h</span>
+          </div>
+          <div class="broadcast-entry">
+            <span class="bc-icon">⚔</span>
+            <span class="bc-text"><span class="bc-name">Torr</span> reached <span class="bc-highlight">Level 6</span>. New ability unlocked: <span class="bc-item">Ambush</span>.</span>
+            <span class="bc-time">11h</span>
+          </div>
+          <div class="broadcast-entry">
+            <span class="bc-icon">⚠</span>
+            <span class="bc-text">Floor 2 lost 2 rooms. Frontline at Room 9. Next regen in ~6h.</span>
+            <span class="bc-time">14h</span>
+          </div>
+          <div class="broadcast-entry">
+            <span class="bc-icon">🔍</span>
+            <span class="bc-text"><span class="bc-name">Dren</span> found a hidden shortcut on Floor 1.</span>
+            <span class="bc-time">1d</span>
+          </div>
+          <div class="broadcast-entry">
+            <span class="bc-icon">🎯</span>
+            <span class="bc-text">New bounty: <span class="bc-highlight">Clear the Spider Nest</span> on Floor 2 (0/6 spiders).</span>
+            <span class="bc-time">1d</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- BOUNTY BOARD -->
+    <div class="board-panel">
+      <div class="panel-header">
+        <span class="panel-title">Bounty Board</span>
+        <span class="panel-icon">🎯</span>
+      </div>
+      <div class="panel-body">
+        <div class="bounty-card">
+          <div class="bounty-name">Ironhide Basilisk</div>
+          <div class="bounty-location">Floor 2 · Room 14 · The Sunken Gallery</div>
+          <div class="hp-bar-wrap">
+            <div class="hp-bar-fill mid" style="width:62%"></div>
+          </div>
+          <div class="bounty-hp-text">
+            <span>124 / 200 HP</span>
+            <span>regen 10hp/8h</span>
+          </div>
+          <div class="bounty-contributors">Kael, Mira, Sable contributing</div>
+        </div>
+        <div class="bounty-card">
+          <div class="bounty-name">Spider Nest</div>
+          <div class="bounty-location">Floor 2 · Eastern Branch</div>
+          <div class="hp-bar-wrap">
+            <div class="hp-bar-fill high" style="width:83%"></div>
+          </div>
+          <div class="bounty-hp-text">
+            <span>5 / 6 spiders remain</span>
+            <span>kill bounty</span>
+          </div>
+          <div class="bounty-contributors">Torr contributing</div>
+        </div>
+        <div class="bounty-card" style="opacity:0.4">
+          <div class="bounty-name" style="text-decoration:line-through">Bounty Troll</div>
+          <div class="bounty-location">Floor 1 · Room 8 · Completed</div>
+          <div class="hp-bar-wrap">
+            <div class="hp-bar-fill low" style="width:0%"></div>
+          </div>
+          <div class="bounty-hp-text">
+            <span>0 / 200 HP — SLAIN</span>
+            <span></span>
+          </div>
+          <div class="bounty-contributors">Finished by Kael · 4h ago</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- MODE STATUS: HOLD THE LINE -->
+    <div class="board-panel">
+      <div class="panel-header">
+        <span class="panel-title">Hold the Line</span>
+        <span class="panel-icon">🏰</span>
+      </div>
+      <div class="panel-body">
+        <div class="floor-row">
+          <span class="floor-label">Floor 1</span>
+          <div class="floor-bar-wrap">
+            <div class="floor-bar-fill f1" style="width:100%">
+              <div class="floor-checkpoint locked" style="left:30%"></div>
+              <div class="floor-checkpoint locked" style="left:60%"></div>
+              <div class="floor-checkpoint locked" style="left:95%"></div>
+            </div>
+          </div>
+          <span class="floor-pct">100%</span>
+        </div>
+        <div class="floor-row">
+          <span class="floor-label">Floor 2</span>
+          <div class="floor-bar-wrap">
+            <div class="floor-bar-fill f2" style="width:71%">
+              <div class="floor-checkpoint locked" style="left:42%"></div>
+              <div class="floor-checkpoint" style="left:85%"></div>
+            </div>
+          </div>
+          <span class="floor-pct">71%</span>
+        </div>
+        <div class="floor-row">
+          <span class="floor-label">Floor 3</span>
+          <div class="floor-bar-wrap">
+            <div class="floor-bar-fill f3" style="width:18%">
+              <div class="floor-checkpoint" style="left:33%"></div>
+            </div>
+          </div>
+          <span class="floor-pct">18%</span>
+        </div>
+        <div class="floor-row">
+          <span class="floor-label">Floor 4</span>
+          <div class="floor-bar-wrap">
+            <div class="floor-bar-fill f4" style="width:0%"></div>
+          </div>
+          <span class="floor-pct" style="color:var(--text-ghost)">locked</span>
+        </div>
+
+        <div style="text-align:center;margin-top:14px;">
+          <span style="font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--text-ghost);letter-spacing:0.1em;">
+            NEXT REGEN TICK: ~4H · FLOOR 2 LOSES 1 ROOM
+          </span>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- NPC STRIP -->
+  <div class="divider">THE REGULARS</div>
+
+  <div class="npc-strip">
+    <div class="npc-card">
+      <div class="npc-sigil">🍺</div>
+      <div class="npc-name">Grist</div>
+      <div class="npc-role">Barkeep</div>
+    </div>
+    <div class="npc-card">
+      <div class="npc-sigil">🩸</div>
+      <div class="npc-name">Maren</div>
+      <div class="npc-role">Healer</div>
+    </div>
+    <div class="npc-card">
+      <div class="npc-sigil">⚖</div>
+      <div class="npc-name">Torval</div>
+      <div class="npc-role">Merchant</div>
+    </div>
+    <div class="npc-card">
+      <div class="npc-sigil">👁</div>
+      <div class="npc-name">Whisper</div>
+      <div class="npc-role">Sage</div>
+    </div>
+  </div>
+
+  <!-- FOOTER -->
+  <div class="tavern-footer">
+    <div class="footer-mesh">
+      meshMUD · LoRa text adventure · <a href="#">meshtastic</a>
+    </div>
+    <a class="admin-link" id="admin-btn">
+      <span class="admin-lock">🔒</span>
+      Operator Console
+    </a>
+  </div>
+
+</div>
+
+<!-- ADMIN LOGIN MODAL -->
+<div class="modal-overlay" id="admin-modal">
+  <div class="modal-box">
+    <button class="modal-close" id="modal-close">×</button>
+    <div class="modal-title">OPERATOR CONSOLE</div>
+    <input type="text" class="modal-input" placeholder="callsign" id="admin-user" autocomplete="off" spellcheck="false">
+    <input type="password" class="modal-input" placeholder="passphrase" id="admin-pass">
+    <button class="modal-btn" id="admin-submit">AUTHENTICATE</button>
+    <div class="modal-error" id="admin-error"></div>
+  </div>
+</div>
+
+<script>
+// ═══ EMBER PARTICLES ═══
+const canvas = document.getElementById('ember-canvas');
+const ctx = canvas.getContext('2d');
+let embers = [];
+
+function resize() {
+  canvas.width = window.innerWidth;
+  canvas.height = window.innerHeight;
+}
+resize();
+window.addEventListener('resize', resize);
+
+class Ember {
+  constructor() {
+    this.reset();
+  }
+  reset() {
+    this.x = Math.random() * canvas.width;
+    this.y = canvas.height + 10;
+    this.size = Math.random() * 2.5 + 0.5;
+    this.speedY = -(Math.random() * 0.4 + 0.1);
+    this.speedX = (Math.random() - 0.5) * 0.3;
+    this.opacity = Math.random() * 0.5 + 0.2;
+    this.decay = Math.random() * 0.001 + 0.0005;
+    this.wobble = Math.random() * Math.PI * 2;
+    this.wobbleSpeed = Math.random() * 0.02 + 0.005;
+    // Color between deep orange and pale gold
+    const t = Math.random();
+    this.r = Math.floor(200 + t * 55);
+    this.g = Math.floor(80 + t * 80);
+    this.b = Math.floor(20 + t * 30);
+  }
+  update() {
+    this.wobble += this.wobbleSpeed;
+    this.x += this.speedX + Math.sin(this.wobble) * 0.15;
+    this.y += this.speedY;
+    this.opacity -= this.decay;
+    if (this.opacity <= 0 || this.y < -20) this.reset();
+  }
+  draw() {
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(${this.r},${this.g},${this.b},${this.opacity})`;
+    ctx.fill();
+    // glow
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.size * 3, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(${this.r},${this.g},${this.b},${this.opacity * 0.15})`;
+    ctx.fill();
+  }
+}
+
+for (let i = 0; i < 40; i++) {
+  const e = new Ember();
+  e.y = Math.random() * canvas.height;
+  embers.push(e);
+}
+
+function animateEmbers() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  embers.forEach(e => { e.update(); e.draw(); });
+  requestAnimationFrame(animateEmbers);
+}
+animateEmbers();
+
+// ═══ SECRET DOTS ═══
+const secretContainer = document.getElementById('secret-dots');
+const found = 11;
+for (let i = 0; i < 20; i++) {
+  const dot = document.createElement('div');
+  dot.className = 'secret-dot' + (i < found ? ' found' : '');
+  secretContainer.appendChild(dot);
+}
+
+// ═══ ADMIN MODAL ═══
+const adminBtn = document.getElementById('admin-btn');
+const modal = document.getElementById('admin-modal');
+const modalClose = document.getElementById('modal-close');
+const adminSubmit = document.getElementById('admin-submit');
+const adminError = document.getElementById('admin-error');
+
+adminBtn.addEventListener('click', () => {
+  modal.classList.add('active');
+  document.getElementById('admin-user').focus();
+});
+
+modalClose.addEventListener('click', () => modal.classList.remove('active'));
+modal.addEventListener('click', (e) => {
+  if (e.target === modal) modal.classList.remove('active');
+});
+
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') modal.classList.remove('active');
+});
+
+adminSubmit.addEventListener('click', () => {
+  const user = document.getElementById('admin-user').value;
+  const pass = document.getElementById('admin-pass').value;
+  if (!user || !pass) {
+    adminError.textContent = 'Credentials required.';
+    return;
+  }
+  // In production this would POST to /api/auth or redirect to Authentik
+  adminError.textContent = '';
+  adminSubmit.textContent = 'AUTHENTICATING...';
+  setTimeout(() => {
+    // Simulated redirect — replace with actual auth endpoint
+    window.location.href = '/admin';
+  }, 800);
+});
+
+// Enter key submits
+document.getElementById('admin-pass').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') adminSubmit.click();
+});
+</script>
+
+</body>
+</html>

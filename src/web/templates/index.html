@@ -1,0 +1,255 @@
+{% extends "base.html" %}
+
+{% block title %}The Last Ember{% endblock %}
+
+{% block nav %}
+  <!-- Dashboard uses tavern header instead of nav -->
+  <header class="tavern-header">
+    <div class="tavern-sigil"></div>
+    <h1 class="tavern-name">The Last Ember</h1>
+    <div class="tavern-subtitle">meshMUD</div>
+  </header>
+  <div class="divider">◆</div>
+{% endblock %}
+
+{% block content %}
+  {# ═══ EPOCH STATUS BAR ═══ #}
+  <div class="epoch-bar">
+    <div class="epoch-stat">
+      <div class="label">Epoch Day</div>
+      <div class="value ember" id="epoch-day">{{ epoch.day_number if epoch else '—' }}</div>
+      <div class="breach-status">
+        {% if breach and breach.breach_open %}
+        <span class="dot open" id="breach-dot"></span>
+        <span id="breach-text">BREACH OPEN</span>
+        {% else %}
+        <span class="dot sealed" id="breach-dot"></span>
+        <span id="breach-text">BREACH SEALED</span>
+        {% endif %}
+      </div>
+    </div>
+    <div class="epoch-center-divider"></div>
+    <div class="epoch-stat">
+      <div class="label">Active Mode</div>
+      {% set mode_labels = {
+        'hold_the_line': 'HOLD THE LINE',
+        'raid_boss': 'RAID BOSS',
+        'retrieve_and_escape': 'RETRIEVE & ESCAPE'
+      } %}
+      <div class="epoch-mode-badge" id="epoch-mode">{{ mode_labels.get(mode, 'PENDING') if mode else 'PENDING' }}</div>
+      <div class="epoch-info-line">
+        <span id="players-online">{{ player_count }} adventurer{{ 's' if player_count != 1 else '' }} this epoch</span>
+      </div>
+    </div>
+    <div class="epoch-center-divider"></div>
+    <div class="epoch-stat">
+      <div class="label">Days Remain</div>
+      <div class="value gold" id="days-remain">{{ 30 - epoch.day_number if epoch else '—' }}</div>
+    </div>
+  </div>
+
+  {# ═══ MAIN GRID ═══ #}
+  <div class="board-grid">
+
+    {# ── LEADERBOARD ── #}
+    <div class="board-panel">
+      <div class="panel-header">
+        <span class="panel-title">Leaderboard</span>
+        <span class="panel-icon">⚔</span>
+      </div>
+      <div class="panel-body">
+        {% for player in leaderboard %}
+        <div class="leaderboard-entry">
+          <span class="lb-rank{% if loop.index == 1 %} first{% elif loop.index == 2 %} second{% elif loop.index == 3 %} third{% endif %}">{{ loop.index }}</span>
+          <div>
+            <span class="lb-name">{{ player.name }}</span>
+            {% set class_abbr = {'warrior': 'WAR', 'guardian': 'GRD', 'scout': 'SCT'} %}
+            <span class="class-badge {{ player.class }}">{{ class_abbr.get(player.class, player.class[:3]|upper) }}</span>
+            {% if player.handle %}
+            <div class="lb-title">{{ player.handle }}</div>
+            {% endif %}
+          </div>
+          <div class="lb-stats">
+            <span>Lv<span class="lb-stat-val">{{ player.level }}</span></span>
+            <span>K:<span class="lb-stat-val">{{ player.lifetime_kills }}</span></span>
+            <span>S:<span class="lb-stat-val">{{ player.secrets_found }}</span></span>
+          </div>
+        </div>
+        {% else %}
+        <div style="color:var(--text-ghost);font-style:italic;font-size:13px;">No adventurers yet.</div>
+        {% endfor %}
+
+        {# Secrets counter #}
+        <div class="secrets-bar">
+          <span class="secrets-label" id="secrets-label">SECRETS FOUND: {{ secrets.found }}/{{ secrets.total }}</span>
+          <div class="secrets-dots" id="secret-dots" data-found="{{ secrets.found }}" data-total="{{ secrets.total }}">
+          </div>
+        </div>
+      </div>
+    </div>
+
+    {# ── BROADCAST LOG ── #}
+    <div class="board-panel">
+      <div class="panel-header">
+        <span class="panel-title">Broadcasts</span>
+        <span class="panel-icon">📡</span>
+      </div>
+      <div class="panel-body">
+        <div class="broadcast-log" id="broadcast-log">
+          {% for bc in broadcasts %}
+          <div class="broadcast-entry">
+            <span class="bc-icon">{{ '📡' if bc.tier == 1 else '📢' }}</span>
+            <span class="bc-text">{{ bc.message }}</span>
+            <span class="bc-time">{{ bc.created_at }}</span>
+          </div>
+          {% else %}
+          <div style="color:var(--text-ghost);font-style:italic;font-size:13px;">No broadcasts yet.</div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+
+    {# ── BOUNTY BOARD ── #}
+    <div class="board-panel">
+      <div class="panel-header">
+        <span class="panel-title">Bounty Board</span>
+        <span class="panel-icon">🎯</span>
+      </div>
+      <div class="panel-body">
+        {% for bounty in bounties %}
+        <div class="bounty-card{% if bounty.completed %} completed{% endif %}">
+          <div class="bounty-name">{{ bounty.name }}</div>
+          <div class="bounty-location">{{ bounty.location if bounty.location else '' }}{% if bounty.completed %} · Completed{% endif %}</div>
+          {% set hp_pct = (bounty.current_hp / bounty.max_hp * 100)|round|int if bounty.max_hp else 0 %}
+          <div class="hp-bar-wrap">
+            <div class="hp-bar-fill{% if hp_pct > 66 %} high{% elif hp_pct > 33 %} mid{% else %} low{% endif %}" style="width:{{ hp_pct }}%"></div>
+          </div>
+          <div class="bounty-hp-text">
+            <span>{{ bounty.current_hp }} / {{ bounty.max_hp }} HP{% if bounty.completed %} — SLAIN{% endif %}</span>
+            <span>{% if bounty.regen_amount and not bounty.completed %}regen {{ bounty.regen_amount }}hp/{{ bounty.regen_interval_hours }}h{% endif %}</span>
+          </div>
+          {% if bounty.contributors %}
+          <div class="bounty-contributors">
+            {% if bounty.completed %}Finished by {% else %}Contributing: {% endif %}
+            {{ bounty.contributors|map(attribute='name')|join(', ') }}
+          </div>
+          {% endif %}
+        </div>
+        {% else %}
+        <div style="color:var(--text-ghost);font-style:italic;font-size:13px;">No active bounties.</div>
+        {% endfor %}
+      </div>
+    </div>
+
+    {# ── MODE STATUS ── #}
+    <div class="board-panel">
+      <div class="panel-header">
+        <span class="panel-title">{{ mode_labels.get(mode, 'Endgame') if mode else 'Endgame' }}</span>
+        <span class="panel-icon">{% if mode == 'hold_the_line' %}🏰{% elif mode == 'raid_boss' %}💀{% elif mode == 'retrieve_and_escape' %}🏃{% else %}⏳{% endif %}</span>
+      </div>
+      <div class="panel-body">
+        {% if mode == 'hold_the_line' and mode_status %}
+          {# ── HOLD THE LINE FLOORS ── #}
+          {% for floor_num in [1, 2, 3, 4] %}
+          {% set floor = mode_status.get(floor_num, {}) %}
+          <div class="floor-row">
+            <span class="floor-label">Floor {{ floor_num }}</span>
+            <div class="floor-bar-wrap">
+              <div class="floor-bar-fill f{{ floor_num }}" style="width:{{ floor.pct|default(0) }}%">
+                {% for cp in floor.get('checkpoints', []) %}
+                <div class="floor-checkpoint{% if cp.established %} locked{% endif %}" style="left:{{ cp.position }}%"></div>
+                {% endfor %}
+              </div>
+            </div>
+            <span class="floor-pct"{% if floor.pct|default(0) == 0 and floor_num > 1 %} style="color:var(--text-ghost)"{% endif %}>
+              {% if floor.pct|default(0) == 0 and floor_num > 1 %}locked{% else %}{{ floor.pct|default(0) }}%{% endif %}
+            </span>
+          </div>
+          {% endfor %}
+
+        {% elif mode == 'raid_boss' and mode_status %}
+          {# ── RAID BOSS ── #}
+          <div class="raid-boss-section">
+            <div class="raid-boss-name">{{ mode_status.name }}</div>
+            <div class="raid-boss-phase">PHASE {{ mode_status.current_phase }} · {{ mode_status.mechanics_list|join(' · ')|upper if mode_status.mechanics_list else '' }}</div>
+            {% set boss_pct = (mode_status.current_hp / mode_status.max_hp * 100)|round|int if mode_status.max_hp else 0 %}
+            <div class="raid-hp-bar-wrap">
+              <div class="raid-hp-fill" style="width:{{ boss_pct }}%"></div>
+            </div>
+            <div class="raid-hp-text">{{ mode_status.current_hp }} / {{ mode_status.max_hp }} HP</div>
+            {% if mode_status.contributors %}
+            <div class="raid-contributors">
+              Top damage: {{ mode_status.contributors[:5]|map(attribute='name')|join(', ') }}
+            </div>
+            {% endif %}
+          </div>
+
+        {% elif mode == 'retrieve_and_escape' and mode_status %}
+          {# ── RETRIEVE & ESCAPE ── #}
+          <div class="re-status-text">
+            {% if mode_status.carrier_name %}
+              {{ mode_status.carrier_name }} carries the objective — Floor {{ mode_status.carrier_floor|default('?') }}
+            {% elif mode_status.objective_claimed %}
+              Objective claimed — carrier advancing
+            {% else %}
+              Objective awaits on the lowest floor
+            {% endif %}
+          </div>
+          {% if mode_status.participants %}
+          <div class="raid-contributors" style="text-align:center;margin-top:8px;">
+            Participants: {{ mode_status.participants|map(attribute='name')|join(', ') }}
+          </div>
+          {% endif %}
+
+        {% else %}
+          <div style="color:var(--text-ghost);font-style:italic;font-size:13px;text-align:center;">
+            {% if not mode %}Endgame mode not yet selected.{% else %}Awaiting mode data.{% endif %}
+          </div>
+        {% endif %}
+      </div>
+    </div>
+
+  </div>
+
+  {# ═══ NPC STRIP ═══ #}
+  <div class="divider">THE REGULARS</div>
+
+  <div class="npc-strip">
+    <div class="npc-card">
+      <div class="npc-sigil">🍺</div>
+      <div class="npc-name">Grist</div>
+      <div class="npc-role">Barkeep</div>
+    </div>
+    <div class="npc-card">
+      <div class="npc-sigil">🩸</div>
+      <div class="npc-name">Maren</div>
+      <div class="npc-role">Healer</div>
+    </div>
+    <div class="npc-card">
+      <div class="npc-sigil">⚖</div>
+      <div class="npc-name">Torval</div>
+      <div class="npc-role">Merchant</div>
+    </div>
+    <div class="npc-card">
+      <div class="npc-sigil">👁</div>
+      <div class="npc-name">Whisper</div>
+      <div class="npc-role">Sage</div>
+    </div>
+  </div>
+{% endblock %}
+
+{% block footer %}
+  <div class="tavern-footer">
+    <div class="footer-mesh">
+      meshMUD · LoRa text adventure · <a href="{{ url_for('public.howto') }}">how to play</a>
+    </div>
+    <a class="admin-link" href="{{ url_for('admin.login') }}">
+      <span class="admin-lock">🔒</span>
+      Operator Console
+    </a>
+  </div>
+{% endblock %}
+
+{% block ember_init %}
+  if (window.initEmbers) initEmbers(40, 0.6);
+{% endblock %}

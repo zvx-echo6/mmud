@@ -1,0 +1,72 @@
+{% extends "admin/base.html" %}
+
+{% block title %}Epoch Controls{% endblock %}
+
+{% block admin_content %}
+  <div class="page-header" style="padding-top:20px;">
+    <h1 class="page-title" style="font-size:22px;">Epoch Controls</h1>
+  </div>
+
+  {# ═══ CURRENT STATUS ═══ #}
+  <div class="admin-stat-grid">
+    <div class="admin-stat-card">
+      <div class="admin-stat-label">Epoch</div>
+      <div class="admin-stat-value">{{ epoch.epoch_number if epoch else '—' }}</div>
+    </div>
+    <div class="admin-stat-card">
+      <div class="admin-stat-label">Day</div>
+      <div class="admin-stat-value ember">{{ epoch.day_number if epoch else '—' }}</div>
+    </div>
+    <div class="admin-stat-card">
+      <div class="admin-stat-label">Breach</div>
+      <div class="admin-stat-value">
+        {% if breach and breach.breach_open %}
+          <span style="color:var(--ember-glow);">OPEN</span>
+        {% else %}
+          <span style="color:var(--text-ghost);">SEALED</span>
+        {% endif %}
+      </div>
+    </div>
+    <div class="admin-stat-card">
+      <div class="admin-stat-label">Mode</div>
+      {% set mode_labels = {
+        'hold_the_line': 'HTL',
+        'raid_boss': 'RAID',
+        'retrieve_and_escape': 'R&E'
+      } %}
+      <div class="admin-stat-value">{{ mode_labels.get(epoch.endgame_mode, '—') if epoch else '—' }}</div>
+    </div>
+  </div>
+
+  {# ═══ ACTIONS ═══ #}
+  <div class="divider">ACTIONS</div>
+
+  <div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:32px;">
+    <form method="post" action="{{ url_for('admin.advance_day') }}">
+      <button type="submit" class="admin-btn" onclick="return confirm('Advance epoch to the next day?')">Advance Day</button>
+    </form>
+
+    {% if not (breach and breach.breach_open) %}
+    <form method="post" action="{{ url_for('admin.force_breach') }}">
+      <button type="submit" class="admin-btn danger" onclick="return confirm('Force open the Breach?')">Force Breach</button>
+    </form>
+    {% endif %}
+  </div>
+
+  {# ═══ MANUAL BROADCAST ═══ #}
+  <div class="divider">SEND BROADCAST</div>
+
+  <form method="post" action="{{ url_for('admin.broadcast') }}" style="max-width:500px;">
+    <input type="text" name="message" class="admin-input" placeholder="Broadcast message (150 char max)" maxlength="150" autocomplete="off">
+    <div style="display:flex;gap:12px;align-items:center;">
+      <label style="font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--text-ghost);">
+        Tier:
+        <select name="tier" class="admin-input" style="width:80px;display:inline-block;margin-bottom:0;appearance:auto;">
+          <option value="1">1 (DM)</option>
+          <option value="2">2 (Mesh)</option>
+        </select>
+      </label>
+      <button type="submit" class="admin-btn">Broadcast</button>
+    </div>
+  </form>
+{% endblock %}

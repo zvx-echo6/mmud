@@ -1,0 +1,57 @@
+{% extends "admin/base.html" %}
+
+{% block title %}Player Management{% endblock %}
+
+{% block admin_content %}
+  <div class="page-header" style="padding-top:20px;">
+    <h1 class="page-title" style="font-size:22px;">Players</h1>
+    <p class="page-subtitle">{{ players|length }} adventurer{{ 's' if players|length != 1 else '' }} this epoch.</p>
+  </div>
+
+  <table class="admin-table">
+    <thead>
+      <tr>
+        <th>Name</th>
+        <th>Class</th>
+        <th>Level</th>
+        <th>Floor</th>
+        <th>State</th>
+        <th>HP</th>
+        <th>Mesh ID</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for p in players %}
+      <tr{% if p.is_banned %} style="opacity:0.4;"{% endif %}>
+        <td style="color:var(--parchment);">
+          {{ p.name }}
+          {% if p.is_banned %}<span style="color:var(--blood-bright);font-size:9px;"> BANNED</span>{% endif %}
+        </td>
+        <td>{{ p.class }}</td>
+        <td>{{ p.level }}</td>
+        <td>{{ p.floor }}</td>
+        <td>{{ p.state }}</td>
+        <td>{{ p.hp }}/{{ p.hp_max }}</td>
+        <td>{{ p.mesh_id or '—' }}</td>
+        <td style="white-space:nowrap;">
+          {% if not p.is_banned %}
+          <form method="post" action="{{ url_for('admin.kick_player', player_id=p.id) }}" style="display:inline;">
+            <button type="submit" class="admin-btn secondary" style="font-size:9px;padding:3px 8px;" onclick="return confirm('Kick {{ p.name }} to town?')">Kick</button>
+          </form>
+          <form method="post" action="{{ url_for('admin.ban_player', player_id=p.id) }}" style="display:inline;">
+            <input type="hidden" name="reason" value="Admin action">
+            <button type="submit" class="admin-btn danger" style="font-size:9px;padding:3px 8px;" onclick="return confirm('Ban {{ p.name }}?')">Ban</button>
+          </form>
+          {% endif %}
+          <form method="post" action="{{ url_for('admin.reset_player', player_id=p.id) }}" style="display:inline;">
+            <button type="submit" class="admin-btn secondary" style="font-size:9px;padding:3px 8px;" onclick="return confirm('Reset {{ p.name }} to level 1?')">Reset</button>
+          </form>
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="8" style="color:var(--text-ghost);font-style:italic;">No players yet.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+{% endblock %}
