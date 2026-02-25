@@ -19,7 +19,9 @@ MMUD is a text-based multiplayer dungeon crawler designed for Meshtastic LoRa me
 - **Python 3.11+** — primary language
 - **SQLite** — database (single file, no server, fits the deployment model)
 - **Meshtastic Python API** — mesh radio interface for message send/receive
-- **No web framework** — this is a message-processing daemon, not a web app
+- **Flask 3.x** — web dashboard (Last Ember), runs in-process as daemon thread
+- **Jinja2** — server-side templates, no React, no build step
+- **Docker** — containerized deployment (python:3.11-slim)
 
 ## Architecture
 
@@ -53,9 +55,30 @@ src/
     meshtastic.py # Meshtastic API wrapper, send/receive, DM vs broadcast
     parser.py     # Command parsing from 150-char messages
     formatter.py  # Response formatting under 150-char limit
+    router.py     # 6-node message routing (EMBR, DCRG, NPC nodes)
+    broadcast_drain.py  # DCRG broadcast delivery
+    message_logger.py   # Non-blocking message log writes
+  web/            # Last Ember — spectator dashboard & admin panel
+    __init__.py   # Flask app factory (create_app)
+    config.py     # Web-specific settings (host, port, secret, polling intervals)
+    routes/
+      public.py   # / /chronicle /howto
+      api.py      # /api/status /api/broadcasts /api/bounties /api/mode /api/leaderboard
+      admin.py    # /admin/* (session auth)
+    services/
+      gamedb.py       # SQLite queries (read-only + admin RW via WAL)
+      dashboard.py    # Dashboard data aggregation
+      chronicle.py    # Epoch history + journal queries
+      admin_service.py  # Admin write operations
+    templates/        # Jinja2 templates (dark tavern aesthetic)
+    static/
+      css/ember.css   # Full design system
+      js/embers.js    # Canvas particle animation
+      js/app.js       # AJAX polling + client logic
+    prototypes/       # Original HTML design references
   db/
     schema.sql    # Database schema
-    migrations/   # Schema versioning
+    migrations/   # Schema versioning (004 = web tables)
 tests/            # Mirror src/ structure
 scripts/
   epoch_generate.py  # Run epoch generation pipeline
@@ -63,6 +86,8 @@ scripts/
 docs/
   planned.md         # Complete design document — the source of truth
 config.py            # All game constants (see below)
+Dockerfile           # python:3.11-slim, /data volume
+docker-compose.yml   # Container orchestration
 ```
 
 ## Key Design Patterns
@@ -140,6 +165,40 @@ All tunable game values live in `config.py`. See that file for the complete list
 2. Four mini-event types
 3. Breach secret integration
 4. Day 15 trigger and barkeep foreshadowing
+
+## Web Dashboard (Last Ember)
+
+The Last Ember is a Flask web dashboard consolidated into `src/web/`. It runs in-process with the mesh daemon as a background daemon thread. It reads from the same SQLite database (WAL mode for concurrent access).
+
+### Key Constraints
+- **Read-only** access to game DB on all public routes (uses `file:{path}?mode=ro` URI)
+- **Read-write** only for admin operations (node assignment, bans, broadcast)
+- **150-character** message limit enforced on admin broadcast
+- **No game logic** — display and admin only, never processes game turns
+- **use_reloader=False** — critical to prevent forking that would break mesh connections
+
+### Design System
+- Dark tavern aesthetic — `static/css/ember.css` (1500+ lines)
+- Fonts: Cinzel (headings), Crimson Text (body), JetBrains Mono (data)
+- Canvas particle animation (ember sparks) — `static/js/embers.js`
+- AJAX polling: status every 30s, broadcasts every 15s — `static/js/app.js`
+- Prototypes in `prototypes/` are the design truth
+
+### CLI Integration
+- `--web-port PORT` — override web dashboard port (default: 5000)
+- `--no-web` — disable the web dashboard entirely
+- `MMUD_WEB_PORT`, `MMUD_WEB_HOST`, `MMUD_WEB_SECRET`, `MMUD_ADMIN_PASSWORD` env vars
+
+### Routes
+- **Public:** `/` (dashboard), `/chronicle` (epoch history), `/howto` (guide)
+- **API:** `/api/status`, `/api/broadcasts`, `/api/bounties`, `/api/mode`, `/api/leaderboard`
+- **Admin:** `/admin/*` (session auth, password from `MMUD_ADMIN_PASSWORD`)
+
+### Web Tables (migration 004)
+- `node_config` — Meshtastic sim node assignments
+- `admin_log` — Admin action audit trail
+- `banned_players` — Ban list with reasons
+- `npc_journals` — Journal entries for Grist, Maren, Torval, Whisper
 
 ## Testing Strategy
 
