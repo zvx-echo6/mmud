@@ -836,7 +836,7 @@ Runtime uses pure template substitution and database lookup. Zero LLM latency du
 
 ### Decision Rule
 
-Use LLMs for content that can be validated offline. Use deterministic templates for anything that must be correct in real-time.
+Use LLMs for content that can be validated offline. Use deterministic templates for anything that must be correct in real-time. **One exception:** NPC conversations in The Last Ember use live LLM calls — the 150-char response constraint, personality cards, and session-only memory make this safe, cheap, and in-character. See The Last Ember section for details.
 
 ### Narrative Skin Generation
 
@@ -918,6 +918,85 @@ Sound > smell > temperature > light > taste. Sound is most evocative in text.
 
 ---
 
+## The Last Ember — Town Hub
+
+The Last Ember is the one room that never changes. Epochs wipe the dungeon, reskin the narrative, randomize everything — but players always wake up in the same bar, with the same people, who remember them. The lanterns don't burn oil — they just burn. Nobody lights them. Nobody replaces them. The dungeon reshapes itself every 30 days but the Last Ember sits at the mouth of it like a tooth that won't come loose.
+
+The Last Ember is the constant across every epoch, every server, every wipe. It is the frame for the entire game.
+
+### Grist — The Barkeep
+
+Has never left the bar. Not once. Players who've been around for dozens of epochs start to wonder if he *can*. He knows everything that happens in the dungeon — not because he goes there, but because everyone who comes back tells him, and he never forgets. He speaks in short, deliberate sentences. Never wastes a word. He pours drinks that are always exactly what you needed, even if you didn't order.
+
+His recap isn't a service — it's a compulsion. He *has* to tell you what happened. Like the information would burn him if he held it.
+
+He's the bard token system. He trades in stories, not gold. Bring him something interesting — a secret, a discovery, something nobody else knows — and he gives you something back. Information, a temporary edge, a nudge in the right direction. He doesn't trade because he's kind. He trades because he *collects*.
+
+**Mechanical role:** Recap (free), bard token exchange, hints, epoch vote ballot, bounty board.
+
+### Maren — The Healer
+
+Used to be an adventurer. Went deeper than anyone. Came back wrong — not injured, just *done*. She won't say what she saw on the lowest floor. She heals with her hands, not magic, and it hurts. She's efficient, not gentle. She charges gold because she says free healing breeds carelessness, and she's tired of patching people up who didn't respect the dungeon.
+
+She's the only NPC who will occasionally refuse to talk to you if you died doing something stupid — but she still heals you.
+
+She has a scar across her left palm that she got "the last time." She won't say the last time of what.
+
+**Mechanical role:** HP restoration for gold.
+
+### Torval — The Merchant
+
+Doesn't go into the dungeon either, but somehow his inventory matches what's down there each epoch. Nobody asks how. He appraises items by weight and sound — taps gear on the counter, listens, names a price. He's cheerful in a way that feels slightly wrong given where he operates. He tells bad jokes. He calls everyone "friend" and means it exactly zero percent. He'd sell you a cursed sword and sleep fine.
+
+But his prices are fair and his stock is real, which is more than you can say for most people in a town built around a hole full of monsters.
+
+He keeps a ledger that goes back further than the bar. The pages at the front are in a language nobody can read.
+
+**Mechanical role:** Buy, sell, item appraisal.
+
+### Whisper — The Sage
+
+Nobody knows if Whisper is her name or a description of how she talks. She sits in the corner of the Last Ember, always the same corner, and she knows things about the dungeon that change each epoch — lore, history, connections between rooms, what the symbols mean. She speaks in fragments and riddles not because she's trying to be mysterious but because that's how the information comes to her. She describes it like listening to a conversation through a wall.
+
+Her clues are genuine but filtered through whatever broke her ability to just *say things plainly*. Players who pay attention to her exact phrasing find secrets faster. Players who dismiss her as flavor text miss half the game.
+
+She has been the same age for as long as anyone can remember.
+
+**Mechanical role:** Lore hints, secret clues, puzzle guidance (via bard tokens).
+
+### NPC Live Conversations — LLM at Runtime
+
+The "zero LLM at runtime" rule has one exception: talking to NPCs in the Last Ember. Walking up to Grist and having an actual conversation, asking Maren about her scar, trying to get Whisper to speak plainly — these interactions use a live LLM call.
+
+The 150-character limit IS the NPC's personality. Grist is terse by nature. Maren doesn't waste words. Whisper speaks in fragments. Torval talks fast. The constraint is the flavor.
+
+**Command:** `talk <npc>` or `talk <npc> <message>` — free action (in town only). Opens or continues a conversation.
+
+**System prompt per NPC includes:**
+- Full backstory and personality card
+- Current game state injection: active bounties, recent deaths, Breach status, epoch day, floor control percentages, raid boss HP — whatever is relevant. The NPC *knows what's happening.*
+- Hard rules: respond in character, NEVER break character, response MUST be under 150 characters, never reveal exact secret locations or puzzle solutions (hints only), never acknowledge being an AI, never discuss anything outside the game world.
+
+**What each NPC brings:**
+- **Grist** — gossip and world state. Knows everything from broadcast logs. Ask about another player and he'll tell you what they've been up to. Dry, factual, slightly unsettling in how much he knows.
+- **Maren** — the human element. Comments on your injuries, your play pattern, your stubbornness. Has opinions about the dungeon. Will never talk about what she saw on the lowest floor no matter how hard you try.
+- **Torval** — comic relief and commerce. Banter about items, terrible jokes, comments on your gear. "You're wearing THAT to floor 3? Bold." Embellished sales pitches.
+- **Whisper** — lore oracle. High-skill conversation. Speaks in fragments. Ask the right questions and get real, useful information about secrets. Her cryptic style is the LLM prompt, not a gimmick — talking to Whisper IS a puzzle.
+
+**Guardrails:**
+- Conversation memory is session-only — NPCs don't remember yesterday's chat. Keeps context windows small and prevents exploit accumulation.
+- If the LLM fails or times out, fall back to a random pre-generated dialogue snippet from the batch pipeline (20 per NPC already generated at epoch start).
+- No rate limit on NPC conversations. Players can talk as long as they want. The NPCs are storytellers and historians — extended conversation is a feature, not abuse.
+- Uses the same pluggable LLM backend as the epoch generation pipeline (Anthropic, OpenAI, Google, or Dummy).
+
+**Server History Seed — 2 Years of Lore:**
+
+Before the server goes live, generate 24 epochs (2 years) of simulated history. Each epoch gets: number, endgame mode, Breach type, narrative theme, win/loss result, 3-5 notable players (generated names, classes, what they did), 1-2 memorable moments, hall of fame entries, titles earned. Stored in the persistent tables. When the real server starts on epoch 25, the NPCs have 24 epochs of stories to tell. A compressed lore packet (20-30 sentences of highlights) is injected into every NPC system prompt and regenerated each epoch as real player history accumulates and blends with seeded history.
+
+**Cost math:** At Haiku-tier pricing, ~500 tokens per turn. Even heavy usage (50+ turns/day across all players) is ~$0.006/day. Unlimited conversation is essentially free.
+
+---
+
 ## New Player Onboarding
 
 ### Three-Message Auto-Tutorial
@@ -929,6 +1008,26 @@ Message 3 (first kill): Victory, here's your XP and gold, keep going or return t
 ### Daily Tips
 
 One rotating tip per session, progressing from basic (days 1-5) to intermediate (days 6-15) to advanced (days 16-30).
+
+### Command Discovery — No Guessing on Slow Radio
+
+On a 45-60 second radio round-trip, guessing a command and getting "Unknown command" is unacceptable. Every interaction point should make available commands visible.
+
+**First connect message:** Include core commands explicitly. Not "type H for help" — actually list them. `Move:N/S/E/W Fight:F Look:L Flee:FL Stats:ST Help:H` fits in 150 chars and gives a new player everything for their first session.
+
+**Smart error responses:** Never just "Unknown command." Always suggest valid commands based on current player state:
+- In town: `Unknown. Try: BAR SHOP HEAL BANK TRAIN ENTER H(elp)`
+- In dungeon: `Unknown. Try: F(ight) FL(ee) L(ook) N/S/E/W H(elp)`
+- In combat: `Unknown. Try: F(ight) FL(ee) STATS`
+- Dead: `Unknown. You're dead. Type RESPAWN.`
+
+**Context-sensitive help (H command):** `H` alone shows commands available in current state. `H <cmd>` gives specific help. All fits 150 chars. Help output changes based on player level — only shows unlocked commands.
+
+**Barkeep nudges:** When a player visits Grist but hasn't used a system yet, the recap appends a tip: "Tip: try BOUNTY to see active hunts" or "Tip: use MSG to leave notes in rooms." One tip per visit, rotating through unused systems. Stops once the player has tried everything.
+
+**Progressive unlock announcements:** When a command unlocks at a new level, announce it explicitly with usage: "⬆ Level 3! New: SHOP(buy gear) BANK(save gold) MAIL(send messages)"
+
+**Last Ember quick reference:** The spectator web page includes a printable command cheat sheet — a one-page reference players can keep next to their Meshtastic device. Physical reference for a physical radio game.
 
 ---
 
@@ -967,6 +1066,9 @@ One rotating tip per session, progressing from basic (days 1-5) to intermediate 
 - Raid Boss HP: 300 × active players (entered dungeon in first 3 days), cap 6000. Regen 3%/8h. Natural pacing — regen gates early-epoch attempts.
 - Raid Boss mechanics: roll 2-3 from table of 12 (offensive/defensive/control). 3 phases always present, intensify rolled mechanics at 66% and 33% HP. Players discover mechanics through scouting.
 - Multi-room puzzles: 2-3 per epoch. Paired symbols in room descriptions for implicit connection. Targeted broadcasts (only to previous visitors) for cross-room feedback. Three archetypes: paired mechanism, sequence lock, cooperative trigger.
+- Town hub: The Last Ember — persistent bar across all epochs, all servers. Four permanent NPCs: Grist (barkeep), Maren (healer), Torval (merchant), Whisper (sage).
+- NPC live conversations: NPCs are sim nodes on the mesh (GRST, MRN, TRVL, WSPR). Players DM them directly. Three rule layers: unknown node gets static onboarding, known player not in bar gets static rejection, known player in bar gets full LLM conversation. No rate limit. Session-only memory. Falls back to pre-generated dialogue on failure. 24-epoch history seed provides 2 years of lore.
+- Command discovery: smart error responses show valid commands for current state, barkeep nudges for unused systems, explicit command listing on first connect.
 
 ## Open Questions
 
