@@ -26,12 +26,15 @@ Usage:
 
 import argparse
 import logging
+import os
 import signal
 import sys
 import threading
 import time
 
 from config import BROADCAST_DRAIN_INTERVAL, MESH_NODES, MESSAGE_LOG_RETENTION_DAYS
+from src.web import create_app
+from src.web import config as web_config
 from src.core.engine import GameEngine
 from src.db.database import get_db
 from src.generation.narrative import get_backend
@@ -148,6 +151,17 @@ def main():
         action="store_true",
         help="Enable verbose logging",
     )
+    parser.add_argument(
+        "--web-port",
+        type=int,
+        default=None,
+        help="Port for the Last Ember web dashboard (default: 5000, or MMUD_WEB_PORT env)",
+    )
+    parser.add_argument(
+        "--no-web",
+        action="store_true",
+        help="Disable the web dashboard entirely",
+    )
     args = parser.parse_args()
 
     setup_logging(args.verbose)
@@ -215,6 +229,27 @@ def main():
     from src.models.epoch import get_epoch
     epoch = get_epoch(conn)
     current_day = epoch["day_number"] if epoch else 0
+
+    # Start web dashboard (Last Ember) in background thread
+    if not args.no_web:
+        web_port = args.web_port or int(os.environ.get("MMUD_WEB_PORT", web_config.WEB_PORT))
+        web_host = os.environ.get("MMUD_WEB_HOST", web_config.WEB_HOST)
+        db_path = os.path.abspath(args.db)
+
+        app = create_app(db_path=db_path)
+        web_thread = threading.Thread(
+            target=app.run,
+            kwargs={
+                "host": web_host,
+                "port": web_port,
+                "use_reloader": False,
+                "threaded": True,
+            },
+            daemon=True,
+            name="last-ember-web",
+        )
+        web_thread.start()
+        logger.info(f"Last Ember web dashboard started on http://{web_host}:{web_port}")
 
     # Main loop
     logger.info("MMUD server running. Press Ctrl+C to stop.")
