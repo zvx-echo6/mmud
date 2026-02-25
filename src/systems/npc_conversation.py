@@ -246,6 +246,9 @@ class NPCConversationHandler:
         self.conn = conn
         self.backend = backend or get_backend()
         self.sessions = SessionStore()
+        # Tracking attributes — set after each handle_message() call
+        self.last_result_type: Optional[str] = None  # npc_rule1, npc_rule2, npc_llm, npc_fallback
+        self.last_player_id: Optional[int] = None
 
     def handle_message(self, npc: str, sender_id: str, text: str) -> str:
         """Process an inbound message to an NPC node.
@@ -258,6 +261,10 @@ class NPCConversationHandler:
         Returns:
             Response string (always under 150 chars).
         """
+        # Reset tracking
+        self.last_result_type = None
+        self.last_player_id = None
+
         # Rule 0: DCRG rejection (handled before this, but safety check)
         if npc == "dcrg":
             return DCRG_REJECTION[:LLM_OUTPUT_CHAR_LIMIT]
@@ -270,19 +277,23 @@ class NPCConversationHandler:
         # Rule 1: Unknown player — static rejection
         player = player_model.get_player_by_mesh_id(self.conn, sender_id)
         if not player:
+            self.last_result_type = "npc_rule1"
             msg = NPC_UNKNOWN_PLAYER.get(npc, NPC_UNKNOWN_PLAYER["grist"])
             return msg[:LLM_OUTPUT_CHAR_LIMIT]
 
         # Refresh full player state
         player = player_model.get_player(self.conn, player["id"])
+        self.last_player_id = player["id"]
 
         # Rule 2: Not in town — static refusal
         if player["state"] != "town":
+            self.last_result_type = "npc_rule2"
             msg = NPC_NOT_IN_TOWN.get(npc, NPC_NOT_IN_TOWN["grist"])
             msg = msg.format(name=player["name"])
             return msg[:LLM_OUTPUT_CHAR_LIMIT]
 
         # Rule 3: In town — full LLM conversation
+        # (last_result_type set in _llm_conversation)
         return self._llm_conversation(npc, player, text)
 
     def _llm_conversation(self, npc: str, player: dict, text: str) -> str:
@@ -308,11 +319,13 @@ class NPCConversationHandler:
                 response = response[:LLM_OUTPUT_CHAR_LIMIT - 3] + "..."
 
             session.add_assistant_message(response)
+            self.last_result_type = "npc_llm"
             return response
 
         except Exception as e:
             logger.warning(f"LLM error for {npc} conversation: {e}")
             # Fallback to pre-generated dialogue
+            self.last_result_type = "npc_fallback"
             return self._fallback_response(npc)
 
     def _fallback_response(self, npc: str) -> str:
