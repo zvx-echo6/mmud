@@ -174,7 +174,8 @@ def main():
     engine = GameEngine(conn)
 
     # Initialize LLM backend and NPC handler
-    backend = get_backend()
+    db_path = os.path.abspath(args.db)
+    backend = get_backend(db_path=db_path)
     npc_handler = NPCConversationHandler(conn, backend)
 
     # Initialize broadcast drain
@@ -234,9 +235,9 @@ def main():
     if not args.no_web:
         web_port = args.web_port or int(os.environ.get("MMUD_WEB_PORT", web_config.WEB_PORT))
         web_host = os.environ.get("MMUD_WEB_HOST", web_config.WEB_HOST)
-        db_path = os.path.abspath(args.db)
 
         app = create_app(db_path=db_path)
+        app.config["NPC_HANDLER"] = npc_handler
         web_thread = threading.Thread(
             target=app.run,
             kwargs={

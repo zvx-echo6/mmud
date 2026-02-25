@@ -1,0 +1,138 @@
+{% extends "admin/base.html" %}
+
+{% block title %}LLM Configuration{% endblock %}
+
+{% block admin_content %}
+  <div class="page-header" style="padding-top:20px;">
+    <h1 class="page-title" style="font-size:22px;">LLM Configuration</h1>
+  </div>
+
+  {# ═══ STATUS CARDS ═══ #}
+  <div class="admin-stat-grid">
+    <div class="admin-stat-card">
+      <div class="admin-stat-label">Backend</div>
+      <div class="admin-stat-value">{{ config.backend|upper }}</div>
+    </div>
+    <div class="admin-stat-card">
+      <div class="admin-stat-label">Model</div>
+      <div class="admin-stat-value" style="font-size:12px;">{{ config.model or '—' }}</div>
+    </div>
+    <div class="admin-stat-card">
+      <div class="admin-stat-label">API Key</div>
+      <div class="admin-stat-value">
+        {% if masked_key %}
+          <span style="color:var(--ember-glow);">SET</span>
+        {% else %}
+          <span style="color:var(--text-ghost);">NONE</span>
+        {% endif %}
+      </div>
+    </div>
+    <div class="admin-stat-card">
+      <div class="admin-stat-label">Updated</div>
+      <div class="admin-stat-value" style="font-size:10px;">{{ config.updated_at[:16] if config.updated_at else '—' }}</div>
+    </div>
+  </div>
+
+  {# ═══ CONFIGURATION FORM ═══ #}
+  <div class="divider">CONFIGURATION</div>
+
+  <form id="llm-form" method="post" action="{{ url_for('admin.llm_save') }}" style="max-width:500px;">
+
+    <label style="font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--text-ghost);display:block;margin-bottom:4px;">Backend</label>
+    <select name="backend" id="llm-backend" class="admin-input" style="appearance:auto;">
+      <option value="dummy" {% if config.backend == 'dummy' %}selected{% endif %}>Dummy (template-based, no API)</option>
+      <option value="anthropic" {% if config.backend == 'anthropic' %}selected{% endif %}>Anthropic (Claude)</option>
+      <option value="openai" {% if config.backend == 'openai' %}selected{% endif %}>OpenAI (GPT / compatible)</option>
+      <option value="google" {% if config.backend == 'google' %}selected{% endif %}>Google (Gemini)</option>
+    </select>
+
+    <div id="api-key-group">
+      <label style="font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--text-ghost);display:block;margin-bottom:4px;">API Key</label>
+      <input type="password" name="api_key" id="llm-api-key" class="admin-input" value="{{ masked_key }}" placeholder="Enter API key" autocomplete="off">
+    </div>
+
+    <div id="model-group">
+      <label style="font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--text-ghost);display:block;margin-bottom:4px;">Model</label>
+      <input type="text" name="model" id="llm-model" class="admin-input" value="{{ config.model }}" placeholder="e.g. claude-sonnet-4-5-20250929" autocomplete="off">
+    </div>
+
+    <div id="base-url-group">
+      <label style="font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--text-ghost);display:block;margin-bottom:4px;">Base URL (OpenAI-compatible only)</label>
+      <input type="text" name="base_url" id="llm-base-url" class="admin-input" value="{{ config.base_url }}" placeholder="https://api.openai.com/v1" autocomplete="off">
+    </div>
+
+    <div style="display:flex;gap:12px;margin-top:16px;">
+      <button type="submit" class="admin-btn">Save Configuration</button>
+      <button type="button" class="admin-btn" id="test-btn" style="background:var(--bg-mid);border:1px solid var(--border-subtle);">Test Connection</button>
+    </div>
+  </form>
+
+  <div id="test-result" style="margin-top:12px;font-family:'JetBrains Mono',monospace;font-size:11px;display:none;padding:8px 12px;border-radius:4px;"></div>
+{% endblock %}
+
+{% block scripts %}
+{{ super() }}
+<script>
+(function() {
+  var backendSelect = document.getElementById('llm-backend');
+  var apiKeyGroup = document.getElementById('api-key-group');
+  var baseUrlGroup = document.getElementById('base-url-group');
+  var testBtn = document.getElementById('test-btn');
+  var testResult = document.getElementById('test-result');
+
+  function toggleFields() {
+    var val = backendSelect.value;
+    if (val === 'dummy') {
+      apiKeyGroup.style.display = 'none';
+      baseUrlGroup.style.display = 'none';
+    } else if (val === 'openai') {
+      apiKeyGroup.style.display = 'block';
+      baseUrlGroup.style.display = 'block';
+    } else {
+      apiKeyGroup.style.display = 'block';
+      baseUrlGroup.style.display = 'none';
+    }
+  }
+
+  backendSelect.addEventListener('change', toggleFields);
+  toggleFields();
+
+  testBtn.addEventListener('click', function() {
+    testBtn.disabled = true;
+    testBtn.textContent = 'Testing...';
+    testResult.style.display = 'none';
+
+    var form = document.getElementById('llm-form');
+    var data = new FormData(form);
+
+    fetch('{{ url_for("admin.llm_test") }}', {
+      method: 'POST',
+      body: data,
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      testResult.style.display = 'block';
+      if (d.success) {
+        testResult.style.background = 'rgba(34,197,94,0.1)';
+        testResult.style.color = '#22c55e';
+        testResult.textContent = d.message;
+      } else {
+        testResult.style.background = 'rgba(239,68,68,0.1)';
+        testResult.style.color = 'var(--blood-bright)';
+        testResult.textContent = d.message;
+      }
+    })
+    .catch(function(e) {
+      testResult.style.display = 'block';
+      testResult.style.background = 'rgba(239,68,68,0.1)';
+      testResult.style.color = 'var(--blood-bright)';
+      testResult.textContent = 'Request failed: ' + e.message;
+    })
+    .finally(function() {
+      testBtn.disabled = false;
+      testBtn.textContent = 'Test Connection';
+    });
+  });
+})();
+</script>
+{% endblock %}

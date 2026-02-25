@@ -2,10 +2,13 @@
 Admin service — write operations on the game database.
 All writes are logged to admin_log.
 """
+import logging
 import sqlite3
 from datetime import datetime
 
-from src.web.services.gamedb import get_rw_db
+from src.web.services.gamedb import get_db, get_rw_db
+
+logger = logging.getLogger(__name__)
 
 
 def _log_action(db, admin, action, target=None, details=None):
@@ -122,3 +125,121 @@ def send_broadcast(admin, message, tier=1):
     _log_action(db, admin, "broadcast", details=f"tier={tier}: {message[:60]}")
     db.commit()
     return True
+
+
+# ═══ LLM CONFIGURATION ═══
+
+
+def get_llm_config():
+    """Read current LLM configuration from DB."""
+    db = get_db()
+    row = db.execute("SELECT * FROM llm_config WHERE id = 1").fetchone()
+    if not row:
+        return {
+            "backend": "dummy", "api_key": "", "model": "",
+            "base_url": "", "updated_at": "", "updated_by": "",
+        }
+    return dict(row)
+
+
+def save_llm_config(admin, backend, api_key, model, base_url):
+    """Save LLM configuration to DB and return the saved config.
+
+    If api_key is empty or looks masked (ends with existing suffix),
+    preserves the existing key from DB.
+    """
+    db = get_rw_db()
+
+    # Preserve existing key if not provided or masked
+    if not api_key or api_key.startswith("****"):
+        existing = db.execute(
+            "SELECT api_key FROM llm_config WHERE id = 1"
+        ).fetchone()
+        if existing:
+            api_key = existing["api_key"]
+        else:
+            api_key = ""
+
+    now = datetime.utcnow().isoformat()
+    db.execute(
+        """INSERT INTO llm_config (id, backend, api_key, model, base_url, updated_at, updated_by)
+           VALUES (1, ?, ?, ?, ?, ?, ?)
+           ON CONFLICT(id) DO UPDATE SET
+             backend = excluded.backend,
+             api_key = excluded.api_key,
+             model = excluded.model,
+             base_url = excluded.base_url,
+             updated_at = excluded.updated_at,
+             updated_by = excluded.updated_by""",
+        (backend, api_key, model, base_url, now, admin),
+    )
+    _log_action(db, admin, "llm_config", details=f"backend={backend}, model={model}")
+    db.commit()
+
+    return {
+        "backend": backend, "api_key": api_key, "model": model,
+        "base_url": base_url, "updated_at": now, "updated_by": admin,
+    }
+
+
+def test_llm_connection(backend, api_key, model, base_url):
+    """Test an LLM backend connection without saving.
+
+    If api_key is masked, reads the real key from DB.
+    Returns (success: bool, message: str).
+    """
+    from src.generation.narrative import _backend_from_config
+
+    # Resolve masked key
+    if not api_key or api_key.startswith("****"):
+        try:
+            db = get_db()
+            existing = db.execute(
+                "SELECT api_key FROM llm_config WHERE id = 1"
+            ).fetchone()
+            if existing:
+                api_key = existing["api_key"]
+        except Exception:
+            pass
+
+    if backend == "dummy":
+        return True, "Dummy backend always works."
+
+    if not api_key:
+        return False, "API key required for non-dummy backends."
+
+    config = {
+        "backend": backend, "api_key": api_key,
+        "model": model, "base_url": base_url,
+    }
+
+    try:
+        b = _backend_from_config(config)
+        result = b.complete("Say 'ok' in one word.", max_tokens=10)
+        if result and len(result.strip()) > 0:
+            return True, f"Connected. Response: {result.strip()[:50]}"
+        return False, "Backend returned empty response."
+    except Exception as e:
+        return False, f"Connection failed: {e}"
+
+
+def apply_llm_config(app, config):
+    """Hot-swap the live NPC handler backend if available.
+
+    Args:
+        app: Flask app with NPC_HANDLER in config.
+        config: Dict with backend, api_key, model, base_url.
+    """
+    from src.generation.narrative import _backend_from_config
+
+    npc_handler = app.config.get("NPC_HANDLER")
+    if not npc_handler:
+        logger.debug("No NPC_HANDLER in app.config — config saved to DB only")
+        return
+
+    try:
+        new_backend = _backend_from_config(config)
+        npc_handler.backend = new_backend
+        logger.info(f"Live backend swapped to {config['backend']}")
+    except Exception as e:
+        logger.error(f"Failed to swap backend: {e}")

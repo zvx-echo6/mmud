@@ -16,6 +16,7 @@ Model override via MMUD_LLM_MODEL
 import logging
 import os
 import random
+import sqlite3
 from abc import ABC, abstractmethod
 
 from config import HINT_FORBIDDEN_VERBS, LLM_OUTPUT_CHAR_LIMIT
@@ -478,11 +479,11 @@ class DummyBackend(BackendInterface):
 class AnthropicBackend(BackendInterface):
     """Claude API backend."""
 
-    def __init__(self):
-        self.api_key = os.environ.get("MMUD_ANTHROPIC_API_KEY", "")
-        self.model = os.environ.get("MMUD_LLM_MODEL", "claude-sonnet-4-5-20250929")
+    def __init__(self, api_key=None, model=None):
+        self.api_key = api_key or os.environ.get("MMUD_ANTHROPIC_API_KEY", "")
+        self.model = model or os.environ.get("MMUD_LLM_MODEL", "claude-sonnet-4-5-20250929")
         if not self.api_key:
-            raise ValueError("MMUD_ANTHROPIC_API_KEY not set")
+            raise ValueError("Anthropic API key required")
 
     def complete(self, prompt: str, max_tokens: int = 200) -> str:
         import anthropic
@@ -509,12 +510,12 @@ class AnthropicBackend(BackendInterface):
 class OpenAIBackend(BackendInterface):
     """OpenAI-compatible API backend."""
 
-    def __init__(self):
-        self.api_key = os.environ.get("MMUD_OPENAI_API_KEY", "")
-        self.model = os.environ.get("MMUD_LLM_MODEL", "gpt-4o-mini")
-        self.base_url = os.environ.get("MMUD_OPENAI_BASE_URL")
+    def __init__(self, api_key=None, model=None, base_url=None):
+        self.api_key = api_key or os.environ.get("MMUD_OPENAI_API_KEY", "")
+        self.model = model or os.environ.get("MMUD_LLM_MODEL", "gpt-4o-mini")
+        self.base_url = base_url or os.environ.get("MMUD_OPENAI_BASE_URL")
         if not self.api_key:
-            raise ValueError("MMUD_OPENAI_API_KEY not set")
+            raise ValueError("OpenAI API key required")
 
     def complete(self, prompt: str, max_tokens: int = 200) -> str:
         from openai import OpenAI
@@ -547,11 +548,11 @@ class OpenAIBackend(BackendInterface):
 class GoogleBackend(BackendInterface):
     """Gemini API backend."""
 
-    def __init__(self):
-        self.api_key = os.environ.get("MMUD_GOOGLE_API_KEY", "")
-        self.model = os.environ.get("MMUD_LLM_MODEL", "gemini-2.0-flash")
+    def __init__(self, api_key=None, model=None):
+        self.api_key = api_key or os.environ.get("MMUD_GOOGLE_API_KEY", "")
+        self.model = model or os.environ.get("MMUD_LLM_MODEL", "gemini-2.0-flash")
         if not self.api_key:
-            raise ValueError("MMUD_GOOGLE_API_KEY not set")
+            raise ValueError("Google API key required")
 
     def complete(self, prompt: str, max_tokens: int = 200) -> str:
         import google.generativeai as genai
@@ -663,10 +664,64 @@ class ValidationLayer:
 # ── Backend Factory ────────────────────────────────────────────────────────
 
 
-def get_backend() -> BackendInterface:
-    """Get the configured LLM backend from environment."""
-    backend_name = os.environ.get("MMUD_LLM_BACKEND", "dummy").lower()
+def _backend_from_config(config: dict) -> BackendInterface:
+    """Create a backend instance from a config dict (DB row or test params).
 
+    Args:
+        config: Dict with keys: backend, api_key, model, base_url.
+
+    Returns:
+        A BackendInterface instance.
+
+    Raises:
+        ValueError: If a real backend is requested but api_key is missing.
+    """
+    name = config.get("backend", "dummy").lower()
+    api_key = config.get("api_key", "")
+    model = config.get("model", "")
+    base_url = config.get("base_url", "")
+
+    if name == "anthropic":
+        return AnthropicBackend(api_key=api_key or None, model=model or None)
+    elif name == "openai":
+        return OpenAIBackend(
+            api_key=api_key or None, model=model or None, base_url=base_url or None,
+        )
+    elif name == "google":
+        return GoogleBackend(api_key=api_key or None, model=model or None)
+    else:
+        return DummyBackend()
+
+
+def get_backend(db_path: str | None = None) -> BackendInterface:
+    """Get the configured LLM backend.
+
+    Checks DB config first (if db_path provided), falls back to env vars.
+    """
+    if db_path:
+        try:
+            conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+            conn.row_factory = sqlite3.Row
+            row = conn.execute("SELECT * FROM llm_config WHERE id = 1").fetchone()
+            conn.close()
+            if row and row["backend"] != "dummy":
+                return _backend_from_config(dict(row))
+            elif row and row["backend"] == "dummy":
+                # DB explicitly says dummy — use it, but still allow env override
+                env_backend = os.environ.get("MMUD_LLM_BACKEND", "dummy").lower()
+                if env_backend != "dummy":
+                    return _backend_from_env(env_backend)
+                return DummyBackend()
+        except Exception as e:
+            logger.debug(f"Could not read llm_config from DB: {e}")
+
+    # Env var fallback
+    backend_name = os.environ.get("MMUD_LLM_BACKEND", "dummy").lower()
+    return _backend_from_env(backend_name)
+
+
+def _backend_from_env(backend_name: str) -> BackendInterface:
+    """Create backend from environment variables."""
     if backend_name == "anthropic":
         return AnthropicBackend()
     elif backend_name == "openai":
@@ -677,6 +732,6 @@ def get_backend() -> BackendInterface:
         return DummyBackend()
 
 
-def get_validated_backend() -> ValidationLayer:
+def get_validated_backend(db_path: str | None = None) -> ValidationLayer:
     """Get a validation-wrapped backend."""
-    return ValidationLayer(get_backend())
+    return ValidationLayer(get_backend(db_path=db_path))

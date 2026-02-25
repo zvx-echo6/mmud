@@ -5,7 +5,8 @@ import functools
 import os
 
 from flask import (
-    Blueprint, flash, redirect, render_template, request, session, url_for,
+    Blueprint, current_app, flash, jsonify, redirect, render_template,
+    request, session, url_for,
 )
 
 from src.web import config as web_config
@@ -145,6 +146,52 @@ def broadcast():
     admin_svc.send_broadcast(session["admin_user"], message, tier)
     flash("Broadcast sent.", "success")
     return redirect(url_for("admin.epoch"))
+
+
+@bp.route("/llm")
+@login_required
+def llm():
+    config = admin_svc.get_llm_config()
+    # Mask API key for display
+    masked_key = ""
+    if config.get("api_key"):
+        key = config["api_key"]
+        masked_key = f"****{key[-4:]}" if len(key) >= 4 else "****"
+    return render_template(
+        "admin/llm.html",
+        config=config,
+        masked_key=masked_key,
+    )
+
+
+@bp.route("/llm", methods=["POST"])
+@login_required
+def llm_save():
+    backend = request.form.get("backend", "dummy")
+    api_key = request.form.get("api_key", "").strip()
+    model = request.form.get("model", "").strip()
+    base_url = request.form.get("base_url", "").strip()
+
+    saved = admin_svc.save_llm_config(
+        session["admin_user"], backend, api_key, model, base_url,
+    )
+    admin_svc.apply_llm_config(current_app, saved)
+    flash(f"LLM configuration saved: {backend}.", "success")
+    return redirect(url_for("admin.llm"))
+
+
+@bp.route("/llm/test", methods=["POST"])
+@login_required
+def llm_test():
+    backend = request.form.get("backend", "dummy")
+    api_key = request.form.get("api_key", "").strip()
+    model = request.form.get("model", "").strip()
+    base_url = request.form.get("base_url", "").strip()
+
+    success, message = admin_svc.test_llm_connection(
+        backend, api_key, model, base_url,
+    )
+    return jsonify({"success": success, "message": message})
 
 
 @bp.route("/system")
