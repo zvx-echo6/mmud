@@ -47,7 +47,7 @@ def log_message(
         metadata: Optional dict of extra data (serialized as JSON).
     """
     try:
-        meta_json = json.dumps(metadata) if metadata else None
+        meta_json = json.dumps(metadata) if metadata is not None else None
         conn.execute(
             """INSERT INTO message_log
                (node, direction, sender_id, sender_name, recipient_id,
