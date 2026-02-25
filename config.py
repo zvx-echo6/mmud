@@ -454,3 +454,9 @@ NPC_NOT_IN_TOWN = {
 BROADCAST_DRAIN_INTERVAL = 30      # Seconds between drain cycles
 BROADCAST_DRAIN_BATCH_SIZE = 5     # Max broadcasts per drain cycle
 BROADCAST_DRAIN_RATE_LIMIT = 3.0   # Minimum seconds between DCRG sends
+
+# =============================================================================
+# MESSAGE LOG — Traffic Visibility
+# =============================================================================
+
+MESSAGE_LOG_RETENTION_DAYS = 90    # Prune log entries older than this
