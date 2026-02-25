@@ -321,9 +321,22 @@ CREATE TABLE IF NOT EXISTS breach (
     -- Heist fields
     heist_artifact_room_id INTEGER REFERENCES rooms(id),
     heist_artifact_carrier INTEGER REFERENCES players(id),
+    heist_pursuer_room_id INTEGER REFERENCES rooms(id),
+    heist_pursuer_ticks INTEGER DEFAULT 0,
     -- Completion
     completed INTEGER DEFAULT 0,
     completed_at DATETIME
+);
+
+-- =============================================================================
+-- BREACH EMERGENCE CONTRIBUTORS
+-- =============================================================================
+
+CREATE TABLE IF NOT EXISTS breach_emergence_contributors (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    player_id INTEGER NOT NULL REFERENCES players(id),
+    total_damage INTEGER DEFAULT 0,
+    UNIQUE(player_id)
 );
 
 -- =============================================================================

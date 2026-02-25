@@ -51,7 +51,12 @@ def generate_breach(
     if backend is None:
         backend = DummyBackend()
 
-    mini_event = random.choice(BREACH_MINI_EVENTS)
+    # Use breach_type from epoch if set, otherwise random
+    epoch = conn.execute("SELECT breach_type FROM epoch WHERE id = 1").fetchone()
+    if epoch and epoch["breach_type"]:
+        mini_event = epoch["breach_type"]
+    else:
+        mini_event = random.choice(BREACH_MINI_EVENTS)
     num_rooms = random.randint(BREACH_ROOMS_MIN, BREACH_ROOMS_MAX)
 
     stats = {
