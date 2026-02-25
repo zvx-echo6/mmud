@@ -42,6 +42,25 @@ class BackendInterface(ABC):
         """
         ...
 
+    def chat(self, system: str, messages: list[dict], max_tokens: int = 80) -> str:
+        """Multi-turn conversation. Override for real LLM backends.
+
+        Args:
+            system: System prompt (NPC personality + game state).
+            messages: List of {"role": "user"|"assistant", "content": str}.
+            max_tokens: Maximum tokens to generate.
+
+        Returns:
+            Assistant response string.
+        """
+        # Default: fall back to complete() with last user message
+        last_user = ""
+        for msg in reversed(messages):
+            if msg["role"] == "user":
+                last_user = msg["content"]
+                break
+        return self.complete(f"{system}\n\nPlayer says: {last_user}", max_tokens)
+
 
 # ── Dummy Backend ──────────────────────────────────────────────────────────
 
@@ -326,6 +345,16 @@ class DummyBackend(BackendInterface):
         # Return a generic sensory line — callers use specialized methods instead
         return random.choice(_FLOOR_SENSORY.get(1, _FLOOR_SENSORY[1]))
 
+    def chat(self, system: str, messages: list[dict], max_tokens: int = 80) -> str:
+        """Return a random NPC dialogue snippet. No LLM call."""
+        # Try to detect which NPC from system prompt
+        for npc in ("grist", "maren", "torval", "whisper"):
+            if npc in system.lower():
+                lines = _NPC_DIALOGUE.get(npc, {}).get("greeting", [])
+                if lines:
+                    return random.choice(lines)[:LLM_OUTPUT_CHAR_LIMIT]
+        return "The NPC nods thoughtfully."[:LLM_OUTPUT_CHAR_LIMIT]
+
     def generate_room_name(self, floor: int) -> str:
         """Generate a unique room name for a floor."""
         names = _FLOOR_NAMES.get(floor, _FLOOR_NAMES[1])
@@ -465,6 +494,17 @@ class AnthropicBackend(BackendInterface):
         )
         return response.content[0].text.strip()
 
+    def chat(self, system: str, messages: list[dict], max_tokens: int = 80) -> str:
+        import anthropic
+        client = anthropic.Anthropic(api_key=self.api_key)
+        response = client.messages.create(
+            model=self.model,
+            max_tokens=max_tokens,
+            system=system,
+            messages=messages,
+        )
+        return response.content[0].text.strip()
+
 
 class OpenAIBackend(BackendInterface):
     """OpenAI-compatible API backend."""
@@ -489,6 +529,20 @@ class OpenAIBackend(BackendInterface):
         )
         return response.choices[0].message.content.strip()
 
+    def chat(self, system: str, messages: list[dict], max_tokens: int = 80) -> str:
+        from openai import OpenAI
+        kwargs = {"api_key": self.api_key}
+        if self.base_url:
+            kwargs["base_url"] = self.base_url
+        client = OpenAI(**kwargs)
+        chat_messages = [{"role": "system", "content": system}] + messages
+        response = client.chat.completions.create(
+            model=self.model,
+            max_tokens=max_tokens,
+            messages=chat_messages,
+        )
+        return response.choices[0].message.content.strip()
+
 
 class GoogleBackend(BackendInterface):
     """Gemini API backend."""
@@ -505,6 +559,22 @@ class GoogleBackend(BackendInterface):
         model = genai.GenerativeModel(self.model)
         response = model.generate_content(
             prompt,
+            generation_config={"max_output_tokens": max_tokens},
+        )
+        return response.text.strip()
+
+    def chat(self, system: str, messages: list[dict], max_tokens: int = 80) -> str:
+        import google.generativeai as genai
+        genai.configure(api_key=self.api_key)
+        model = genai.GenerativeModel(self.model, system_instruction=system)
+        history = []
+        for msg in messages[:-1]:
+            role = "user" if msg["role"] == "user" else "model"
+            history.append({"role": role, "parts": [msg["content"]]})
+        chat = model.start_chat(history=history)
+        last_msg = messages[-1]["content"] if messages else ""
+        response = chat.send_message(
+            last_msg,
             generation_config={"max_output_tokens": max_tokens},
         )
         return response.text.strip()
