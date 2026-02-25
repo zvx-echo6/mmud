@@ -472,26 +472,20 @@ NPC_GREETING_COOLDOWN = 60  # Seconds before same NPC can DM same player again
 # Town location descriptions — returned by EMBR on town keyword commands
 # All must be under 150 characters
 TOWN_DESCRIPTIONS = {
+    # Tier 1: LOOK in town — the exterior, what you see first
     "tavern": (
-        "The Last Ember. Smoke-stained beams, a bar that's seen centuries, "
-        "four figures who never leave. The dungeon breathes below."
+        "The Last Ember. A battered signboard over a heavy door. "
+        "Smoke leaks through the frame. BAR to enter. ENTER for the dungeon."
     ),
-    "grist": (
-        "A scarred bartop, a thousand tallied names. Grist polishes a glass "
-        "and watches you like he's already writing your ending."
+    # Tier 2: BAR command — inside the bar, see all four NPCs
+    "bar": (
+        "Smoke and amber light. Grist behind the bar. Maren by the hearth. "
+        "Torval with his wares. Whisper in shadow. BAR HEAL SHOP HINT."
     ),
-    "maren": (
-        "Lye and lavender. Maren's hands move over needle and thread. "
-        "She doesn't look up. She already knows how bad it is."
-    ),
-    "torval": (
-        "Furs, blades, and things that shouldn't exist yet. "
-        "Torval's eyes track your coin pouch before they track your face."
-    ),
-    "whisper": (
-        "The far corner is colder than it should be. Whisper sits in "
-        "moth-eaten silk, muttering about rooms you haven't reached."
-    ),
+    # Tier 3: NPC approach — short acknowledgment, then DM from NPC node
+    "maren": "Maren looks up from her needle and thread.",
+    "torval": "Torval's eyes flick to your coin pouch.",
+    "whisper": "Whisper stops muttering. Barely.",
 }
 
 # Static NPC greetings — used for DummyBackend and LLM fallback
@@ -525,5 +519,6 @@ COMMAND_NPC_DM_MAP = {
     "heal": "maren",
     "merchant": "torval",
     "shop": "torval",
+    "buy": "torval",
     "sage": "whisper",
 }

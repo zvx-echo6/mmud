@@ -365,17 +365,19 @@ class TestTownKeywords(unittest.TestCase):
         self.conn = _create_test_db()
         self.player = _get_player(self.conn)
 
-    def test_barkeep_returns_grist_description(self):
-        """'bar'/'barkeep' returns Grist's description."""
+    def test_barkeep_returns_bar_interior(self):
+        """'bar'/'barkeep' returns the bar interior with all four NPCs."""
         response = action_barkeep(self.conn, self.player, [])
         self.assertIn("Grist", response)
-        self.assertIn("tallied names", response)
+        self.assertIn("Maren", response)
+        self.assertIn("Torval", response)
+        self.assertIn("Whisper", response)
 
-    def test_healer_returns_maren_description(self):
-        """'healer' returns Maren's description."""
+    def test_healer_returns_maren_acknowledgment(self):
+        """'healer' returns Maren's short acknowledgment."""
         response = action_healer_desc(self.conn, self.player, [])
         self.assertIn("Maren", response)
-        self.assertIn("lavender", response)
+        self.assertIn("needle", response)
 
     def test_merchant_returns_torval_description(self):
         """'merchant' returns Torval's description."""
@@ -383,11 +385,11 @@ class TestTownKeywords(unittest.TestCase):
         self.assertIn("Torval", response)
         self.assertIn("coin pouch", response)
 
-    def test_sage_returns_whisper_description(self):
-        """'sage' returns Whisper's description."""
+    def test_sage_returns_whisper_acknowledgment(self):
+        """'sage' returns Whisper's short acknowledgment."""
         response = action_sage_desc(self.conn, self.player, [])
         self.assertIn("Whisper", response)
-        self.assertIn("moth-eaten", response)
+        self.assertIn("muttering", response)
 
     def test_parser_aliases(self):
         """Verify all town keyword aliases parse correctly."""
@@ -430,12 +432,12 @@ class TestLookCommand(unittest.TestCase):
     def setUp(self):
         self.conn = _create_test_db()
 
-    def test_look_in_town_returns_tavern_description(self):
-        """'look' in town returns the general tavern description."""
+    def test_look_in_town_returns_tavern_exterior(self):
+        """'look' in town returns the tavern exterior."""
         player = _get_player(self.conn)
         response = action_look(self.conn, player, [])
         self.assertIn("Last Ember", response)
-        self.assertIn("dungeon breathes", response)
+        self.assertIn("BAR", response)
 
     def test_look_in_dungeon_returns_room_description(self):
         """'look' in dungeon returns the dungeon room, NOT the tavern."""
@@ -486,7 +488,7 @@ class TestHealAndShopAdditive(unittest.TestCase):
         self.assertEqual(recipient, "!abc123")
 
     def test_barkeep_queues_grist_dm(self):
-        """'bar' command queues a Grist greeting DM."""
+        """'bar' enters the bar AND queues a Grist greeting DM."""
         self.engine.process_message("!abc123", "TestPlayer", "bar")
         self.assertEqual(len(self.engine.npc_dm_queue), 1)
         npc, recipient = self.engine.npc_dm_queue[0]
@@ -509,22 +511,22 @@ class TestNPCDMCooldown(unittest.TestCase):
 
     def test_first_interaction_queues_dm(self):
         """First interaction with an NPC queues a DM."""
-        self.engine.process_message("!abc123", "TestPlayer", "bar")
+        self.engine.process_message("!abc123", "TestPlayer", "sage")
         self.assertEqual(len(self.engine.npc_dm_queue), 1)
 
     def test_repeat_within_cooldown_no_dm(self):
         """Repeat interaction within cooldown does NOT queue a DM."""
-        self.engine.process_message("!abc123", "TestPlayer", "bar")
+        self.engine.process_message("!abc123", "TestPlayer", "sage")
         self.assertEqual(len(self.engine.npc_dm_queue), 1)
 
         # Second call within cooldown
-        self.engine.process_message("!abc123", "TestPlayer", "bar")
+        self.engine.process_message("!abc123", "TestPlayer", "sage")
         # Queue was cleared at start of process_message, but no new DM queued
         self.assertEqual(len(self.engine.npc_dm_queue), 0)
 
     def test_cooldown_expires_dm_fires_again(self):
         """After cooldown expires, NPC DM fires again."""
-        self.engine.process_message("!abc123", "TestPlayer", "bar")
+        self.engine.process_message("!abc123", "TestPlayer", "sage")
         self.assertEqual(len(self.engine.npc_dm_queue), 1)
 
         # Manually expire the cooldown
@@ -532,18 +534,18 @@ class TestNPCDMCooldown(unittest.TestCase):
             self.engine._npc_dm_cooldowns[key] -= NPC_GREETING_COOLDOWN + 1
 
         # Now should fire again
-        self.engine.process_message("!abc123", "TestPlayer", "bar")
+        self.engine.process_message("!abc123", "TestPlayer", "sage")
         self.assertEqual(len(self.engine.npc_dm_queue), 1)
 
     def test_different_npcs_independent_cooldowns(self):
         """Different NPCs have independent cooldowns."""
-        self.engine.process_message("!abc123", "TestPlayer", "bar")
-        self.assertEqual(len(self.engine.npc_dm_queue), 1)
-
         self.engine.process_message("!abc123", "TestPlayer", "sage")
         self.assertEqual(len(self.engine.npc_dm_queue), 1)
+
+        self.engine.process_message("!abc123", "TestPlayer", "heal")
+        self.assertEqual(len(self.engine.npc_dm_queue), 1)
         npc, _ = self.engine.npc_dm_queue[0]
-        self.assertEqual(npc, "whisper")
+        self.assertEqual(npc, "maren")
 
     def test_look_in_town_no_npc_dm(self):
         """'look' in town does NOT trigger any NPC DM."""
@@ -593,19 +595,19 @@ class TestRouterNPCDMSend(unittest.TestCase):
         msg.is_dm = True
         return msg
 
-    def test_bar_sends_embr_description_and_grist_dm(self):
-        """'bar' → EMBR sends description + GRST sends greeting."""
-        msg = self._make_msg("bar")
+    def test_sage_sends_embr_ack_and_wspr_dm(self):
+        """'sage' → EMBR sends acknowledgment + WSPR sends greeting."""
+        msg = self._make_msg("sage")
         self.router.route_message("EMBR", msg)
 
-        # EMBR should have sent the description
+        # EMBR should have sent the acknowledgment
         self.assertTrue(len(self.embr_transport.sent_dms) > 0)
         embr_response = self.embr_transport.sent_dms[0][1]
-        self.assertIn("Grist", embr_response)
+        self.assertIn("Whisper", embr_response)
 
-        # GRST should have sent a greeting
-        self.assertTrue(len(self.grst_transport.sent_dms) > 0)
-        greeting = self.grst_transport.sent_dms[0][1]
+        # WSPR should have sent a greeting
+        self.assertTrue(len(self.wspr_transport.sent_dms) > 0)
+        greeting = self.wspr_transport.sent_dms[0][1]
         self.assertTrue(len(greeting) > 0)
         self.assertTrue(len(greeting) <= 150)
 
@@ -632,24 +634,24 @@ class TestRouterNPCDMSend(unittest.TestCase):
         # Reset engine cooldowns so DM would trigger
         self.engine._npc_dm_cooldowns.clear()
 
-        msg = self._make_msg("bar")
+        msg = self._make_msg("sage")
         # Should not raise
         router.route_message("EMBR", msg)
 
-        # EMBR should have sent description
+        # EMBR should have sent acknowledgment
         # (previous test may have added to sent_dms, check last one)
         self.assertTrue(len(self.embr_transport.sent_dms) > 0)
 
     def test_greeting_logged(self):
         """NPC greeting DMs are logged to message_log."""
-        msg = self._make_msg("bar")
+        msg = self._make_msg("sage")
         self.router.route_message("EMBR", msg)
 
         row = self.conn.execute(
             "SELECT * FROM message_log WHERE message_type = 'npc_greeting'"
         ).fetchone()
         self.assertIsNotNone(row, "No npc_greeting log entry found")
-        self.assertEqual(row["node"], "GRST")
+        self.assertEqual(row["node"], "WSPR")
         self.assertEqual(row["direction"], "outbound")
 
 

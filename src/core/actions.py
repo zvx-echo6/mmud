@@ -43,7 +43,7 @@ FREE_ACTIONS = {
     "look", "stats", "inventory", "help", "who",
     "shop", "buy", "sell", "heal", "bank", "deposit", "withdraw",
     "barkeep", "token", "spend", "train", "equip", "unequip", "drop",
-    "enter", "town", "bounty", "read", "helpful", "message", "mail",
+    "enter", "town", "leave", "bounty", "read", "helpful", "message", "mail",
     "healer", "merchant", "sage",
 }
 
@@ -60,6 +60,7 @@ def handle_action(
         "stats": action_stats,
         "enter": action_enter_dungeon,
         "town": action_return_town,
+        "leave": action_leave,
         "help": action_help,
         "inventory": action_inventory,
         # Phase 2: Economy & Progression
@@ -106,7 +107,7 @@ def _smart_error(player: dict) -> str:
     """State-specific error with valid command suggestions."""
     state = player.get("state", "town")
     if state == "town":
-        return fmt("Unknown. Try: BAR SHOP HEAL BANK TRAIN ENTER H(elp)")
+        return fmt("Unknown. Try: L(ook) BAR ENTER SHOP HEAL H(elp)")
     if state == "dungeon":
         return fmt("Unknown. Try: F(ight) FL(ee) L(ook) N/S/E/W H(elp)")
     if state == "combat":
@@ -369,13 +370,27 @@ def action_return_town(
         return fmt("You're in combat! FLEE first.")
 
     world_mgr.return_to_town(conn, player["id"])
-    return fmt("You return to town. Barkeep, Healer, Shop, Bank await.")
+    return fmt(TOWN_DESCRIPTIONS["tavern"])
+
+
+def action_leave(
+    conn: sqlite3.Connection, player: dict, args: list[str]
+) -> str:
+    """Leave current location. In town: show exterior. In dungeon: return to town."""
+    if player["state"] == "town":
+        return fmt(TOWN_DESCRIPTIONS["tavern"])
+
+    if player["state"] == "combat":
+        return fmt("You're in combat! FLEE first.")
+
+    world_mgr.return_to_town(conn, player["id"])
+    return fmt(TOWN_DESCRIPTIONS["tavern"])
 
 
 def action_help(conn: sqlite3.Connection, player: dict, args: list[str]) -> str:
     """Show available commands."""
     if player["state"] == "town":
-        return fmt("ENTER SHOP BUY SELL HEAL BANK BAR TOK BOUNTY MAIL WHO TRAIN INV HELP")
+        return fmt("BAR ENTER SHOP BUY SELL HEAL BANK TOK BOUNTY MAIL WHO TRAIN INV LEAVE HELP")
     if player["state"] == "combat":
         return fmt("FIGHT(F) FLEE STATS LOOK HELP")
     if player["state"] == "dungeon":
@@ -559,15 +574,15 @@ def action_heal(conn: sqlite3.Connection, player: dict, args: list[str]) -> str:
 
 
 def action_barkeep(conn: sqlite3.Connection, player: dict, args: list[str]) -> str:
-    """Visit Grist's bar. Free action, town only."""
+    """Enter the bar. Shows all four NPCs. Free action, town only."""
     if player["state"] != "town":
-        return fmt("Grist is in town. Head back first.")
+        return fmt("The bar is in town. Head back first.")
 
-    return fmt(TOWN_DESCRIPTIONS["grist"])
+    return fmt(TOWN_DESCRIPTIONS["bar"])
 
 
 def action_healer_desc(conn: sqlite3.Connection, player: dict, args: list[str]) -> str:
-    """Visit Maren's clinic. Free action, town only."""
+    """Approach Maren. Short acknowledgment, NPC DM follows. Town only."""
     if player["state"] != "town":
         return fmt("Maren is in town. Head back first.")
 
@@ -575,7 +590,7 @@ def action_healer_desc(conn: sqlite3.Connection, player: dict, args: list[str]) 
 
 
 def action_merchant_desc(conn: sqlite3.Connection, player: dict, args: list[str]) -> str:
-    """Visit Torval's stall. Free action, town only."""
+    """Approach Torval. Short acknowledgment, NPC DM follows. Town only."""
     if player["state"] != "town":
         return fmt("Torval is in town. Head back first.")
 
@@ -583,7 +598,7 @@ def action_merchant_desc(conn: sqlite3.Connection, player: dict, args: list[str]
 
 
 def action_sage_desc(conn: sqlite3.Connection, player: dict, args: list[str]) -> str:
-    """Visit Whisper's corner. Free action, town only."""
+    """Approach Whisper. Short acknowledgment, NPC DM follows. Town only."""
     if player["state"] != "town":
         return fmt("Whisper is in town. Head back first.")
 

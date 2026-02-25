@@ -50,11 +50,14 @@ ALIASES = {
     "tok": "token",
     "bounties": "bounty",
     "msg": "message",
+    # Leave / Exit
+    "exit": "leave", "go back": "leave", "back": "leave",
     # Town location keywords
     "tavern": "barkeep", "grist": "barkeep", "drink": "barkeep",
     "maren": "healer", "clinic": "healer", "infirmary": "healer",
     "torval": "merchant", "trader": "merchant",
     "sage": "sage", "whisper": "sage", "oracle": "sage", "corner": "sage",
+    "rumor": "sage", "hint": "sage",
 }
 
 # Direction letters that are also movement commands
