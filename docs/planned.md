@@ -970,7 +970,33 @@ The "zero LLM at runtime" rule has one exception: talking to NPCs in the Last Em
 
 The 150-character limit IS the NPC's personality. Grist is terse by nature. Maren doesn't waste words. Whisper speaks in fragments. Torval talks fast. The constraint is the flavor.
 
-**Command:** `talk <npc>` or `talk <npc> <message>` — free action (in town only). Opens or continues a conversation.
+**Network Architecture — NPCs as Mesh Nodes:**
+
+The NPCs are literal Meshtastic nodes on the mesh network. Five sim nodes, all backed by the same game database:
+
+- **EMBR** — The Last Ember. The game server. All game commands go here.
+- **GRST** — Grist. DM this node to talk to the barkeep.
+- **MRN** — Maren. DM this node to talk to the healer.
+- **TRVL** — Torval. DM this node to talk to the merchant.
+- **WSPR** — Whisper. DM this node to talk to the sage.
+
+Players don't issue a `talk` command — they DM the NPC's node directly. The game server sees inbound on the NPC node ID, checks the rules below, and routes the response back through that NPC's node. The NPCs are *people on the network*, not menu options.
+
+**Three rule layers (checked in order):**
+
+**Rule 1 — Unknown node (not in the game):** Static in-character rejection with onboarding instructions. No LLM call. Each NPC has a fixed response:
+- Grist: `"Don't know you. DM EMBR to start. Then we'll talk."`
+- Maren: `"I only patch up adventurers. DM EMBR to become one."`
+- Torval: `"No account, no credit, friend. DM EMBR to join up."`
+- Whisper: `"...not yet. EMBR. Begin there."`
+
+**Rule 2 — Known player, not in the bar:** Static in-character refusal. Player is in the dungeon, dead, or otherwise not in town. No LLM call.
+- Grist: `"You're not here, {name}. Come back to the bar first."`
+- Maren: `"I can hear you're still down there. Come back alive."`
+- Torval: `"I don't do deliveries. Get back to the Ember."`
+- Whisper: `"...too far. Return."`
+
+**Rule 3 — Known player, in the bar:** Full LLM conversation. This is the only case that triggers a live LLM call.
 
 **System prompt per NPC includes:**
 - Full backstory and personality card
@@ -986,14 +1012,23 @@ The 150-character limit IS the NPC's personality. Grist is terse by nature. Mare
 **Guardrails:**
 - Conversation memory is session-only — NPCs don't remember yesterday's chat. Keeps context windows small and prevents exploit accumulation.
 - If the LLM fails or times out, fall back to a random pre-generated dialogue snippet from the batch pipeline (20 per NPC already generated at epoch start).
-- No rate limit on NPC conversations. Players can talk as long as they want. The NPCs are storytellers and historians — extended conversation is a feature, not abuse.
+- No rate limit on NPC conversations. Players can talk as long as they want. The NPCs are storytellers, historians, and characters — extended conversation is a feature, not abuse.
 - Uses the same pluggable LLM backend as the epoch generation pipeline (Anthropic, OpenAI, Google, or Dummy).
 
 **Server History Seed — 2 Years of Lore:**
 
-Before the server goes live, generate 24 epochs (2 years) of simulated history. Each epoch gets: number, endgame mode, Breach type, narrative theme, win/loss result, 3-5 notable players (generated names, classes, what they did), 1-2 memorable moments, hall of fame entries, titles earned. Stored in the persistent tables. When the real server starts on epoch 25, the NPCs have 24 epochs of stories to tell. A compressed lore packet (20-30 sentences of highlights) is injected into every NPC system prompt and regenerated each epoch as real player history accumulates and blends with seeded history.
+Before the server goes live, generate 24 epochs (2 years) of simulated history. For each epoch:
+- Epoch number, endgame mode, Breach type, narrative theme
+- Whether the server won or lost (mix of both — some epic victories, some heartbreaking failures)
+- 3-5 notable players per epoch (generated names, classes, levels reached, what they did)
+- 1-2 memorable moments per epoch ("Kira carried the Crown from floor 4 to floor 1 with 3 HP", "The Warden stood for 28 days — the server failed on the final push", "Epoch 11's Raid Boss had No Escape + Enraged — three players died on the killing blow")
+- Hall of fame entries, titles earned
 
-**Cost math:** At Haiku-tier pricing, ~500 tokens per turn. Even heavy usage (50+ turns/day across all players) is ~$0.006/day. Unlimited conversation is essentially free.
+Stored in the persistent tables (accounts, hall_of_fame, hall_of_fame_participants, titles). When the real server starts on epoch 25, the NPCs have 24 epochs of history to draw from. Grist drops names of old champions. Maren compares your injuries to legends. Torval mentions gear from epochs past. Whisper sees patterns across cycles that nobody else notices.
+
+**NPC context injection includes a lore packet:** A compressed 20-30 sentence summary of server history highlights pulled from the hall of fame tables. Regenerated at each epoch start so it stays current as real player history accumulates and blends with the seed history. The NPCs don't distinguish between seeded and real history — it's all the same to them.
+
+**Cost math:** At Haiku-tier pricing, ~500 tokens per conversation turn. Even heavy usage (50 turns/day across all players) is ~25,000 tokens/day ≈ $0.006/day. Unlimited conversation is essentially free.
 
 ---
 
@@ -1067,10 +1102,11 @@ On a 45-60 second radio round-trip, guessing a command and getting "Unknown comm
 - Raid Boss mechanics: roll 2-3 from table of 12 (offensive/defensive/control). 3 phases always present, intensify rolled mechanics at 66% and 33% HP. Players discover mechanics through scouting.
 - Multi-room puzzles: 2-3 per epoch. Paired symbols in room descriptions for implicit connection. Targeted broadcasts (only to previous visitors) for cross-room feedback. Three archetypes: paired mechanism, sequence lock, cooperative trigger.
 - Town hub: The Last Ember — persistent bar across all epochs, all servers. Four permanent NPCs: Grist (barkeep), Maren (healer), Torval (merchant), Whisper (sage).
-- NPC live conversations: NPCs are sim nodes on the mesh (GRST, MRN, TRVL, WSPR). Players DM them directly. Three rule layers: unknown node gets static onboarding, known player not in bar gets static rejection, known player in bar gets full LLM conversation. No rate limit. Session-only memory. Falls back to pre-generated dialogue on failure. 24-epoch history seed provides 2 years of lore.
+- NPC live conversations: NPCs are sim nodes on the mesh (GRST, MRN, TRVL, WSPR). Players DM them directly. Three rule layers: unknown node gets static onboarding response, known player not in bar gets static rejection, known player in bar gets full LLM conversation. No rate limit. Session-only memory. Falls back to pre-generated dialogue on failure. 24-epoch history seed provides 2 years of lore for NPCs to draw from.
 - Command discovery: smart error responses show valid commands for current state, barkeep nudges for unused systems, explicit command listing on first connect.
 
 ## Open Questions
 
 - Breach mini-boss tuning — soloable at level 7-8, comfortable for two level 5-6 players
 - All regen/HP numbers need playtesting — current values are design targets, not validated
+- NPC sim node deployment — which host runs meshtasticd with 5 identities, TCP routing to game LXC
