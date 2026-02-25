@@ -765,6 +765,8 @@ WHO shows active players in last hour. Room descriptions note recent activity: "
 
 ## Broadcast System
 
+All broadcasts are sent from the DCRG (Darkcragg Depths) sim node, not the main EMBR game node. This separates the ambient world feed from direct command responses. EMBR talks to you. The Darkcragg talks about everyone.
+
 ### Three Tiers
 
 **Tier 1 (Always):** Boss kills, permadeath, endgame objective events (objective claimed/dropped/delivered, raid boss killed, checkpoint established), max level, server-wide discoveries. Expected: 2-8/day.
@@ -978,17 +980,26 @@ The 150-character limit IS the NPC's personality. Grist is terse by nature. Mare
 
 **Network Architecture — NPCs as Mesh Nodes:**
 
-The NPCs are literal Meshtastic nodes on the mesh network. Five sim nodes, all backed by the same game database:
+The NPCs are literal Meshtastic nodes on the mesh network. Six sim nodes, all backed by the same game database:
 
-- **EMBR** — The Last Ember. The game server. All game commands go here.
+- **EMBR** — The Last Ember. The game server. All game commands go here. Responds with direct action results only.
+- **DCRG** — The Darkcragg Depths. One-way broadcast node. All dungeon events come from here — deaths, bounty progress, Breach opening, regen ticks, boss phase transitions, discoveries, level-ups. Does not accept commands. The dungeon is alive on the network.
 - **GRST** — Grist. DM this node to talk to the barkeep.
 - **MRN** — Maren. DM this node to talk to the healer.
 - **TRVL** — Torval. DM this node to talk to the merchant.
 - **WSPR** — Whisper. DM this node to talk to the sage.
 
+This splits two distinct streams: EMBR only sends direct responses to your actions. DCRG is the ambient feed of what's happening in the world. The NPCs are people you talk to. Six nodes total, one game DB backing all of them.
+
 Players don't issue a `talk` command — they DM the NPC's node directly. The game server sees inbound on the NPC node ID, checks the rules below, and routes the response back through that NPC's node. The NPCs are *people on the network*, not menu options.
 
 **Three rule layers (checked in order):**
+
+**DCRG rules (broadcast node):**
+- DCRG never accepts inbound messages. If a player or unknown node DMs DCRG, it responds with a static message: `"The Darkcragg does not answer. It only speaks. DM EMBR to play."`
+- All tier 1 and tier 2 broadcasts are sent FROM the DCRG node, not EMBR.
+- Targeted broadcasts (multi-room puzzle feedback) are also sent from DCRG as DMs to qualifying players.
+- DCRG is the voice of the dungeon. When someone dies, when the Breach opens, when a bounty falls — it comes from the Darkcragg.
 
 **Rule 1 — Unknown node (not in the game):** Static in-character rejection with onboarding instructions. No LLM call. Each NPC has a fixed response:
 - Grist: `"Don't know you. DM EMBR to start. Then we'll talk."`
@@ -1108,7 +1119,9 @@ On a 45-60 second radio round-trip, guessing a command and getting "Unknown comm
 - Raid Boss mechanics: roll 2-3 from table of 12 (offensive/defensive/control). 3 phases always present, intensify rolled mechanics at 66% and 33% HP. Players discover mechanics through scouting.
 - Multi-room puzzles: 2-3 per epoch. Paired symbols in room descriptions for implicit connection. Targeted broadcasts (only to previous visitors) for cross-room feedback. Three archetypes: paired mechanism, sequence lock, cooperative trigger.
 - Town hub: The Last Ember — persistent bar across all epochs, all servers. Four permanent NPCs: Grist (barkeep), Maren (healer), Torval (merchant), Whisper (sage).
-- NPC live conversations: NPCs are sim nodes on the mesh (GRST, MRN, TRVL, WSPR). Players DM them directly. Three rule layers: unknown node gets static onboarding response, known player not in bar gets static rejection, known player in bar gets full LLM conversation. No rate limit. Session-only memory. Falls back to pre-generated dialogue on failure. 24-epoch history seed provides 2 years of lore for NPCs to draw from.
+- Mesh node architecture: 6 sim nodes — EMBR (game commands + responses), DCRG (one-way dungeon broadcasts), GRST/MRN/TRVL/WSPR (NPC conversations). One game DB backs all of them.
+- NPC conversations: Players DM NPC nodes directly. Three rule layers: unknown node gets static onboarding, known player not in bar gets static rejection, known player in bar gets full LLM conversation. Session-only memory, 5/day rate limit per NPC, falls back to pre-generated dialogue on failure.
+- DCRG is broadcast-only — does not accept commands. All tier 1/2 and targeted broadcasts route through DCRG.
 - Command discovery: smart error responses show valid commands for current state, barkeep nudges for unused systems, explicit command listing on first connect.
 - Dungeon name: The Darkcragg Depths — persistent across all epochs like the Last Ember. Floor names reskin per epoch but the Darkcragg is always the Darkcragg.
 
@@ -1116,4 +1129,4 @@ On a 45-60 second radio round-trip, guessing a command and getting "Unknown comm
 
 - Breach mini-boss tuning — soloable at level 7-8, comfortable for two level 5-6 players
 - All regen/HP numbers need playtesting — current values are design targets, not validated
-- NPC sim node deployment — which host runs meshtasticd with 5 identities, TCP routing to game LXC
+- Sim node deployment — which host runs meshtasticd with 6 identities (EMBR, DCRG, GRST, MRN, TRVL, WSPR), TCP routing to game LXC
