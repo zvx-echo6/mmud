@@ -507,6 +507,18 @@ CREATE TABLE IF NOT EXISTS join_config (
 );
 INSERT OR IGNORE INTO join_config (id) VALUES (1);
 
+-- NPC persistent memory — one summary per player-NPC pair, updated each conversation
+CREATE TABLE IF NOT EXISTS npc_memory (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    player_id INTEGER NOT NULL REFERENCES players(id),
+    npc TEXT NOT NULL,                -- grist, maren, torval, whisper
+    summary TEXT NOT NULL DEFAULT '', -- Compact memory summary (key facts, impressions)
+    turn_count INTEGER DEFAULT 0,    -- Total conversation turns with this NPC
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(player_id, npc)
+);
+CREATE INDEX IF NOT EXISTS idx_npc_memory_player ON npc_memory(player_id, npc);
+
 -- =============================================================================
 -- INDEXES
 -- =============================================================================

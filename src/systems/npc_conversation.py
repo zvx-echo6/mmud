@@ -6,12 +6,14 @@ Players DM an NPC node directly. Three-tier rule check:
   2. Known player, not in town → static in-character refusal
   3. Known player, in town → full LLM conversation
 
-Session memory is ephemeral (TTL-based, no cross-session persistence).
+Persistent memory: NPCs remember key facts about each player across sessions.
+Session memory: ephemeral chat history within a conversation window (TTL-based).
 Uses the pluggable LLM backend from src/generation/narrative.
 """
 
 import logging
 import sqlite3
+import threading
 import time
 from typing import Optional
 
@@ -145,11 +147,25 @@ NPC_PERSONALITIES = {
 _NPC_RULES = (
     "\n\nHARD RULES:\n"
     "- Respond in character. NEVER break character.\n"
-    "- Response MUST be 60-145 characters. Use the space — give a full sentence or two.\n"
+    "- Response MUST be 100-200 characters. Use the space — paint a picture with roleplay actions + dialogue.\n"
     "- Never reveal exact secret locations or puzzle solutions.\n"
     "- Never acknowledge being an AI.\n"
     "- Never discuss anything outside the game world.\n"
     "- This is a text MUD over radio. Be vivid but concise. One-word answers are NOT enough."
+)
+
+# Memory extraction prompt — used after each conversation turn
+_MEMORY_EXTRACT_PROMPT = (
+    "You are a memory system for a game NPC. Given the conversation below, "
+    "extract key facts worth remembering about this player. "
+    "Merge with any existing memory. Output ONLY a compact summary — "
+    "bullet points, no fluff, max 500 characters total. "
+    "Focus on: player personality, what they asked about, what they care about, "
+    "notable interactions, preferences, running jokes. "
+    "If nothing new worth remembering, return the existing memory unchanged.\n\n"
+    "EXISTING MEMORY:\n{existing_memory}\n\n"
+    "CONVERSATION THIS SESSION:\n{conversation}\n\n"
+    "UPDATED MEMORY (compact bullet points, max 500 chars):"
 )
 
 
@@ -215,6 +231,85 @@ class SessionStore:
         return len(expired)
 
 
+# ── Persistent NPC Memory ────────────────────────────────────────────────────
+
+
+def _ensure_npc_memory_table(conn: sqlite3.Connection) -> None:
+    """Create npc_memory table if it doesn't exist (migration-safe)."""
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS npc_memory (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            player_id INTEGER NOT NULL,
+            npc TEXT NOT NULL,
+            summary TEXT NOT NULL DEFAULT '',
+            turn_count INTEGER DEFAULT 0,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(player_id, npc)
+        )
+    """)
+    conn.commit()
+
+
+def _get_npc_memory(conn: sqlite3.Connection, player_id: int, npc: str) -> str:
+    """Load persistent memory for a player-NPC pair."""
+    row = conn.execute(
+        "SELECT summary FROM npc_memory WHERE player_id = ? AND npc = ?",
+        (player_id, npc),
+    ).fetchone()
+    return row["summary"] if row else ""
+
+
+def _save_npc_memory(conn: sqlite3.Connection, player_id: int, npc: str, summary: str) -> None:
+    """Save or update persistent memory for a player-NPC pair."""
+    conn.execute(
+        """INSERT INTO npc_memory (player_id, npc, summary, turn_count, updated_at)
+           VALUES (?, ?, ?, 1, CURRENT_TIMESTAMP)
+           ON CONFLICT(player_id, npc) DO UPDATE SET
+               summary = excluded.summary,
+               turn_count = turn_count + 1,
+               updated_at = CURRENT_TIMESTAMP""",
+        (player_id, npc, summary),
+    )
+    conn.commit()
+
+
+def _update_memory_async(
+    conn: sqlite3.Connection,
+    backend: BackendInterface,
+    player_id: int,
+    npc: str,
+    existing_memory: str,
+    session_messages: list[dict],
+) -> None:
+    """Update NPC memory in a background thread after a conversation turn."""
+    def _do_update():
+        try:
+            # Format conversation for the memory extractor
+            convo_lines = []
+            for msg in session_messages:
+                role = "Player" if msg["role"] == "user" else "NPC"
+                convo_lines.append(f"{role}: {msg['content']}")
+            conversation = "\n".join(convo_lines)
+
+            prompt = _MEMORY_EXTRACT_PROMPT.format(
+                existing_memory=existing_memory or "(no prior memory)",
+                conversation=conversation,
+            )
+
+            new_memory = backend.complete(prompt, max_tokens=200)
+            # Trim to 500 chars
+            new_memory = new_memory.strip()[:500]
+
+            if new_memory:
+                _save_npc_memory(conn, player_id, npc, new_memory)
+                logger.info(f"Memory updated for player {player_id} / {npc}: {new_memory[:80]}...")
+        except Exception as e:
+            logger.warning(f"Memory update failed for player {player_id} / {npc}: {e}")
+
+    t = threading.Thread(target=_do_update, daemon=True)
+    t.start()
+
+
 # ── Game State Injection ─────────────────────────────────────────────────────
 
 
@@ -264,7 +359,7 @@ def _build_game_state(conn: sqlite3.Connection, player: dict) -> str:
     return " ".join(parts)
 
 
-def _build_system_prompt(npc: str, game_state: str) -> str:
+def _build_system_prompt(npc: str, game_state: str, memory: str = "") -> str:
     """Build the full system prompt for an NPC conversation."""
     personality = NPC_PERSONALITIES.get(npc, NPC_PERSONALITIES["grist"])
     examples = personality.get("example_lines", [])
@@ -274,11 +369,20 @@ def _build_system_prompt(npc: str, game_state: str) -> str:
             "\n\nEXAMPLE RESPONSES (match this voice and length):\n"
             + "\n".join(f"- {ex}" for ex in examples)
         )
+
+    memory_block = ""
+    if memory:
+        memory_block = (
+            f"\n\nYOUR MEMORY OF THIS PLAYER (reference naturally, don't recite):\n"
+            f"{memory}"
+        )
+
     return (
         f"You are {personality['name']}, {personality['title']}.\n\n"
         f"PERSONALITY: {personality['voice']}\n\n"
         f"KNOWLEDGE: {personality['knowledge']}"
-        f"{examples_block}\n\n"
+        f"{examples_block}"
+        f"{memory_block}\n\n"
         f"CURRENT GAME STATE: {game_state}"
         f"{_NPC_RULES}"
     )
@@ -297,6 +401,8 @@ class NPCConversationHandler:
         # Tracking attributes — set after each handle_message() call
         self.last_result_type: Optional[str] = None  # npc_rule1, npc_rule2, npc_llm, npc_fallback
         self.last_player_id: Optional[int] = None
+        # Ensure npc_memory table exists (migration-safe)
+        _ensure_npc_memory_table(conn)
 
     def handle_message(self, npc: str, sender_id: str, text: str) -> str:
         """Process an inbound message to an NPC node.
@@ -307,7 +413,7 @@ class NPCConversationHandler:
             text: Message text from the player.
 
         Returns:
-            Response string (always under 150 chars).
+            Response string (always under 200 chars).
         """
         # Reset tracking
         self.last_result_type = None
@@ -351,9 +457,12 @@ class NPCConversationHandler:
         # Add the player's message
         session.add_user_message(text)
 
+        # Load persistent memory for this player-NPC pair
+        memory = _get_npc_memory(self.conn, player["id"], npc)
+
         # Build context
         game_state = _build_game_state(self.conn, player)
-        system_prompt = _build_system_prompt(npc, game_state)
+        system_prompt = _build_system_prompt(npc, game_state, memory=memory)
 
         try:
             response = self.backend.chat(
@@ -362,12 +471,20 @@ class NPCConversationHandler:
                 max_tokens=NPC_LLM_MAX_TOKENS,
             )
 
-            # Enforce 150-char limit
-            if len(response) > LLM_OUTPUT_CHAR_LIMIT:
-                response = response[:LLM_OUTPUT_CHAR_LIMIT - 3] + "..."
+            # Hard cap at 200 chars (absolute ceiling, never exceed)
+            if len(response) > 200:
+                response = response[:197] + "..."
 
             session.add_assistant_message(response)
             self.last_result_type = "npc_llm"
+
+            # Update persistent memory in background (don't block the response)
+            _update_memory_async(
+                self.conn, self.backend,
+                player["id"], npc,
+                memory, session.messages,
+            )
+
             return response
 
         except Exception as e:

@@ -599,9 +599,20 @@ class GoogleBackend(BackendInterface):
             contents=contents,
             config=types.GenerateContentConfig(
                 system_instruction=system,
-                max_output_tokens=max_tokens,
             ),
         )
+        # Debug: log full response structure to diagnose truncation
+        candidate = response.candidates[0]
+        parts = candidate.content.parts
+        logger.info(
+            f"Gemini response: finish_reason={candidate.finish_reason}, "
+            f"parts={len(parts)}, "
+            f"usage={{cand={response.usage_metadata.candidates_token_count}, "
+            f"think={getattr(response.usage_metadata, 'thoughts_token_count', None)}}}"
+        )
+        for i, part in enumerate(parts):
+            has_thought = getattr(part, 'thought', False)
+            logger.info(f"  part[{i}]: thought={has_thought}, text={repr(part.text[:100]) if part.text else 'None'}")
         return response.text.strip()
 
 
