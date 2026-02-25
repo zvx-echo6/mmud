@@ -1,0 +1,166 @@
+{% extends "admin/base.html" %}
+
+{% block title %}Message Log{% endblock %}
+
+{% block admin_content %}
+  <div class="page-header" style="padding-top:20px;">
+    <h1 class="page-title" style="font-size:22px;">Message Log</h1>
+    <p class="page-subtitle">
+      <span id="msg-count">{{ messages|length }}</span> messages across all nodes
+      <span id="poll-status" style="margin-left:12px;font-size:11px;color:var(--text-ghost);">Live</span>
+    </p>
+  </div>
+
+  <div id="log-controls" style="display:flex;gap:12px;align-items:center;margin-bottom:12px;flex-wrap:wrap;">
+    <label style="font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--text-ghost);display:flex;align-items:center;gap:4px;">
+      <input type="checkbox" id="auto-scroll" checked> Auto-scroll
+    </label>
+    <label style="font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--text-ghost);display:flex;align-items:center;gap:4px;">
+      Direction:
+      <select id="dir-filter" style="font-family:'JetBrains Mono',monospace;font-size:10px;background:var(--bg-secondary, #1a1a2e);color:var(--parchment);border:1px solid var(--border);padding:2px 4px;">
+        <option value="all">All</option>
+        <option value="inbound">Inbound</option>
+        <option value="outbound">Outbound</option>
+        <option value="system">System</option>
+      </select>
+    </label>
+    <label style="font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--text-ghost);display:flex;align-items:center;gap:4px;">
+      Node:
+      <select id="node-filter" style="font-family:'JetBrains Mono',monospace;font-size:10px;background:var(--bg-secondary, #1a1a2e);color:var(--parchment);border:1px solid var(--border);padding:2px 4px;">
+        <option value="all">All</option>
+        <option value="EMBR">EMBR</option>
+        <option value="DCRG">DCRG</option>
+        <option value="GRST">GRST</option>
+        <option value="MRN">MRN</option>
+        <option value="TRVL">TRVL</option>
+        <option value="WSPR">WSPR</option>
+      </select>
+    </label>
+  </div>
+
+  <div id="log-container" style="height:calc(100vh - 300px);overflow-y:auto;border:1px solid var(--border);border-radius:4px;background:rgba(0,0,0,0.3);font-family:'JetBrains Mono',monospace;font-size:11px;line-height:1.6;">
+    <table style="width:100%;border-collapse:collapse;">
+      <thead style="position:sticky;top:0;background:var(--bg-secondary, #1a1a2e);z-index:1;">
+        <tr>
+          <th style="padding:6px 8px;text-align:left;color:var(--text-ghost);font-size:10px;font-weight:500;border-bottom:1px solid var(--border);width:140px;">Timestamp</th>
+          <th style="padding:6px 8px;text-align:left;color:var(--text-ghost);font-size:10px;font-weight:500;border-bottom:1px solid var(--border);width:50px;">Node</th>
+          <th style="padding:6px 8px;text-align:left;color:var(--text-ghost);font-size:10px;font-weight:500;border-bottom:1px solid var(--border);width:40px;">Dir</th>
+          <th style="padding:6px 8px;text-align:left;color:var(--text-ghost);font-size:10px;font-weight:500;border-bottom:1px solid var(--border);width:120px;">From</th>
+          <th style="padding:6px 8px;text-align:left;color:var(--text-ghost);font-size:10px;font-weight:500;border-bottom:1px solid var(--border);width:80px;">Type</th>
+          <th style="padding:6px 8px;text-align:left;color:var(--text-ghost);font-size:10px;font-weight:500;border-bottom:1px solid var(--border);">Message</th>
+        </tr>
+      </thead>
+      <tbody id="log-body">
+        {% for msg in messages %}
+        <tr class="log-row" data-id="{{ msg.id }}" data-dir="{{ msg.direction }}" data-node="{{ msg.node }}">
+          <td style="padding:3px 8px;color:var(--text-ghost);white-space:nowrap;">{{ msg.timestamp or '—' }}</td>
+          <td style="padding:3px 8px;color:var(--frost);font-weight:bold;">{{ msg.node }}</td>
+          <td style="padding:3px 8px;">
+            {% if msg.direction == 'inbound' %}
+              <span style="color:var(--frost);">IN</span>
+            {% elif msg.direction == 'outbound' %}
+              <span style="color:var(--ember-glow);">OUT</span>
+            {% else %}
+              <span style="color:var(--text-ghost);">SYS</span>
+            {% endif %}
+          </td>
+          <td style="padding:3px 8px;color:var(--parchment);">{{ msg.sender_name or msg.sender_id or '—' }}</td>
+          <td style="padding:3px 8px;color:var(--text-ghost);">{{ msg.message_type or '—' }}</td>
+          <td style="padding:3px 8px;color:var(--parchment);">{{ msg.message or '' }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% if not messages %}
+    <div id="empty-msg" style="padding:24px;text-align:center;color:var(--text-ghost);font-style:italic;">
+      No messages logged yet. Waiting for traffic...
+    </div>
+    {% endif %}
+  </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function() {
+  var logBody = document.getElementById('log-body');
+  var logContainer = document.getElementById('log-container');
+  var autoScroll = document.getElementById('auto-scroll');
+  var dirFilter = document.getElementById('dir-filter');
+  var nodeFilter = document.getElementById('node-filter');
+  var msgCount = document.getElementById('msg-count');
+  var pollStatus = document.getElementById('poll-status');
+  var emptyMsg = document.getElementById('empty-msg');
+  var lastId = {{ messages[-1].id if messages else 0 }};
+  var totalCount = {{ messages|length }};
+
+  function dirLabel(dir) {
+    if (dir === 'inbound') return '<span style="color:var(--frost);">IN</span>';
+    if (dir === 'outbound') return '<span style="color:var(--ember-glow);">OUT</span>';
+    return '<span style="color:var(--text-ghost);">SYS</span>';
+  }
+
+  function shouldShow(row) {
+    var df = dirFilter.value;
+    var nf = nodeFilter.value;
+    if (df !== 'all' && row.dataset.dir !== df) return false;
+    if (nf !== 'all' && row.dataset.node !== nf) return false;
+    return true;
+  }
+
+  function addRow(msg) {
+    if (emptyMsg) { emptyMsg.remove(); emptyMsg = null; }
+    var tr = document.createElement('tr');
+    tr.className = 'log-row';
+    tr.dataset.id = msg.id;
+    tr.dataset.dir = msg.direction || '';
+    tr.dataset.node = msg.node || '';
+    tr.innerHTML =
+      '<td style="padding:3px 8px;color:var(--text-ghost);white-space:nowrap;">' + (msg.timestamp || '\u2014') + '</td>' +
+      '<td style="padding:3px 8px;color:var(--frost);font-weight:bold;">' + (msg.node || '') + '</td>' +
+      '<td style="padding:3px 8px;">' + dirLabel(msg.direction) + '</td>' +
+      '<td style="padding:3px 8px;color:var(--parchment);">' + (msg.sender_name || msg.sender_id || '\u2014') + '</td>' +
+      '<td style="padding:3px 8px;color:var(--text-ghost);">' + (msg.message_type || '\u2014') + '</td>' +
+      '<td style="padding:3px 8px;color:var(--parchment);">' + (msg.message || '') + '</td>';
+    if (!shouldShow(tr)) tr.style.display = 'none';
+    logBody.appendChild(tr);
+  }
+
+  function applyFilters() {
+    var rows = logBody.querySelectorAll('.log-row');
+    rows.forEach(function(row) {
+      row.style.display = shouldShow(row) ? '' : 'none';
+    });
+  }
+
+  function poll() {
+    fetch('{{ url_for("admin.log_api") }}?after=' + lastId)
+      .then(function(r) { return r.json(); })
+      .then(function(msgs) {
+        if (msgs.length > 0) {
+          msgs.forEach(function(m) {
+            addRow(m);
+            if (m.id > lastId) lastId = m.id;
+          });
+          totalCount += msgs.length;
+          msgCount.textContent = totalCount;
+          if (autoScroll.checked) {
+            logContainer.scrollTop = logContainer.scrollHeight;
+          }
+        }
+        pollStatus.textContent = 'Live';
+        pollStatus.style.color = 'var(--text-ghost)';
+      })
+      .catch(function() {
+        pollStatus.textContent = 'Poll error';
+        pollStatus.style.color = 'var(--blood-bright)';
+      });
+  }
+
+  dirFilter.addEventListener('change', applyFilters);
+  nodeFilter.addEventListener('change', applyFilters);
+
+  logContainer.scrollTop = logContainer.scrollHeight;
+  setInterval(poll, 5000);
+})();
+</script>
+{% endblock %}

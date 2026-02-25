@@ -127,9 +127,105 @@ class MeshTransport:
         """Our Meshtastic node ID."""
         return self._my_node_id
 
+    def get_node_config(self) -> dict:
+        """Read current node configuration from the connected device.
+
+        Returns dict with identity, LoRa, device role, and channel info.
+        """
+        if not self._interface:
+            return {}
+
+        node = self._interface.localNode
+        lora = node.localConfig.lora
+        device = node.localConfig.device
+
+        # User info lives on the interface's nodeInfo, not on localNode
+        user_info = self._interface.getMyNodeInfo().get("user", {})
+
+        channels = []
+        for ch in node.channels:
+            channels.append({
+                "index": ch.index,
+                "role": int(ch.role),  # 0=DISABLED, 1=PRIMARY, 2=SECONDARY
+                "name": ch.settings.name,
+                "psk": ch.settings.psk.hex() if ch.settings.psk else "",
+            })
+
+        return {
+            "long_name": user_info.get("longName", ""),
+            "short_name": user_info.get("shortName", ""),
+            "hw_model": user_info.get("hwModel", ""),
+            "node_id": self._my_node_id,
+            "lora": {
+                "modem_preset": int(lora.modem_preset),
+                "tx_power": lora.tx_power,
+                "region": int(lora.region),
+                "channel_num": lora.channel_num,
+                "tx_enabled": lora.tx_enabled,
+            },
+            "device_role": int(device.role),
+            "channels": channels,
+        }
+
+    def set_owner(self, long_name: str, short_name: str) -> None:
+        """Set the device owner (long and short name)."""
+        if not self._interface:
+            logger.error("Not connected — cannot set owner")
+            return
+        self._interface.localNode.setOwner(long_name=long_name, short_name=short_name)
+        logger.info(f"Owner set: {long_name} ({short_name})")
+
+    def set_channel(self, index: int, name: str = None, psk_hex: str = None) -> None:
+        """Set channel name and/or PSK by channel index.
+
+        Args:
+            index: Channel index (0 = primary).
+            name: New channel name (None to leave unchanged).
+            psk_hex: New PSK as hex string (None to leave unchanged, "" to clear).
+        """
+        if not self._interface:
+            logger.error("Not connected — cannot set channel")
+            return
+
+        ch = self._interface.localNode.getChannelByChannelIndex(index)
+        if not ch:
+            logger.error(f"Channel {index} not found")
+            return
+
+        if name is not None:
+            ch.settings.name = name
+        if psk_hex is not None:
+            ch.settings.psk = bytes.fromhex(psk_hex) if psk_hex else b""
+
+        self._interface.localNode.writeChannel(index)
+        logger.info(f"Channel {index} updated")
+
+    def set_lora(self, **kwargs) -> None:
+        """Set LoRa config fields.
+
+        Valid keys: modem_preset, tx_power, region, channel_num, tx_enabled.
+        """
+        if not self._interface:
+            logger.error("Not connected — cannot set LoRa config")
+            return
+
+        lora = self._interface.localNode.localConfig.lora
+        for k, v in kwargs.items():
+            if hasattr(lora, k):
+                setattr(lora, k, v)
+            else:
+                logger.warning(f"Unknown LoRa field: {k}")
+
+        self._interface.localNode.writeConfig("lora")
+        logger.info(f"LoRa config updated: {kwargs}")
+
     def _handle_packet(self, packet: dict, interface=None) -> None:
         """Handle an incoming text packet from the Meshtastic device."""
         try:
+            # Only process packets from our own interface
+            if interface is not None and interface != self._interface:
+                return
+
             sender_id = packet.get("fromId", "")
             # Ignore our own messages
             if sender_id == self._my_node_id:
@@ -161,6 +257,11 @@ class MeshTransport:
                 text=text,
                 is_dm=is_dm,
                 channel=channel,
+            )
+
+            dm_label = "DM" if is_dm else "CH"
+            logger.info(
+                f"[{self._my_node_id}] {dm_label} from {sender_name} ({sender_id}): {text[:80]}"
             )
 
             if self._on_message:

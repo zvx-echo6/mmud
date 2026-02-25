@@ -20,7 +20,7 @@ def _log_action(db, admin, action, target=None, details=None):
 
 
 def assign_node(admin, role, mesh_node_id):
-    """Assign a Meshtastic node ID to a sim node role."""
+    """Manually override a node ID for a mesh node role."""
     db = get_rw_db()
     db.execute(
         "UPDATE node_config SET mesh_node_id = ? WHERE role = ?",
@@ -125,6 +125,67 @@ def send_broadcast(admin, message, tier=1):
     _log_action(db, admin, "broadcast", details=f"tier={tier}: {message[:60]}")
     db.commit()
     return True
+
+
+# ═══ NODE CONFIGURATION ═══
+
+
+def update_node_connection(admin, role, connection):
+    """Update the TCP connection string for a mesh node role.
+
+    Writes to node_config table. Requires container restart to take effect.
+    """
+    db = get_rw_db()
+    db.execute(
+        "UPDATE node_config SET connection = ? WHERE role = ?",
+        (connection, role),
+    )
+    _log_action(db, admin, "node_connection", role, f"connection={connection}")
+    db.commit()
+
+
+# ═══ JOIN CONFIGURATION ═══
+
+
+def get_join_config():
+    """Read current join configuration from DB."""
+    db = get_db()
+    row = db.execute("SELECT * FROM join_config WHERE id = 1").fetchone()
+    if not row:
+        return {
+            "channel_name": "", "channel_psk": "", "modem_preset": "LONG_FAST",
+            "region": "US", "channel_num": 0, "game_node_name": "EMBR",
+            "custom_instructions": "", "updated_at": "", "updated_by": "",
+        }
+    return dict(row)
+
+
+def save_join_config(admin, channel_name, channel_psk, modem_preset, region,
+                     channel_num, game_node_name, custom_instructions):
+    """Save join configuration to DB."""
+    db = get_rw_db()
+    now = datetime.utcnow().isoformat()
+    db.execute(
+        """INSERT INTO join_config (id, channel_name, channel_psk, modem_preset,
+             region, channel_num, game_node_name, custom_instructions,
+             updated_at, updated_by)
+           VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+           ON CONFLICT(id) DO UPDATE SET
+             channel_name = excluded.channel_name,
+             channel_psk = excluded.channel_psk,
+             modem_preset = excluded.modem_preset,
+             region = excluded.region,
+             channel_num = excluded.channel_num,
+             game_node_name = excluded.game_node_name,
+             custom_instructions = excluded.custom_instructions,
+             updated_at = excluded.updated_at,
+             updated_by = excluded.updated_by""",
+        (channel_name, channel_psk, modem_preset, region,
+         channel_num, game_node_name, custom_instructions, now, admin),
+    )
+    _log_action(db, admin, "join_config",
+                details=f"preset={modem_preset}, region={region}, ch={channel_name}")
+    db.commit()
 
 
 # ═══ LLM CONFIGURATION ═══

@@ -77,6 +77,67 @@ def _connect_node(name: str, conn_str: str, channel: int) -> MeshTransport:
     return transport  # unreachable, satisfies type checker
 
 
+def _sync_node_info(conn, router: NodeRouter, nodes: dict) -> None:
+    """Write discovered node IDs and connection strings to node_config table.
+
+    Called at startup after all nodes connect so the web dashboard
+    can display accurate connection info without manual entry.
+    """
+    # Ensure connection column exists (migration for existing DBs)
+    try:
+        conn.execute("SELECT connection FROM node_config LIMIT 1")
+    except Exception:
+        conn.execute("ALTER TABLE node_config ADD COLUMN connection TEXT")
+        conn.commit()
+
+    for name, cfg in nodes.items():
+        transport = router.transports.get(name)
+        node_id = transport.my_node_id if transport else None
+        conn_str = cfg.get("connection", "")
+        role = name.lower()
+
+        conn.execute(
+            """UPDATE node_config
+               SET mesh_node_id = ?, connection = ?, last_seen = CURRENT_TIMESTAMP
+               WHERE role = ?""",
+            (node_id, conn_str, role),
+        )
+    conn.commit()
+    logger.info("Node info synced to database")
+
+
+def _load_node_configs_from_db(conn) -> dict:
+    """Load connection strings from node_config table, fall back to env vars.
+
+    On first boot the DB has NULL connections — env vars are used and
+    written back to the DB so subsequent boots read from DB only.
+    """
+    rows = conn.execute(
+        "SELECT role, connection FROM node_config WHERE active = 1"
+    ).fetchall()
+
+    active_nodes = {}
+    for row in rows:
+        role_upper = row["role"].upper()
+        db_conn = row["connection"] or ""
+        env_conn = os.environ.get(f"MMUD_NODE_{role_upper}", "")
+        connection = db_conn or env_conn
+
+        if connection:
+            # Seed DB from env var on first boot
+            if not db_conn and env_conn:
+                conn.execute(
+                    "UPDATE node_config SET connection = ? WHERE role = ?",
+                    (env_conn, row["role"]),
+                )
+                conn.commit()
+
+            cfg = MESH_NODES.get(role_upper, {})
+            active_nodes[role_upper] = {**cfg, "connection": connection}
+
+    return active_nodes
+
+
 def _check_day_tick(conn, last_day: int) -> int:
     """Check if the epoch day has advanced and run the day tick if needed.
 
@@ -184,10 +245,8 @@ def main():
     # Initialize router
     router = NodeRouter(engine, npc_handler)
 
-    # Determine mode: 6-node (env vars) or single-node (--connection)
-    active_nodes = {
-        name: cfg for name, cfg in MESH_NODES.items() if cfg["connection"]
-    }
+    # Determine mode: 6-node (DB-first, env fallback) or single-node (--connection)
+    active_nodes = _load_node_configs_from_db(conn)
 
     if active_nodes:
         # 6-node mode
@@ -231,6 +290,10 @@ def main():
     epoch = get_epoch(conn)
     current_day = epoch["day_number"] if epoch else 0
 
+    # Sync discovered node info to DB for the web dashboard
+    if active_nodes:
+        _sync_node_info(conn, router, active_nodes)
+
     # Start web dashboard (Last Ember) in background thread
     if not args.no_web:
         web_port = args.web_port or int(os.environ.get("MMUD_WEB_PORT", web_config.WEB_PORT))
@@ -238,6 +301,7 @@ def main():
 
         app = create_app(db_path=db_path)
         app.config["NPC_HANDLER"] = npc_handler
+        app.config["NODE_ROUTER"] = router
         web_thread = threading.Thread(
             target=app.run,
             kwargs={

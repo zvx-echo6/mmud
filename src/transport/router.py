@@ -61,6 +61,12 @@ class NodeRouter:
 
     def wire_callbacks(self) -> None:
         """Set message callbacks on all registered transports."""
+        # Build set of our own node IDs to filter cross-talk on UDP multicast
+        self._own_node_ids = set()
+        for transport in self.transports.values():
+            if transport.my_node_id:
+                self._own_node_ids.add(transport.my_node_id)
+
         for node_name, transport in self.transports.items():
             # Capture node_name in closure
             def make_callback(name: str):
@@ -78,6 +84,10 @@ class NodeRouter:
         """
         if not msg.is_dm:
             return  # Only process DMs
+
+        # Ignore cross-talk from our own mesh nodes (UDP multicast echo)
+        if msg.sender_id in self._own_node_ids:
+            return
 
         node_config = MESH_NODES.get(node_name, {})
         role = node_config.get("role", "")

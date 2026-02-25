@@ -30,3 +30,9 @@ def chronicle():
 @bp.route("/howto")
 def howto():
     return render_template("howto.html")
+
+
+@bp.route("/join")
+def join():
+    config = gamedb.get_join_config()
+    return render_template("join.html", config=config)

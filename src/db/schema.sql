@@ -439,12 +439,21 @@ CREATE TABLE IF NOT EXISTS message_log (
 CREATE TABLE IF NOT EXISTS node_config (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     role TEXT UNIQUE NOT NULL,        -- embr, dcrg, grst, mrn, trvl, wspr
-    mesh_node_id TEXT,                -- Meshtastic node ID (!hex)
+    mesh_node_id TEXT,                -- Meshtastic node ID (!hex), auto-discovered
+    connection TEXT,                  -- TCP host:port or serial path
     display_name TEXT NOT NULL,       -- "EMBR", "GRST", etc.
     description TEXT,                 -- "The Last Ember — Game Server"
     active INTEGER DEFAULT 1,
     last_seen DATETIME
 );
+
+INSERT OR IGNORE INTO node_config (role, display_name, description) VALUES
+    ('embr', 'EMBR', 'The Last Ember — Game Server'),
+    ('dcrg', 'DCRG', 'The Darkcragg Depths — Broadcast Node'),
+    ('grst', 'GRST', 'Grist — Barkeep'),
+    ('mrn',  'MRN',  'Maren — Healer'),
+    ('trvl', 'TRVL', 'Torval — Merchant'),
+    ('wspr', 'WSPR', 'Whisper — Sage');
 
 CREATE TABLE IF NOT EXISTS admin_log (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -483,6 +492,20 @@ CREATE TABLE IF NOT EXISTS llm_config (
     updated_by TEXT DEFAULT ''
 );
 INSERT OR IGNORE INTO llm_config (id, backend) VALUES (1, 'dummy');
+
+CREATE TABLE IF NOT EXISTS join_config (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    channel_name TEXT DEFAULT '',
+    channel_psk TEXT DEFAULT '',           -- displayed to players (hex or base64)
+    modem_preset TEXT DEFAULT 'LONG_FAST',
+    region TEXT DEFAULT 'US',
+    channel_num INTEGER DEFAULT 0,
+    game_node_name TEXT DEFAULT 'EMBR',    -- which node players DM to join
+    custom_instructions TEXT DEFAULT '',    -- free-form operator notes
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_by TEXT DEFAULT ''
+);
+INSERT OR IGNORE INTO join_config (id) VALUES (1);
 
 -- =============================================================================
 -- INDEXES

@@ -1,11 +1,11 @@
 {% extends "admin/base.html" %}
 
-{% block title %}Node Assignment{% endblock %}
+{% block title %}Mesh Nodes{% endblock %}
 
 {% block admin_content %}
   <div class="page-header" style="padding-top:20px;">
-    <h1 class="page-title" style="font-size:22px;">Sim Nodes</h1>
-    <p class="page-subtitle">Assign Meshtastic node IDs to game roles.</p>
+    <h1 class="page-title" style="font-size:22px;">Mesh Nodes</h1>
+    <p class="page-subtitle">Live connection status for all mesh nodes. Click a row to configure.</p>
   </div>
 
   {# ═══ NODE TABLE ═══ #}
@@ -14,36 +14,35 @@
       <tr>
         <th>Role</th>
         <th>Description</th>
+        <th>Connection</th>
         <th>Node ID</th>
-        <th>Assigned</th>
+        <th>Status</th>
       </tr>
     </thead>
     <tbody>
       {% for node in nodes %}
-      <tr>
-        <td style="color:var(--parchment);">{{ node.role }}</td>
+      <tr style="cursor:pointer;" onclick="window.location='{{ url_for('admin.node_detail', role=node.role) }}'">
+        <td style="color:var(--parchment);font-weight:bold;">{{ node.display_name or node.role|upper }}</td>
         <td style="font-family:'Crimson Text',serif;font-size:13px;">{{ node.description or '' }}</td>
-        <td>{{ node.mesh_node_id or '—' }}</td>
-        <td>{{ node.assigned_at or '—' }}</td>
+        <td style="font-family:'JetBrains Mono',monospace;font-size:12px;">{{ node.connection or '—' }}</td>
+        <td style="font-family:'JetBrains Mono',monospace;font-size:12px;">{{ node.mesh_node_id or '—' }}</td>
+        <td>
+          {% if node.connected %}
+            <span style="color:var(--ember-glow);">connected</span>
+          {% elif node.connection %}
+            <span style="color:var(--blood-bright);">disconnected</span>
+          {% else %}
+            <span style="color:var(--text-ghost);">not configured</span>
+          {% endif %}
+        </td>
       </tr>
       {% endfor %}
     </tbody>
   </table>
 
-  {# ═══ ASSIGN FORM ═══ #}
-  <div class="divider">ASSIGN NODE</div>
-
-  <form method="post" action="{{ url_for('admin.nodes_assign') }}" style="max-width:400px;">
-    <label style="font-family:'Cinzel',serif;font-size:9px;letter-spacing:0.2em;color:var(--text-ghost);text-transform:uppercase;display:block;margin-bottom:6px;">Role</label>
-    <select name="role" class="admin-input" style="appearance:auto;">
-      {% for node in nodes %}
-      <option value="{{ node.role }}">{{ node.role }}</option>
-      {% endfor %}
-    </select>
-
-    <label style="font-family:'Cinzel',serif;font-size:9px;letter-spacing:0.2em;color:var(--text-ghost);text-transform:uppercase;display:block;margin-bottom:6px;">Meshtastic Node ID</label>
-    <input type="text" name="mesh_node_id" class="admin-input" placeholder="!abcd1234" autocomplete="off">
-
-    <button type="submit" class="admin-btn">Assign</button>
-  </form>
+  {% if nodes %}
+  <p style="font-family:'Crimson Text',serif;font-size:12px;color:var(--text-ghost);margin-top:16px;">
+    Connection strings are stored in the database. Environment variables are used as fallback on first boot only.
+  </p>
+  {% endif %}
 {% endblock %}

@@ -1,0 +1,201 @@
+{% extends "admin/base.html" %}
+
+{% block title %}{{ node.display_name or node.role|upper }} — Node Config{% endblock %}
+
+{% block admin_content %}
+  <div class="page-header" style="padding-top:20px;">
+    <a href="{{ url_for('admin.nodes') }}" style="font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--text-ghost);text-decoration:none;">&larr; All Nodes</a>
+    <h1 class="page-title" style="font-size:22px;margin-top:8px;">{{ node.display_name or node.role|upper }}</h1>
+    <p class="page-subtitle">{{ node.description or '' }}</p>
+  </div>
+
+  {# ═══ STATUS CARDS ═══ #}
+  <div class="admin-stat-grid">
+    <div class="admin-stat-card">
+      <div class="admin-stat-label">Role</div>
+      <div class="admin-stat-value">{{ node.role|upper }}</div>
+    </div>
+    <div class="admin-stat-card">
+      <div class="admin-stat-label">Status</div>
+      <div class="admin-stat-value">
+        {% if node.connected %}
+          <span style="color:var(--ember-glow);">CONNECTED</span>
+        {% elif node.connection %}
+          <span style="color:var(--blood-bright);">DISCONNECTED</span>
+        {% else %}
+          <span style="color:var(--text-ghost);">NOT CONFIGURED</span>
+        {% endif %}
+      </div>
+    </div>
+    <div class="admin-stat-card">
+      <div class="admin-stat-label">Node ID</div>
+      <div class="admin-stat-value" style="font-size:12px;">{{ node.live_node_id or node.mesh_node_id or '—' }}</div>
+    </div>
+    <div class="admin-stat-card">
+      <div class="admin-stat-label">Connection</div>
+      <div class="admin-stat-value" style="font-size:12px;">{{ node.connection or '—' }}</div>
+    </div>
+  </div>
+
+  {# ═══ CONNECTION ═══ #}
+  <div class="divider">CONNECTION</div>
+
+  <form method="post" action="{{ url_for('admin.node_update_connection', role=node.role) }}" style="max-width:500px;">
+    <label style="font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--text-ghost);display:block;margin-bottom:4px;">TCP Address (host:port)</label>
+    <input type="text" name="connection" class="admin-input" value="{{ node.connection or '' }}" placeholder="192.168.1.111:4403" autocomplete="off">
+    <p style="font-family:'Crimson Text',serif;font-size:11px;color:var(--text-ghost);margin-top:4px;">Changes require a container restart to take effect.</p>
+    <div style="margin-top:12px;">
+      <button type="submit" class="admin-btn">Save Connection</button>
+    </div>
+  </form>
+
+  {% if node.connected and mesh_config %}
+
+  {# ═══ IDENTITY ═══ #}
+  <div class="divider">IDENTITY</div>
+
+  <form method="post" action="{{ url_for('admin.node_update_identity', role=node.role) }}" style="max-width:500px;">
+    <label style="font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--text-ghost);display:block;margin-bottom:4px;">Long Name</label>
+    <input type="text" name="long_name" class="admin-input" value="{{ mesh_config.long_name }}" placeholder="Node long name" autocomplete="off">
+
+    <label style="font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--text-ghost);display:block;margin-bottom:4px;">Short Name</label>
+    <input type="text" name="short_name" class="admin-input" value="{{ mesh_config.short_name }}" placeholder="4 chars max" maxlength="4" autocomplete="off">
+
+    <div style="margin-top:12px;">
+      <button type="submit" class="admin-btn">Save Identity</button>
+    </div>
+  </form>
+
+  {# ═══ CHANNELS ═══ #}
+  <div class="divider">CHANNELS</div>
+
+  <table class="admin-table" style="margin-bottom:16px;">
+    <thead>
+      <tr>
+        <th>Index</th>
+        <th>Role</th>
+        <th>Name</th>
+        <th>PSK</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for ch in mesh_config.channels %}
+      {% if ch.role != 0 %}
+      <tr>
+        <td style="font-family:'JetBrains Mono',monospace;font-size:12px;">{{ ch.index }}</td>
+        <td>
+          {% if ch.role == 1 %}
+            <span style="color:var(--ember-glow);">PRIMARY</span>
+          {% elif ch.role == 2 %}
+            <span style="color:var(--frost);">SECONDARY</span>
+          {% endif %}
+        </td>
+        <td style="font-family:'JetBrains Mono',monospace;font-size:12px;">{{ ch.name or '(default)' }}</td>
+        <td style="font-family:'JetBrains Mono',monospace;font-size:12px;">
+          {% if ch.psk %}
+            <span style="color:var(--text-ghost);">{{ ch.psk[:8] }}...</span>
+          {% else %}
+            <span style="color:var(--text-ghost);">none</span>
+          {% endif %}
+        </td>
+      </tr>
+      {% endif %}
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <form method="post" action="{{ url_for('admin.node_update_channel', role=node.role) }}" style="max-width:500px;">
+    <p style="font-family:'Crimson Text',serif;font-size:12px;color:var(--text-ghost);margin-bottom:8px;">Edit a channel by index. Changes are written immediately to the device.</p>
+
+    <label style="font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--text-ghost);display:block;margin-bottom:4px;">Channel Index</label>
+    <select name="index" class="admin-input" style="appearance:auto;">
+      {% for ch in mesh_config.channels %}
+      {% if ch.role != 0 %}
+      <option value="{{ ch.index }}">{{ ch.index }} — {{ 'PRIMARY' if ch.role == 1 else 'SECONDARY' }}{% if ch.name %} ({{ ch.name }}){% endif %}</option>
+      {% endif %}
+      {% endfor %}
+    </select>
+
+    <label style="font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--text-ghost);display:block;margin-bottom:4px;">Channel Name</label>
+    <input type="text" name="name" class="admin-input" placeholder="Leave blank to keep current" autocomplete="off">
+
+    <label style="font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--text-ghost);display:block;margin-bottom:4px;">PSK (hex)</label>
+    <input type="text" name="psk_hex" class="admin-input" placeholder="Hex string, e.g. 1a or leave blank" autocomplete="off">
+
+    <div style="margin-top:12px;">
+      <button type="submit" class="admin-btn">Update Channel</button>
+    </div>
+  </form>
+
+  {# ═══ RADIO ═══ #}
+  <div class="divider">RADIO</div>
+
+  <form method="post" action="{{ url_for('admin.node_update_radio', role=node.role) }}" style="max-width:500px;">
+    <p style="font-family:'Crimson Text',serif;font-size:12px;color:var(--text-ghost);margin-bottom:8px;">Changes are written immediately to the device.</p>
+
+    <label style="font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--text-ghost);display:block;margin-bottom:4px;">Modem Preset</label>
+    <select name="modem_preset" class="admin-input" style="appearance:auto;">
+      <option value="0" {% if mesh_config.lora.modem_preset == 0 %}selected{% endif %}>LONG_FAST (0)</option>
+      <option value="1" {% if mesh_config.lora.modem_preset == 1 %}selected{% endif %}>LONG_SLOW (1)</option>
+      <option value="2" {% if mesh_config.lora.modem_preset == 2 %}selected{% endif %}>VERY_LONG_SLOW (2)</option>
+      <option value="3" {% if mesh_config.lora.modem_preset == 3 %}selected{% endif %}>MEDIUM_SLOW (3)</option>
+      <option value="4" {% if mesh_config.lora.modem_preset == 4 %}selected{% endif %}>MEDIUM_FAST (4)</option>
+      <option value="5" {% if mesh_config.lora.modem_preset == 5 %}selected{% endif %}>SHORT_SLOW (5)</option>
+      <option value="6" {% if mesh_config.lora.modem_preset == 6 %}selected{% endif %}>SHORT_FAST (6)</option>
+      <option value="7" {% if mesh_config.lora.modem_preset == 7 %}selected{% endif %}>LONG_MODERATE (7)</option>
+      <option value="8" {% if mesh_config.lora.modem_preset == 8 %}selected{% endif %}>SHORT_TURBO (8)</option>
+    </select>
+
+    <label style="font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--text-ghost);display:block;margin-bottom:4px;">TX Power (dBm)</label>
+    <input type="number" name="tx_power" class="admin-input" value="{{ mesh_config.lora.tx_power }}" min="0" max="30" autocomplete="off">
+
+    <label style="font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--text-ghost);display:block;margin-bottom:4px;">Region</label>
+    <select name="region" class="admin-input" style="appearance:auto;">
+      <option value="0" {% if mesh_config.lora.region == 0 %}selected{% endif %}>UNSET (0)</option>
+      <option value="1" {% if mesh_config.lora.region == 1 %}selected{% endif %}>US (1)</option>
+      <option value="2" {% if mesh_config.lora.region == 2 %}selected{% endif %}>EU_433 (2)</option>
+      <option value="3" {% if mesh_config.lora.region == 3 %}selected{% endif %}>EU_868 (3)</option>
+      <option value="4" {% if mesh_config.lora.region == 4 %}selected{% endif %}>CN (4)</option>
+      <option value="5" {% if mesh_config.lora.region == 5 %}selected{% endif %}>JP (5)</option>
+      <option value="6" {% if mesh_config.lora.region == 6 %}selected{% endif %}>ANZ (6)</option>
+      <option value="7" {% if mesh_config.lora.region == 7 %}selected{% endif %}>KR (7)</option>
+      <option value="8" {% if mesh_config.lora.region == 8 %}selected{% endif %}>TW (8)</option>
+      <option value="9" {% if mesh_config.lora.region == 9 %}selected{% endif %}>RU (9)</option>
+      <option value="10" {% if mesh_config.lora.region == 10 %}selected{% endif %}>IN (10)</option>
+      <option value="11" {% if mesh_config.lora.region == 11 %}selected{% endif %}>NZ_865 (11)</option>
+      <option value="12" {% if mesh_config.lora.region == 12 %}selected{% endif %}>TH (12)</option>
+      <option value="13" {% if mesh_config.lora.region == 13 %}selected{% endif %}>LORA_24 (13)</option>
+      <option value="14" {% if mesh_config.lora.region == 14 %}selected{% endif %}>UA_433 (14)</option>
+      <option value="15" {% if mesh_config.lora.region == 15 %}selected{% endif %}>UA_868 (15)</option>
+      <option value="16" {% if mesh_config.lora.region == 16 %}selected{% endif %}>MY_433 (16)</option>
+      <option value="17" {% if mesh_config.lora.region == 17 %}selected{% endif %}>MY_919 (17)</option>
+      <option value="18" {% if mesh_config.lora.region == 18 %}selected{% endif %}>SG_923 (18)</option>
+    </select>
+
+    <label style="font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--text-ghost);display:block;margin-bottom:4px;">Channel Number</label>
+    <input type="number" name="channel_num" class="admin-input" value="{{ mesh_config.lora.channel_num }}" min="0" max="100" autocomplete="off">
+
+    <div style="margin-top:12px;">
+      <button type="submit" class="admin-btn">Save Radio Settings</button>
+    </div>
+  </form>
+
+  {% elif not node.connected and node.connection %}
+  <div class="divider">DEVICE CONFIG</div>
+  <p style="font-family:'Crimson Text',serif;font-size:13px;color:var(--blood-bright);margin-top:8px;">
+    Node is disconnected. Identity, channel, and radio settings are only available when connected.
+  </p>
+  {% elif not node.connection %}
+  <div class="divider">DEVICE CONFIG</div>
+  <p style="font-family:'Crimson Text',serif;font-size:13px;color:var(--text-ghost);margin-top:8px;">
+    Set a connection address above and restart the container to connect to this node.
+  </p>
+  {% endif %}
+
+  {# ═══ MESSAGE LOG LINK ═══ #}
+  <div class="divider">MESSAGE LOG</div>
+  <p style="font-family:'Crimson Text',serif;font-size:13px;margin-top:8px;">
+    <a href="{{ url_for('admin.node_log', role=node.role) }}" style="color:var(--ember-glow);">View full message log &rarr;</a>
+    <span style="color:var(--text-ghost);margin-left:8px;">({{ message_count }} message{{ 's' if message_count != 1 else '' }})</span>
+  </p>
+{% endblock %}

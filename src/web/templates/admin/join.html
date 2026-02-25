@@ -1,0 +1,71 @@
+{% extends "admin/base.html" %}
+
+{% block title %}Join Configuration{% endblock %}
+
+{% block admin_content %}
+  <div class="page-header" style="padding-top:20px;">
+    <h1 class="page-title" style="font-size:22px;">Join Configuration</h1>
+    <p class="page-subtitle">Edit the mesh settings shown on the public <a href="{{ url_for('public.join') }}" style="color:var(--ember-glow);" target="_blank">/join</a> page.</p>
+  </div>
+
+  {# ═══ STATUS CARDS ═══ #}
+  <div class="admin-stat-grid">
+    <div class="admin-stat-card">
+      <div class="admin-stat-label">Channel</div>
+      <div class="admin-stat-value" style="font-size:12px;">{{ config.channel_name or '(default)' }}</div>
+    </div>
+    <div class="admin-stat-card">
+      <div class="admin-stat-label">Preset</div>
+      <div class="admin-stat-value" style="font-size:12px;">{{ config.modem_preset }}</div>
+    </div>
+    <div class="admin-stat-card">
+      <div class="admin-stat-label">Region</div>
+      <div class="admin-stat-value">{{ config.region }}</div>
+    </div>
+    <div class="admin-stat-card">
+      <div class="admin-stat-label">Game Node</div>
+      <div class="admin-stat-value">{{ config.game_node_name }}</div>
+    </div>
+  </div>
+
+  {# ═══ CONFIGURATION FORM ═══ #}
+  <div class="divider">MESH SETTINGS</div>
+
+  <form method="post" action="{{ url_for('admin.join_config_save') }}" style="max-width:500px;">
+
+    <label style="font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--text-ghost);display:block;margin-bottom:4px;">Channel Name</label>
+    <input type="text" name="channel_name" class="admin-input" value="{{ config.channel_name }}" placeholder="e.g. meshMUD" autocomplete="off">
+
+    <label style="font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--text-ghost);display:block;margin-bottom:4px;">Channel PSK (shown to players — hex or base64)</label>
+    <input type="text" name="channel_psk" class="admin-input" value="{{ config.channel_psk }}" placeholder="e.g. base64:abc123... or 1a2b3c" autocomplete="off">
+
+    <label style="font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--text-ghost);display:block;margin-bottom:4px;">Modem Preset</label>
+    <select name="modem_preset" class="admin-input" style="appearance:auto;">
+      {% for preset in ['LONG_FAST', 'LONG_SLOW', 'VERY_LONG_SLOW', 'MEDIUM_SLOW', 'MEDIUM_FAST', 'SHORT_SLOW', 'SHORT_FAST', 'LONG_MODERATE', 'SHORT_TURBO'] %}
+      <option value="{{ preset }}" {% if config.modem_preset == preset %}selected{% endif %}>{{ preset }}</option>
+      {% endfor %}
+    </select>
+
+    <label style="font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--text-ghost);display:block;margin-bottom:4px;">Region</label>
+    <select name="region" class="admin-input" style="appearance:auto;">
+      {% for r in ['UNSET', 'US', 'EU_433', 'EU_868', 'CN', 'JP', 'ANZ', 'KR', 'TW', 'RU', 'IN', 'NZ_865', 'TH', 'LORA_24', 'UA_433', 'UA_868', 'MY_433', 'MY_919', 'SG_923'] %}
+      <option value="{{ r }}" {% if config.region == r %}selected{% endif %}>{{ r }}</option>
+      {% endfor %}
+    </select>
+
+    <label style="font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--text-ghost);display:block;margin-bottom:4px;">Channel Number</label>
+    <input type="number" name="channel_num" class="admin-input" value="{{ config.channel_num }}" min="0" max="100" autocomplete="off">
+
+    <label style="font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--text-ghost);display:block;margin-bottom:4px;">Game Node Name (which node players DM)</label>
+    <input type="text" name="game_node_name" class="admin-input" value="{{ config.game_node_name }}" placeholder="EMBR" autocomplete="off">
+
+    <div class="divider">CUSTOM INSTRUCTIONS</div>
+
+    <label style="font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--text-ghost);display:block;margin-bottom:4px;">Additional notes shown on the join page (plain text)</label>
+    <textarea name="custom_instructions" class="admin-input" rows="5" style="resize:vertical;" placeholder="e.g. Meet at the trailhead, our mesh range covers downtown, etc.">{{ config.custom_instructions }}</textarea>
+
+    <div style="margin-top:16px;">
+      <button type="submit" class="admin-btn">Save Join Settings</button>
+    </div>
+  </form>
+{% endblock %}

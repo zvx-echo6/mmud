@@ -1,0 +1,151 @@
+{% extends "base.html" %}
+
+{% block title %}Join the Mesh{% endblock %}
+{% block page_class %} narrower{% endblock %}
+
+{% block nav %}
+  <nav class="nav-bar">
+    <a class="nav-home" href="{{ url_for('public.index') }}">The Last Ember</a>
+    <span class="nav-sep">·</span>
+    <a class="nav-link" href="{{ url_for('public.chronicle') }}">Chronicle</a>
+    <a class="nav-link" href="{{ url_for('public.howto') }}">How to Play</a>
+    <a class="nav-link active" href="{{ url_for('public.join') }}">Join</a>
+  </nav>
+{% endblock %}
+
+{% block content %}
+  <div class="page-header" style="padding-top:48px;">
+    <h1 class="page-title">Join the Mesh</h1>
+    <p class="page-subtitle">Configure your Meshtastic radio to connect to this meshMUD server.</p>
+  </div>
+
+  {% if config %}
+
+  {# ═══ RADIO SETTINGS ═══ #}
+  <div class="divider">Radio Settings</div>
+
+  <p class="prose">Set these on your Meshtastic device before connecting. Every player on the mesh needs the same settings.</p>
+
+  <div class="callout ember">
+    <div class="callout-label">Required configuration</div>
+    <table style="width:100%;border-collapse:collapse;font-family:'JetBrains Mono',monospace;font-size:13px;">
+      {% if config.modem_preset %}
+      <tr>
+        <td style="padding:6px 12px 6px 0;color:var(--text-ghost);white-space:nowrap;">Modem Preset</td>
+        <td style="padding:6px 0;color:var(--parchment);font-weight:bold;">{{ config.modem_preset }}</td>
+      </tr>
+      {% endif %}
+      {% if config.region %}
+      <tr>
+        <td style="padding:6px 12px 6px 0;color:var(--text-ghost);white-space:nowrap;">Region</td>
+        <td style="padding:6px 0;color:var(--parchment);font-weight:bold;">{{ config.region }}</td>
+      </tr>
+      {% endif %}
+      {% if config.channel_name %}
+      <tr>
+        <td style="padding:6px 12px 6px 0;color:var(--text-ghost);white-space:nowrap;">Channel Name</td>
+        <td style="padding:6px 0;color:var(--parchment);font-weight:bold;">{{ config.channel_name }}</td>
+      </tr>
+      {% endif %}
+      {% if config.channel_psk %}
+      <tr>
+        <td style="padding:6px 12px 6px 0;color:var(--text-ghost);white-space:nowrap;">Channel PSK</td>
+        <td style="padding:6px 0;color:var(--ember-glow);font-weight:bold;">{{ config.channel_psk }}</td>
+      </tr>
+      {% endif %}
+      {% if config.channel_num is not none and config.channel_num != 0 %}
+      <tr>
+        <td style="padding:6px 12px 6px 0;color:var(--text-ghost);white-space:nowrap;">Channel Number</td>
+        <td style="padding:6px 0;color:var(--parchment);font-weight:bold;">{{ config.channel_num }}</td>
+      </tr>
+      {% endif %}
+    </table>
+  </div>
+
+  {# ═══ SETUP STEPS ═══ #}
+  <div class="divider">Setup</div>
+
+  <div class="flow-steps">
+    <div class="flow-step">
+      <div class="flow-step-num">1</div>
+      <div class="flow-step-content">
+        <div class="flow-step-label">Configure your radio</div>
+        <div class="flow-step-text">
+          Open the Meshtastic app (iOS, Android, or CLI). Set your region to <strong>{{ config.region or 'US' }}</strong> and modem preset to <strong>{{ config.modem_preset or 'LONG_FAST' }}</strong>.
+        </div>
+      </div>
+    </div>
+    <div class="flow-step">
+      <div class="flow-step-num">2</div>
+      <div class="flow-step-content">
+        <div class="flow-step-label">Set the channel</div>
+        <div class="flow-step-text">
+          {% if config.channel_name and config.channel_psk %}
+            Add a channel named <code>{{ config.channel_name }}</code> with PSK <code>{{ config.channel_psk }}</code>.
+          {% elif config.channel_name %}
+            Add a channel named <code>{{ config.channel_name }}</code>. Use the default encryption key unless told otherwise.
+          {% else %}
+            Use the default channel (channel 0) with default settings.
+          {% endif %}
+        </div>
+      </div>
+    </div>
+    <div class="flow-step">
+      <div class="flow-step-num">3</div>
+      <div class="flow-step-content">
+        <div class="flow-step-label">Find the game node</div>
+        <div class="flow-step-text">
+          Look for <strong>{{ config.game_node_name or 'EMBR' }}</strong> in your node list. Once it appears, send it a direct message — any text. The game will respond with character creation.
+        </div>
+      </div>
+    </div>
+    <div class="flow-step">
+      <div class="flow-step-num">4</div>
+      <div class="flow-step-content">
+        <div class="flow-step-label">You're in</div>
+        <div class="flow-step-text">Pick a class — <code>W</code>arrior, <code>G</code>uardian, or <code>S</code>cout — and you're playing. Type <code>H</code> for help, <code>L</code> to look around.</div>
+      </div>
+    </div>
+  </div>
+
+  {% if config.channel_name and config.channel_psk %}
+  {# ═══ CLI QUICK SETUP ═══ #}
+  <div class="divider">CLI Quick Setup</div>
+
+  <p class="prose">If you're using the Meshtastic CLI, paste this to configure your radio:</p>
+
+  <div class="msg-example">
+    <span class="msg-server">meshtastic --set lora.region {{ config.region or 'US' }}</span><br>
+    <span class="msg-server">meshtastic --set lora.modem_preset {{ config.modem_preset or 'LONG_FAST' }}</span><br>
+    {% if config.channel_num and config.channel_num != 0 %}
+    <span class="msg-server">meshtastic --set lora.channel_num {{ config.channel_num }}</span><br>
+    {% endif %}
+    <span class="msg-server">meshtastic --ch-set psk {{ config.channel_psk }} --ch-index 0</span><br>
+    <span class="msg-server">meshtastic --ch-set name {{ config.channel_name }} --ch-index 0</span>
+  </div>
+  {% endif %}
+
+  {% if config.custom_instructions %}
+  {# ═══ OPERATOR NOTES ═══ #}
+  <div class="divider">Notes from the Operator</div>
+
+  <div class="callout gold">
+    <p class="prose">{{ config.custom_instructions }}</p>
+  </div>
+  {% endif %}
+
+  {% else %}
+
+  <div class="callout frost">
+    <div class="callout-label">Not configured yet</div>
+    <p class="prose">The server operator hasn't published join settings yet. Ask them to configure the Join page from the admin panel.</p>
+  </div>
+
+  {% endif %}
+
+  <p class="prose" style="margin-top:32px;color:var(--text-ghost);">New to meshMUD? Read the <a href="{{ url_for('public.howto') }}" style="color:var(--ember-glow);">How to Play</a> guide.</p>
+{% endblock %}
+
+{% block ember_init %}
+  if (window.initEmbers) initEmbers(25, 0.35);
+{% endblock %}

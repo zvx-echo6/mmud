@@ -270,7 +270,7 @@ def get_player_list():
 # ═══ NODE CONFIG ═══
 
 def get_node_config():
-    """Sim node assignments."""
+    """Mesh node connection info."""
     db = get_db()
     rows = db.execute("SELECT * FROM node_config ORDER BY id").fetchall()
     return [dict(r) for r in rows]
@@ -293,6 +293,75 @@ def get_npc_journals(npc=None, epoch_number=None, limit=10):
     params.append(limit)
     rows = db.execute(query, params).fetchall()
     return [dict(r) for r in rows]
+
+
+# ═══ JOIN CONFIG ═══
+
+def get_join_config():
+    """Mesh join configuration for public join page."""
+    db = get_db()
+    row = db.execute("SELECT * FROM join_config WHERE id = 1").fetchone()
+    if not row:
+        return None
+    return dict(row)
+
+
+# ═══ MESSAGE LOG ═══
+
+def get_node_messages(node):
+    """All messages for a specific node, oldest first."""
+    db = get_db()
+    rows = db.execute(
+        "SELECT * FROM message_log WHERE node = ? ORDER BY id ASC",
+        (node,),
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def get_node_messages_after(node, after_id):
+    """Messages for a node with id > after_id, oldest first."""
+    db = get_db()
+    rows = db.execute(
+        "SELECT * FROM message_log WHERE node = ? AND id > ? ORDER BY id ASC",
+        (node, after_id),
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def get_node_message_count(node):
+    """Count of messages for a specific node."""
+    db = get_db()
+    row = db.execute(
+        "SELECT COUNT(*) as cnt FROM message_log WHERE node = ?",
+        (node,),
+    ).fetchone()
+    return row["cnt"] if row else 0
+
+
+def get_all_messages():
+    """All messages across all nodes, oldest first."""
+    db = get_db()
+    rows = db.execute(
+        "SELECT * FROM message_log ORDER BY id ASC",
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def get_all_messages_after(after_id):
+    """Messages across all nodes with id > after_id, oldest first."""
+    db = get_db()
+    rows = db.execute(
+        "SELECT * FROM message_log WHERE id > ? ORDER BY id ASC",
+        (after_id,),
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def get_all_message_count():
+    """Total message count across all nodes."""
+    db = get_db()
+    row = db.execute("SELECT COUNT(*) as cnt FROM message_log").fetchone()
+    return row["cnt"] if row else 0
 
 
 # ═══ ADMIN LOG ═══

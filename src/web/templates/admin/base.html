@@ -11,10 +11,12 @@
 
   <nav class="admin-nav">
     <a href="{{ url_for('admin.dashboard') }}" class="{% if request.endpoint == 'admin.dashboard' %}active{% endif %}">Dashboard</a>
-    <a href="{{ url_for('admin.nodes') }}" class="{% if request.endpoint in ('admin.nodes', 'admin.nodes_assign') %}active{% endif %}">Nodes</a>
+    <a href="{{ url_for('admin.nodes') }}" class="{% if request.endpoint and request.endpoint.startswith('admin.node') %}active{% endif %}">Nodes</a>
     <a href="{{ url_for('admin.players') }}" class="{% if request.endpoint == 'admin.players' %}active{% endif %}">Players</a>
     <a href="{{ url_for('admin.epoch') }}" class="{% if request.endpoint == 'admin.epoch' %}active{% endif %}">Epoch</a>
+    <a href="{{ url_for('admin.join_config') }}" class="{% if request.endpoint and request.endpoint.startswith('admin.join') %}active{% endif %}">Join</a>
     <a href="{{ url_for('admin.llm') }}" class="{% if request.endpoint in ('admin.llm', 'admin.llm_save', 'admin.llm_test') %}active{% endif %}">LLM</a>
+    <a href="{{ url_for('admin.log') }}" class="{% if request.endpoint and request.endpoint.startswith('admin.log') %}active{% endif %}">Log</a>
     <a href="{{ url_for('admin.system') }}" class="{% if request.endpoint == 'admin.system' %}active{% endif %}">System</a>
     <a href="{{ url_for('admin.logout') }}" style="margin-left:auto;color:var(--blood-bright);">Logout</a>
   </nav>

@@ -33,7 +33,7 @@
   </div>
 
   {# ═══ NODE STATUS ═══ #}
-  <div class="divider">SIM NODES</div>
+  <div class="divider">MESH NODES</div>
 
   <table class="admin-table">
     <thead>
@@ -46,9 +46,17 @@
     <tbody>
       {% for node in nodes %}
       <tr>
-        <td>{{ node.role }}</td>
-        <td>{{ node.mesh_node_id or '—' }}</td>
-        <td>{% if node.mesh_node_id %}assigned{% else %}<span style="color:var(--blood-bright);">unassigned</span>{% endif %}</td>
+        <td>{{ node.display_name or node.role|upper }}</td>
+        <td style="font-family:'JetBrains Mono',monospace;font-size:12px;">{{ node.mesh_node_id or '—' }}</td>
+        <td>
+          {% if node.connected %}
+            <span style="color:var(--ember-glow);">connected</span>
+          {% elif node.connection %}
+            <span style="color:var(--blood-bright);">disconnected</span>
+          {% else %}
+            <span style="color:var(--text-ghost);">not configured</span>
+          {% endif %}
+        </td>
       </tr>
       {% endfor %}
     </tbody>

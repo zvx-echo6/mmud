@@ -50,6 +50,14 @@ def dashboard():
     player_count = gamedb.get_player_count()
     log = gamedb.get_admin_log(limit=10)
     nodes = gamedb.get_node_config()
+    # Merge live transport status
+    router = current_app.config.get("NODE_ROUTER")
+    for node in nodes:
+        role_upper = node["role"].upper()
+        if router and role_upper in router.transports:
+            node["connected"] = router.transports[role_upper]._interface is not None
+        else:
+            node["connected"] = False
     return render_template(
         "admin/dashboard.html",
         epoch=epoch,
@@ -63,20 +71,203 @@ def dashboard():
 @login_required
 def nodes():
     nodes = gamedb.get_node_config()
+    # Merge live transport status from the router
+    router = current_app.config.get("NODE_ROUTER")
+    for node in nodes:
+        role_upper = node["role"].upper()
+        if router and role_upper in router.transports:
+            transport = router.transports[role_upper]
+            node["connected"] = transport._interface is not None
+            node["live_node_id"] = transport.my_node_id
+        else:
+            node["connected"] = False
+            node["live_node_id"] = None
     return render_template("admin/nodes.html", nodes=nodes)
 
 
-@bp.route("/nodes/assign", methods=["POST"])
+@bp.route("/nodes/<role>")
 @login_required
-def nodes_assign():
-    role = request.form.get("role", "")
-    mesh_id = request.form.get("mesh_node_id", "").strip()
-    if not role or not mesh_id:
-        flash("Role and node ID required.", "error")
+def node_detail(role):
+    nodes = gamedb.get_node_config()
+    node = None
+    for n in nodes:
+        if n["role"] == role:
+            node = n
+            break
+    if not node:
+        flash("Unknown node role.", "error")
         return redirect(url_for("admin.nodes"))
-    admin_svc.assign_node(session["admin_user"], role, mesh_id)
-    flash(f"Assigned {mesh_id} to {role.upper()}.", "success")
-    return redirect(url_for("admin.nodes"))
+
+    role_upper = role.upper()
+    router = current_app.config.get("NODE_ROUTER")
+    transport = router.transports.get(role_upper) if router else None
+    node["connected"] = transport._interface is not None if transport else False
+    node["live_node_id"] = transport.my_node_id if transport else None
+
+    # Read live Meshtastic config from the device
+    mesh_config = None
+    if transport and node["connected"]:
+        try:
+            mesh_config = transport.get_node_config()
+        except Exception as e:
+            flash(f"Could not read device config: {e}", "error")
+
+    # Message count for this node
+    message_count = gamedb.get_node_message_count(role_upper)
+
+    return render_template(
+        "admin/node_detail.html",
+        node=node,
+        mesh_config=mesh_config,
+        message_count=message_count,
+    )
+
+
+@bp.route("/nodes/<role>/connection", methods=["POST"])
+@login_required
+def node_update_connection(role):
+    connection = request.form.get("connection", "").strip()
+    admin_svc.update_node_connection(session["admin_user"], role, connection)
+    flash("Connection updated. Restart container to apply.", "success")
+    return redirect(url_for("admin.node_detail", role=role))
+
+
+@bp.route("/nodes/<role>/identity", methods=["POST"])
+@login_required
+def node_update_identity(role):
+    role_upper = role.upper()
+    router = current_app.config.get("NODE_ROUTER")
+    transport = router.transports.get(role_upper) if router else None
+    if not transport or not transport._interface:
+        flash("Node not connected.", "error")
+        return redirect(url_for("admin.node_detail", role=role))
+
+    long_name = request.form.get("long_name", "").strip()
+    short_name = request.form.get("short_name", "").strip()
+    if not long_name or not short_name:
+        flash("Both long name and short name are required.", "error")
+        return redirect(url_for("admin.node_detail", role=role))
+
+    try:
+        transport.set_owner(long_name, short_name)
+        flash("Identity updated.", "success")
+    except Exception as e:
+        flash(f"Failed to set identity: {e}", "error")
+    return redirect(url_for("admin.node_detail", role=role))
+
+
+@bp.route("/nodes/<role>/channel", methods=["POST"])
+@login_required
+def node_update_channel(role):
+    role_upper = role.upper()
+    router = current_app.config.get("NODE_ROUTER")
+    transport = router.transports.get(role_upper) if router else None
+    if not transport or not transport._interface:
+        flash("Node not connected.", "error")
+        return redirect(url_for("admin.node_detail", role=role))
+
+    index = int(request.form.get("index", 0))
+    name = request.form.get("name")
+    psk_hex = request.form.get("psk_hex")
+
+    # Only pass values that were actually submitted
+    kwargs = {}
+    if name is not None and name != "":
+        kwargs["name"] = name
+    if psk_hex is not None:
+        kwargs["psk_hex"] = psk_hex
+
+    if not kwargs:
+        flash("No channel changes submitted.", "error")
+        return redirect(url_for("admin.node_detail", role=role))
+
+    try:
+        transport.set_channel(index, **kwargs)
+        flash(f"Channel {index} updated.", "success")
+    except Exception as e:
+        flash(f"Failed to set channel: {e}", "error")
+    return redirect(url_for("admin.node_detail", role=role))
+
+
+@bp.route("/nodes/<role>/radio", methods=["POST"])
+@login_required
+def node_update_radio(role):
+    role_upper = role.upper()
+    router = current_app.config.get("NODE_ROUTER")
+    transport = router.transports.get(role_upper) if router else None
+    if not transport or not transport._interface:
+        flash("Node not connected.", "error")
+        return redirect(url_for("admin.node_detail", role=role))
+
+    lora_kwargs = {}
+    modem_preset = request.form.get("modem_preset")
+    if modem_preset is not None and modem_preset != "":
+        lora_kwargs["modem_preset"] = int(modem_preset)
+    tx_power = request.form.get("tx_power")
+    if tx_power is not None and tx_power != "":
+        lora_kwargs["tx_power"] = int(tx_power)
+    region = request.form.get("region")
+    if region is not None and region != "":
+        lora_kwargs["region"] = int(region)
+    channel_num = request.form.get("channel_num")
+    if channel_num is not None and channel_num != "":
+        lora_kwargs["channel_num"] = int(channel_num)
+
+    if not lora_kwargs:
+        flash("No radio changes submitted.", "error")
+        return redirect(url_for("admin.node_detail", role=role))
+
+    try:
+        transport.set_lora(**lora_kwargs)
+        flash("Radio settings updated.", "success")
+    except Exception as e:
+        flash(f"Failed to set radio: {e}", "error")
+    return redirect(url_for("admin.node_detail", role=role))
+
+
+@bp.route("/nodes/<role>/log")
+@login_required
+def node_log(role):
+    nodes = gamedb.get_node_config()
+    node = None
+    for n in nodes:
+        if n["role"] == role:
+            node = n
+            break
+    if not node:
+        flash("Unknown node role.", "error")
+        return redirect(url_for("admin.nodes"))
+    role_upper = role.upper()
+    messages = gamedb.get_node_messages(role_upper)
+    return render_template(
+        "admin/node_log.html",
+        node=node,
+        messages=messages,
+    )
+
+
+@bp.route("/nodes/<role>/log/api")
+@login_required
+def node_log_api(role):
+    role_upper = role.upper()
+    after_id = request.args.get("after", 0, type=int)
+    messages = gamedb.get_node_messages_after(role_upper, after_id)
+    return jsonify(messages)
+
+
+@bp.route("/log")
+@login_required
+def log():
+    messages = gamedb.get_all_messages()
+    return render_template("admin/log.html", messages=messages)
+
+
+@bp.route("/log/api")
+@login_required
+def log_api():
+    after_id = request.args.get("after", 0, type=int)
+    messages = gamedb.get_all_messages_after(after_id)
+    return jsonify(messages)
 
 
 @bp.route("/players")
@@ -109,6 +300,30 @@ def reset_player(player_id):
     admin_svc.reset_player(session["admin_user"], player_id)
     flash("Player reset to level 1.", "success")
     return redirect(url_for("admin.players"))
+
+
+@bp.route("/join")
+@login_required
+def join_config():
+    config = admin_svc.get_join_config()
+    return render_template("admin/join.html", config=config)
+
+
+@bp.route("/join", methods=["POST"])
+@login_required
+def join_config_save():
+    admin_svc.save_join_config(
+        session["admin_user"],
+        channel_name=request.form.get("channel_name", "").strip(),
+        channel_psk=request.form.get("channel_psk", "").strip(),
+        modem_preset=request.form.get("modem_preset", "LONG_FAST").strip(),
+        region=request.form.get("region", "US").strip(),
+        channel_num=int(request.form.get("channel_num", 0)),
+        game_node_name=request.form.get("game_node_name", "EMBR").strip(),
+        custom_instructions=request.form.get("custom_instructions", "").strip(),
+    )
+    flash("Join configuration saved.", "success")
+    return redirect(url_for("admin.join_config"))
 
 
 @bp.route("/epoch")
@@ -204,6 +419,14 @@ def system():
     except OSError:
         pass
     nodes = gamedb.get_node_config()
+    # Merge live transport status
+    router = current_app.config.get("NODE_ROUTER")
+    for node in nodes:
+        role_upper = node["role"].upper()
+        if router and role_upper in router.transports:
+            node["connected"] = router.transports[role_upper]._interface is not None
+        else:
+            node["connected"] = False
     log = gamedb.get_admin_log(limit=20)
     return render_template(
         "admin/system.html",
