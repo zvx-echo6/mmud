@@ -8,11 +8,16 @@ import random
 import sqlite3
 from typing import Optional
 
-from config import CLASSES, DUNGEON_ACTIONS_PER_DAY
+from config import CLASSES, DUNGEON_ACTIONS_PER_DAY, SOCIAL_ACTIONS_PER_DAY, STAT_POINTS_PER_LEVEL
 from src.core import combat as combat_engine
 from src.core import world as world_mgr
 from src.models import player as player_model
 from src.models import world as world_data
+from src.systems import broadcast as broadcast_sys
+from src.systems import bounty as bounty_sys
+from src.systems import economy
+from src.systems import social as social_sys
+from src.systems import barkeep as barkeep_sys
 from src.transport.formatter import (
     fmt,
     fmt_combat_narrative,
@@ -30,25 +35,16 @@ DUNGEON_COST_ACTIONS = {"move", "fight", "flee", "examine"}
 # Actions that are always free
 FREE_ACTIONS = {
     "look", "stats", "inventory", "help", "who",
-    "shop", "heal", "bank", "barkeep", "train",
-    "enter", "town",
+    "shop", "buy", "sell", "heal", "bank", "deposit", "withdraw",
+    "barkeep", "token", "spend", "train", "equip", "unequip", "drop",
+    "enter", "town", "bounty", "read", "helpful", "message", "mail",
 }
 
 
 def handle_action(
     conn: sqlite3.Connection, player: dict, command: str, args: list[str]
 ) -> Optional[str]:
-    """Route a command to the correct handler.
-
-    Args:
-        conn: Database connection.
-        player: Player dict from database.
-        command: Normalized command name.
-        args: Command arguments.
-
-    Returns:
-        Response string, or None if unrecognized.
-    """
+    """Route a command to the correct handler."""
     handlers = {
         "look": action_look,
         "move": action_move,
@@ -59,6 +55,28 @@ def handle_action(
         "town": action_return_town,
         "help": action_help,
         "inventory": action_inventory,
+        # Phase 2: Economy & Progression
+        "train": action_train,
+        "shop": action_shop,
+        "buy": action_buy,
+        "sell": action_sell,
+        "equip": action_equip,
+        "unequip": action_unequip,
+        "drop": action_drop,
+        "bank": action_bank,
+        "deposit": action_deposit,
+        "withdraw": action_withdraw,
+        "heal": action_heal,
+        # Phase 3: Social Systems
+        "barkeep": action_barkeep,
+        "token": action_token,
+        "spend": action_spend,
+        "bounty": action_bounty,
+        "read": action_read,
+        "helpful": action_helpful,
+        "message": action_message,
+        "mail": action_mail,
+        "who": action_who,
     }
 
     handler = handlers.get(command)
@@ -96,6 +114,12 @@ def action_look(conn: sqlite3.Connection, player: dict, args: list[str]) -> str:
         desc = room["description_short"] + monster_info
     else:
         desc = room["description"]
+
+    # Append player messages
+    msgs = social_sys.get_room_messages(conn, player["room_id"], player["id"])
+    msg_str = social_sys.format_room_messages(msgs)
+    if msg_str:
+        desc = desc + " " + msg_str
 
     return fmt_room(room["name"], desc, exit_dirs)
 
@@ -137,7 +161,7 @@ def action_move(conn: sqlite3.Connection, player: dict, args: list[str]) -> str:
 
 
 def action_fight(conn: sqlite3.Connection, player: dict, args: list[str]) -> str:
-    """Fight a monster — one round per command."""
+    """Fight a monster — one round per command. Uses effective stats (base + gear)."""
     if player["state"] == "town":
         return fmt("Nothing to fight in town. Type ENTER to explore.")
 
@@ -164,10 +188,13 @@ def action_fight(conn: sqlite3.Connection, player: dict, args: list[str]) -> str
     if not player_model.use_dungeon_action(conn, player["id"]):
         return fmt("No dungeon actions left today!")
 
+    # Use effective stats (base + gear bonuses)
+    eff = economy.get_effective_stats(conn, player)
+
     # Resolve one round
     result = combat_engine.resolve_round(
-        player_pow=player["pow"], player_def=player["def"],
-        player_spd=player["spd"], player_hp=player["hp"],
+        player_pow=eff["pow"], player_def=eff["def"],
+        player_spd=eff["spd"], player_hp=player["hp"],
         monster_pow=monster["pow"], monster_def=monster["def"],
         monster_spd=monster["spd"], monster_hp=monster["hp"],
         monster_name=monster["name"],
@@ -180,6 +207,14 @@ def action_fight(conn: sqlite3.Connection, player: dict, args: list[str]) -> str
     if result.player_damage_dealt > 0:
         world_data.damage_monster(conn, monster["id"], result.player_damage_dealt)
 
+    # Track bounty contribution
+    bounty = bounty_sys.get_bounty_by_monster(conn, monster["id"])
+    if bounty and result.player_damage_dealt > 0:
+        bounty_sys.record_contribution(
+            conn, bounty["id"], player["id"], result.player_damage_dealt
+        )
+        bounty_sys.check_halfway_broadcast(conn, bounty["id"], monster["id"])
+
     # Check outcomes
     if result.monster_dead:
         world_mgr.exit_combat(conn, player["id"])
@@ -188,13 +223,32 @@ def action_fight(conn: sqlite3.Connection, player: dict, args: list[str]) -> str
         new_level = player_model.award_xp(conn, player["id"], xp)
         player_model.award_gold(conn, player["id"], gold)
 
-        victory = fmt(f"{result.narrative} +{xp}xp +{gold}g")
+        parts = [f"{result.narrative} +{xp}xp +{gold}g"]
+
+        # Check bounty completion
+        if bounty:
+            bounty_msg = bounty_sys.check_bounty_completion(
+                conn, bounty["id"], player["id"]
+            )
+            if bounty_msg:
+                parts.append(bounty_msg)
+
+        # Loot drop roll
+        loot_msg = economy.try_loot_drop(conn, player["id"], monster["tier"])
+        if loot_msg:
+            parts.append(loot_msg)
+
         if new_level:
-            victory += " " + fmt_level_up(new_level)
-        return fmt(victory)
+            sp = (new_level - player["level"]) * STAT_POINTS_PER_LEVEL
+            parts.append(fmt_level_up(new_level, sp))
+            broadcast_sys.broadcast_level_up(conn, player["name"], new_level)
+
+        return fmt(" ".join(parts))
 
     if result.player_dead:
         losses = player_model.apply_death(conn, player["id"])
+        floor = player.get("floor", 1) or 1
+        broadcast_sys.broadcast_death(conn, player["name"], floor)
         return fmt_death(losses["gold_lost"], losses["xp_lost"])
 
     # Combat continues
@@ -207,7 +261,7 @@ def action_fight(conn: sqlite3.Connection, player: dict, args: list[str]) -> str
 
 
 def action_flee(conn: sqlite3.Connection, player: dict, args: list[str]) -> str:
-    """Attempt to flee from combat."""
+    """Attempt to flee from combat. Uses effective stats."""
     if player["state"] != "combat":
         return fmt("You're not in combat.")
 
@@ -220,11 +274,14 @@ def action_flee(conn: sqlite3.Connection, player: dict, args: list[str]) -> str:
     if not player_model.use_dungeon_action(conn, player["id"]):
         return fmt("No dungeon actions left today!")
 
+    # Use effective stats
+    eff = economy.get_effective_stats(conn, player)
+
     result = combat_engine.attempt_flee(
-        player_spd=player["spd"],
+        player_spd=eff["spd"],
         player_hp=player["hp"],
         monster_pow=monster["pow"],
-        player_def=player["def"],
+        player_def=eff["def"],
         monster_name=monster["name"],
     )
 
@@ -242,19 +299,22 @@ def action_flee(conn: sqlite3.Connection, player: dict, args: list[str]) -> str:
 
 
 def action_stats(conn: sqlite3.Connection, player: dict, args: list[str]) -> str:
-    """Show player stats."""
+    """Show player stats with effective stats (base + gear)."""
+    eff = economy.get_effective_stats(conn, player)
     return fmt_stats(
         name=player["name"],
         cls=player["class"],
         level=player["level"],
         hp=player["hp"],
         hp_max=player["hp_max"],
-        pow_=player["pow"],
-        def_=player["def"],
-        spd=player["spd"],
+        pow_=eff["pow"],
+        def_=eff["def"],
+        spd=eff["spd"],
         gold=player["gold_carried"],
         xp=player["xp"],
         actions=player["dungeon_actions_remaining"],
+        banked=player["gold_banked"],
+        stat_points=player["stat_points"],
     )
 
 
@@ -285,17 +345,17 @@ def action_return_town(
         return fmt("You're in combat! FLEE first.")
 
     world_mgr.return_to_town(conn, player["id"])
-    return fmt("You return to town. HP restored. Barkeep, Healer, Shop, Bank await.")
+    return fmt("You return to town. Barkeep, Healer, Shop, Bank await.")
 
 
 def action_help(conn: sqlite3.Connection, player: dict, args: list[str]) -> str:
     """Show available commands."""
     if player["state"] == "town":
-        return fmt("ENTER LOOK STATS SHOP HEAL BANK BARKEEP HELP INV")
+        return fmt("ENTER SHOP BUY SELL HEAL BANK BAR TOK BOUNTY MAIL WHO TRAIN INV HELP")
     if player["state"] == "combat":
         return fmt("FIGHT(F) FLEE STATS LOOK HELP")
     if player["state"] == "dungeon":
-        return fmt("N/S/E/W LOOK(L) FIGHT(F) FLEE STATS(ST) INV(I) TOWN HELP(H)")
+        return fmt("N/S/E/W LOOK(L) FIGHT(F) FLEE MSG HELPFUL STATS(ST) INV(I) TOWN HELP")
     return fmt("LOOK STATS HELP")
 
 
@@ -303,20 +363,15 @@ def action_inventory(
     conn: sqlite3.Connection, player: dict, args: list[str]
 ) -> str:
     """Show inventory."""
-    rows = conn.execute(
-        """SELECT i.*, it.name as item_name, it.slot as item_slot
-           FROM inventory i JOIN items it ON i.item_id = it.id
-           WHERE i.player_id = ?""",
-        (player["id"],),
-    ).fetchall()
+    items = economy.get_inventory(conn, player["id"])
 
-    if not rows:
-        return fmt("Inventory: empty. Visit the shop in town.")
+    if not items:
+        return fmt("Inventory: empty. Visit the SHOP in town.")
 
     equipped = []
     backpack = []
-    for r in rows:
-        label = f"{r['item_name']}"
+    for r in items:
+        label = r["name"]
         if r["equipped"]:
             equipped.append(f"[{r['item_slot']}]{label}")
         else:
@@ -329,3 +384,263 @@ def action_inventory(
         parts.append("Bag:" + ",".join(backpack))
 
     return fmt(" ".join(parts) if parts else "Inventory: empty")
+
+
+# ── Phase 2: Economy & Progression Actions ──────────────────────────────────
+
+
+def action_train(conn: sqlite3.Connection, player: dict, args: list[str]) -> str:
+    """Train a stat (spend stat points)."""
+    if player["state"] != "town":
+        return fmt("You can only train in town.")
+
+    if not args:
+        sp = player["stat_points"]
+        return fmt(f"TRAIN POW/DEF/SPD to spend stat points. You have {sp} pts.")
+
+    ok, msg = player_model.train_stat(conn, player["id"], args[0])
+    return fmt(msg)
+
+
+def action_shop(conn: sqlite3.Connection, player: dict, args: list[str]) -> str:
+    """Show shop items available for purchase."""
+    if player["state"] != "town":
+        return fmt("You can only shop in town.")
+
+    epoch = conn.execute("SELECT day_number FROM epoch WHERE id = 1").fetchone()
+    day = epoch["day_number"] if epoch else 1
+
+    items = economy.get_shop_items(conn, day)
+    if not items:
+        return fmt("Shop is empty. Check back later.")
+
+    # Compact listing: "T1:Rusty Sword(65g) T2:Iron Blade(250g)"
+    listing = []
+    for it in items:
+        listing.append(f"{it['name']}({it['price']}g)")
+
+    return fmt("Shop: " + " ".join(listing))
+
+
+def action_buy(conn: sqlite3.Connection, player: dict, args: list[str]) -> str:
+    """Buy an item from the shop."""
+    if player["state"] != "town":
+        return fmt("You can only buy in town.")
+
+    if not args:
+        return fmt("BUY <item name>. Type SHOP to see available items.")
+
+    item_name = " ".join(args)
+    epoch = conn.execute("SELECT day_number FROM epoch WHERE id = 1").fetchone()
+    day = epoch["day_number"] if epoch else 1
+
+    ok, msg = economy.buy_item(conn, player["id"], item_name, day)
+    return fmt(msg)
+
+
+def action_sell(conn: sqlite3.Connection, player: dict, args: list[str]) -> str:
+    """Sell an item from inventory."""
+    if player["state"] != "town":
+        return fmt("You can only sell in town.")
+
+    if not args:
+        return fmt("SELL <item name>. Sells for 50% of shop price.")
+
+    item_name = " ".join(args)
+    ok, msg = economy.sell_item(conn, player["id"], item_name)
+    return fmt(msg)
+
+
+def action_equip(conn: sqlite3.Connection, player: dict, args: list[str]) -> str:
+    """Equip an item from backpack."""
+    if not args:
+        return fmt("EQUIP <item name>. Equips item from backpack to its slot.")
+
+    item_name = " ".join(args)
+    ok, msg = economy.equip_item(conn, player["id"], item_name)
+    return fmt(msg)
+
+
+def action_unequip(conn: sqlite3.Connection, player: dict, args: list[str]) -> str:
+    """Unequip an item from a gear slot."""
+    if not args:
+        return fmt("UNEQUIP <slot>. Slots: weapon, armor, trinket.")
+
+    ok, msg = economy.unequip_slot(conn, player["id"], args[0])
+    return fmt(msg)
+
+
+def action_drop(conn: sqlite3.Connection, player: dict, args: list[str]) -> str:
+    """Drop an item from inventory permanently."""
+    if not args:
+        return fmt("DROP <item name>. Permanently destroys the item.")
+
+    item_name = " ".join(args)
+    ok, msg = economy.drop_item(conn, player["id"], item_name)
+    return fmt(msg)
+
+
+def action_bank(conn: sqlite3.Connection, player: dict, args: list[str]) -> str:
+    """Show bank balance."""
+    if player["state"] != "town":
+        return fmt("You can only use the bank in town.")
+
+    return fmt(
+        f"Bank: {player['gold_banked']}g. Carried: {player['gold_carried']}g. "
+        f"DEP <amt> / WD <amt>"
+    )
+
+
+def action_deposit(conn: sqlite3.Connection, player: dict, args: list[str]) -> str:
+    """Deposit gold to bank."""
+    if player["state"] != "town":
+        return fmt("You can only use the bank in town.")
+
+    if not args:
+        return fmt("DEP <amount> or DEP ALL")
+
+    ok, msg = economy.deposit_gold(conn, player["id"], args[0])
+    return fmt(msg)
+
+
+def action_withdraw(conn: sqlite3.Connection, player: dict, args: list[str]) -> str:
+    """Withdraw gold from bank."""
+    if player["state"] != "town":
+        return fmt("You can only use the bank in town.")
+
+    if not args:
+        return fmt("WD <amount> or WD ALL")
+
+    ok, msg = economy.withdraw_gold(conn, player["id"], args[0])
+    return fmt(msg)
+
+
+def action_heal(conn: sqlite3.Connection, player: dict, args: list[str]) -> str:
+    """Heal at the healer in town."""
+    if player["state"] != "town":
+        return fmt("You can only heal in town.")
+
+    if player["hp"] >= player["hp_max"]:
+        return fmt("Already at full HP.")
+
+    cost = economy.calc_heal_cost(player)
+    if args and args[0].lower() == "y":
+        ok, msg = economy.heal_player(conn, player["id"], player)
+        return fmt(msg)
+
+    return fmt(f"Heal to full? Cost: {cost}g. You have {player['gold_carried']}g. HEAL Y")
+
+
+# ── Phase 3: Social System Actions ────────────────────────────────────────
+
+
+def action_barkeep(conn: sqlite3.Connection, player: dict, args: list[str]) -> str:
+    """Talk to Grist the barkeep. Free action, town only."""
+    if player["state"] != "town":
+        return fmt("Grist is in town. Head back first.")
+
+    recap = barkeep_sys.get_recap(conn, player["id"])
+    if recap:
+        return fmt(recap[0])
+    return fmt("Grist polishes a glass. 'Quiet day.'")
+
+
+def action_token(conn: sqlite3.Connection, player: dict, args: list[str]) -> str:
+    """Show bard token balance and spending menu."""
+    if player["state"] != "town":
+        return fmt("Visit the barkeep in town for tokens.")
+
+    return fmt(barkeep_sys.get_token_info(player))
+
+
+def action_spend(conn: sqlite3.Connection, player: dict, args: list[str]) -> str:
+    """Spend bard tokens at the barkeep."""
+    if player["state"] != "town":
+        return fmt("Visit the barkeep in town to spend tokens.")
+
+    if len(args) < 2:
+        return fmt("SPEND <cost> <choice>. Type TOK to see options.")
+
+    ok, msg = barkeep_sys.spend_tokens(conn, player["id"], args[0], args[1])
+    return fmt(msg)
+
+
+def action_bounty(conn: sqlite3.Connection, player: dict, args: list[str]) -> str:
+    """Show active bounties."""
+    return fmt(bounty_sys.format_bounty_list(conn))
+
+
+def action_read(conn: sqlite3.Connection, player: dict, args: list[str]) -> str:
+    """Read mail or messages."""
+    ok, msg = social_sys.read_oldest_unread(conn, player["id"])
+    return fmt(msg)
+
+
+def action_helpful(conn: sqlite3.Connection, player: dict, args: list[str]) -> str:
+    """Vote a room message as helpful. Dungeon only."""
+    if player["state"] not in ("dungeon", "combat"):
+        return fmt("No messages to rate here.")
+
+    if not player["room_id"]:
+        return fmt("No messages here.")
+
+    ok, msg = social_sys.vote_helpful(conn, player["id"], player["room_id"])
+    return fmt(msg)
+
+
+def action_message(conn: sqlite3.Connection, player: dict, args: list[str]) -> str:
+    """Leave a message in the current dungeon room. Costs 1 social action."""
+    if player["state"] not in ("dungeon", "combat"):
+        return fmt("You can only leave messages in the dungeon.")
+
+    if not player["room_id"]:
+        return fmt("Nowhere to leave a message.")
+
+    if not args:
+        return fmt("MSG <text> (max 15 chars).")
+
+    # Check social action budget
+    if player["social_actions_remaining"] <= 0:
+        return fmt("No social actions left today.")
+
+    text = " ".join(args)
+    ok, msg = social_sys.leave_message(conn, player["id"], player["room_id"], text)
+    if ok:
+        conn.execute(
+            "UPDATE players SET social_actions_remaining = social_actions_remaining - 1 WHERE id = ?",
+            (player["id"],),
+        )
+        conn.commit()
+    return fmt(msg)
+
+
+def action_mail(conn: sqlite3.Connection, player: dict, args: list[str]) -> str:
+    """Send mail or check inbox. Sending costs 1 social action."""
+    if not args:
+        unread, total = social_sys.get_inbox(conn, player["id"])
+        return fmt(f"Mail: {unread} unread / {total} total. MAIL <player> <msg> or READ")
+
+    if len(args) == 1:
+        # Might be trying to read
+        return fmt("MAIL <player> <message> to send. READ to check mail.")
+
+    # Sending mail — costs social action
+    if player["social_actions_remaining"] <= 0:
+        return fmt("No social actions left today.")
+
+    to_name = args[0]
+    message = " ".join(args[1:])
+    ok, msg = social_sys.send_mail(conn, player["id"], to_name, message)
+    if ok:
+        conn.execute(
+            "UPDATE players SET social_actions_remaining = social_actions_remaining - 1 WHERE id = ?",
+            (player["id"],),
+        )
+        conn.commit()
+    return fmt(msg)
+
+
+def action_who(conn: sqlite3.Connection, player: dict, args: list[str]) -> str:
+    """Show who is online."""
+    players = social_sys.get_who_list(conn)
+    return fmt(social_sys.format_who_list(players))

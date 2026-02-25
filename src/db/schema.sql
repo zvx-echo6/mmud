@@ -86,6 +86,7 @@ CREATE TABLE IF NOT EXISTS players (
     dungeon_actions_remaining INTEGER DEFAULT 12,
     social_actions_remaining INTEGER DEFAULT 2,
     special_actions_remaining INTEGER DEFAULT 1,
+    stat_points INTEGER DEFAULT 0,
     bard_tokens INTEGER DEFAULT 0,
     secrets_found INTEGER DEFAULT 0,
     last_login DATETIME,

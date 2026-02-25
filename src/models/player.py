@@ -16,6 +16,7 @@ from config import (
     MAX_LEVEL,
     SOCIAL_ACTIONS_PER_DAY,
     SPECIAL_ACTIONS_PER_DAY,
+    STAT_POINTS_PER_LEVEL,
     XP_PER_LEVEL,
 )
 
@@ -225,10 +226,13 @@ def award_xp(conn: sqlite3.Connection, player_id: int, xp: int) -> Optional[int]
     updates = {"xp": new_xp}
     if new_level > current_level:
         # Level up: increase HP max by 5 per level gained
-        hp_gain = (new_level - current_level) * 5
+        levels_gained = new_level - current_level
+        hp_gain = levels_gained * 5
+        sp_gain = levels_gained * STAT_POINTS_PER_LEVEL
         updates["level"] = new_level
         updates["hp_max"] = player["hp_max"] + hp_gain
         updates["hp"] = min(player["hp"] + hp_gain, player["hp_max"] + hp_gain)
+        updates["stat_points"] = player["stat_points"] + sp_gain
 
     update_state(conn, player_id, **updates)
     return new_level if new_level > current_level else None
@@ -241,6 +245,43 @@ def award_gold(conn: sqlite3.Connection, player_id: int, gold: int) -> None:
         (gold, player_id),
     )
     conn.commit()
+
+
+def train_stat(
+    conn: sqlite3.Connection, player_id: int, stat: str
+) -> tuple[bool, str]:
+    """Spend a stat point to increase a stat by 1.
+
+    Args:
+        conn: Database connection.
+        player_id: Player ID.
+        stat: Stat name (pow, def, spd).
+
+    Returns:
+        (success, message)
+    """
+    stat = stat.lower()
+    stat_map = {"pow": "pow", "def": "def", "spd": "spd",
+                "power": "pow", "defense": "def", "speed": "spd"}
+
+    col = stat_map.get(stat)
+    if not col:
+        return False, "Train what? Use: TRAIN POW, TRAIN DEF, or TRAIN SPD"
+
+    player = get_player(conn, player_id)
+    if not player:
+        return False, "Player not found."
+
+    if player["stat_points"] <= 0:
+        return False, "No stat points. Level up to earn more."
+
+    new_val = player[col] + 1
+    conn.execute(
+        f"UPDATE players SET {col} = ?, stat_points = stat_points - 1 WHERE id = ?",
+        (new_val, player_id),
+    )
+    conn.commit()
+    return True, f"+1 {col.upper()}! Now {new_val}. ({player['stat_points'] - 1} pts left)"
 
 
 def reset_daily_actions(conn: sqlite3.Connection) -> None:

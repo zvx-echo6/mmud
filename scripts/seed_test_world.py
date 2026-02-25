@@ -164,6 +164,8 @@ def seed(db_path: str = "mmud.db") -> None:
         ("Lucky Charm", "trinket", 1, 0, 0, 2, 1),
         ("Iron Blade", "weapon", 2, 4, 0, 0, 2),
         ("Chain Mail", "armor", 2, 0, 4, 0, 2),
+        ("Silver Ring", "trinket", 2, 1, 1, 1, 2),
+        ("Crystal Wand", "weapon", 3, 6, 0, 1, 3),
     ]
 
     for item in items:
@@ -174,11 +176,55 @@ def seed(db_path: str = "mmud.db") -> None:
             item,
         )
 
+    # === Bounty Monsters ===
+    # Mark Crystal Golem (monster id 5, room 7) as a bounty target
+    conn.execute(
+        "UPDATE monsters SET is_bounty = 1 WHERE id = 5"
+    )
+
+    # Create a bounty for the Crystal Golem
+    conn.execute(
+        """INSERT INTO bounties
+           (id, type, description, target_monster_id, target_value, current_value,
+            floor_min, floor_max, phase, available_from_day, active)
+           VALUES (1, 'kill', 'Slay the Crystal Golem', 5, 50, 0, 2, 2, 'early', 1, 1)"""
+    )
+
+    # Second bounty (inactive, available later)
+    conn.execute(
+        """INSERT INTO bounties
+           (id, type, description, target_monster_id, target_value, current_value,
+            floor_min, floor_max, phase, available_from_day, active)
+           VALUES (2, 'kill', 'Defeat the Spore Beast', 4, 40, 0, 2, 2, 'early', 3, 0)"""
+    )
+
+    # === Sample Broadcasts ===
+    conn.execute(
+        """INSERT INTO broadcasts (id, tier, message, created_at)
+           VALUES (1, 1, 'X TestPlayer fell on Floor 1.', '2026-01-01T12:00:00')"""
+    )
+    conn.execute(
+        """INSERT INTO broadcasts (id, tier, message, created_at)
+           VALUES (2, 2, '^ Hero reached level 5!', '2026-01-01T13:00:00')"""
+    )
+
+    # === Secrets (for barkeep hint tests) ===
+    conn.execute(
+        """INSERT INTO secrets
+           (id, type, floor, room_id, name, description, reward_type,
+            hint_tier1, hint_tier2, hint_tier3)
+           VALUES (1, 'observation', 1, 2, 'Rat Nest', 'A hidden cache!', 'lore_fragment',
+                   'Something hides in the warren.', 'Check the north rooms.', 'Look under the bones in Rat Warren.')"""
+    )
+
     conn.commit()
     print(f"Test world seeded in {db_path}")
     print(f"  Rooms: 7 (4 on floor 1, 3 on floor 2)")
     print(f"  Monsters: {len(monsters)}")
-    print(f"  Items: {len(items)}")
+    print(f"  Items: {len(items)} (tiers 1-3)")
+    print(f"  Bounties: 2 (1 active)")
+    print(f"  Broadcasts: 2 (1 tier 1, 1 tier 2)")
+    print(f"  Secrets: 1")
     print(f"  Epoch: #1 (hold_the_line / emergence)")
     conn.close()
 

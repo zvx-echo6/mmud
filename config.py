@@ -84,6 +84,42 @@ DEATH_GOLD_LOSS_PERCENT = 20    # % of carried gold lost on death
 # Single currency, no inflation possible with 30-day wipes
 # Bank is a vault — no interest, death penalty tradeoff
 
+STAT_POINTS_PER_LEVEL = 2        # Free stat points awarded on level-up
+
+# Shop prices per tier — exponential matching LORD model
+SHOP_PRICES = {
+    1: 65,      # Day 1
+    2: 250,     # Day 2-3
+    3: 900,     # Day 4-5
+    4: 3250,    # Day 6-8
+    5: 12500,   # Day 9-11
+    # Tier 6: loot drops only, never sold
+}
+
+SELL_PRICE_PERCENT = 50           # Sell items back at 50% of buy price
+
+# Shop stock unlocks by epoch day
+SHOP_TIER_UNLOCK_DAY = {
+    1: 1,
+    2: 1,
+    3: 5,
+    4: 8,
+    5: 20,
+}
+
+# Heal cost: base + (missing_hp * level_mult)
+HEAL_COST_PER_HP = 1             # Gold per missing HP
+HEAL_LEVEL_MULT = 0.5            # Additional cost multiplier per level
+
+# Loot drop chance on monster kill, by monster tier
+LOOT_DROP_CHANCE = {
+    1: 0.15,
+    2: 0.18,
+    3: 0.22,
+    4: 0.25,
+    5: 0.30,
+}
+
 # =============================================================================
 # BARD TOKENS
 # =============================================================================

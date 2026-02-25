@@ -109,8 +109,10 @@ def fmt_death(gold_lost: int, xp_lost: int) -> str:
     return fmt(f"You died! Lost {gold_lost}g and {xp_lost}xp. Respawning in town at 50% HP.")
 
 
-def fmt_level_up(level: int) -> str:
+def fmt_level_up(level: int, stat_points: int = 0) -> str:
     """Format level up message."""
+    if stat_points > 0:
+        return fmt(f"LEVEL UP! Lv{level}! +{stat_points} stat pts. TRAIN POW/DEF/SPD in town.")
     return fmt(f"LEVEL UP! You are now level {level}!")
 
 
@@ -119,11 +121,18 @@ def fmt_stats(
     hp: int, hp_max: int,
     pow_: int, def_: int, spd: int,
     gold: int, xp: int, actions: int,
+    banked: int = 0, stat_points: int = 0,
 ) -> str:
     """Format player stats display."""
-    return fmt(
+    base = (
         f"{name} Lv{level} {cls} "
         f"HP:{hp}/{hp_max} "
         f"POW:{pow_} DEF:{def_} SPD:{spd} "
-        f"G:{gold} XP:{xp} Acts:{actions}"
+        f"G:{gold}"
     )
+    if banked > 0:
+        base += f"({banked}bank)"
+    base += f" XP:{xp} Acts:{actions}"
+    if stat_points > 0:
+        base += f" SP:{stat_points}"
+    return fmt(base)

@@ -13,6 +13,8 @@ from typing import Optional
 from config import CLASSES
 from src.core.actions import handle_action
 from src.models import player as player_model
+from src.systems import barkeep as barkeep_sys
+from src.systems import broadcast as broadcast_sys
 from src.transport.formatter import fmt
 from src.transport.parser import ParsedCommand, parse
 
@@ -53,8 +55,20 @@ class GameEngine:
         # Refresh player state
         player = player_model.get_player(self.conn, player["id"])
 
+        # Accrue bard tokens on each interaction (checks internally if day changed)
+        barkeep_sys.accrue_tokens(self.conn, player["id"])
+        # Re-fetch after token accrual may have updated last_login
+        player = player_model.get_player(self.conn, player["id"])
+
         # Execute action
         response = handle_action(self.conn, player, parsed.command, parsed.args)
+
+        # Prepend unseen tier 1 broadcasts
+        news = broadcast_sys.deliver_unseen(self.conn, player["id"], limit=1)
+        if news and response:
+            combined = f"[{news}] {response}"
+            if len(combined) <= 150:
+                response = combined
 
         if response:
             logger.info(f"[{sender_name}] {parsed.command} → {response[:60]}...")

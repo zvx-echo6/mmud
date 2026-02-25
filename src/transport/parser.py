@@ -39,10 +39,16 @@ ALIASES = {
     "run": "flee",
     # Who
     "w": "who",  # Note: 'w' for west takes priority; 'who' must be typed out
-    # Shop
-    "buy": "shop",
     # Shorthand
     "eq": "equip",
+    "uneq": "unequip",
+    # Economy
+    "dep": "deposit",
+    "wd": "withdraw",
+    # Social
+    "bar": "barkeep",
+    "tok": "token",
+    "bounties": "bounty",
     "msg": "message",
 }
 
