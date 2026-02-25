@@ -1,0 +1,25 @@
+services:
+  mmud:
+    build: .
+    container_name: mmud
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:5000:5000"
+    volumes:
+      - mmud-data:/data
+    environment:
+      - MMUD_DB_PATH=/data/mmud.db
+      - MMUD_WEB_HOST=0.0.0.0
+      - MMUD_WEB_PORT=5000
+      - MMUD_WEB_SECRET=${MMUD_WEB_SECRET:-change-me-in-production}
+      - MMUD_ADMIN_PASSWORD=${MMUD_ADMIN_PASSWORD:-admin}
+      # Mesh node connections (uncomment and configure for deployment)
+      # - MMUD_NODE_EMBR=192.168.1.100:4403
+      # - MMUD_NODE_DCRG=192.168.1.101:4403
+      # - MMUD_NODE_GRST=192.168.1.102:4403
+      # - MMUD_NODE_MRN=192.168.1.103:4403
+      # - MMUD_NODE_TRVL=192.168.1.104:4403
+      # - MMUD_NODE_WSPR=192.168.1.105:4403
+
+volumes:
+  mmud-data:
