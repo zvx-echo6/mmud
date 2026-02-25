@@ -374,3 +374,83 @@ TIPS_PHASES = {
 # =============================================================================
 
 TUTORIAL_MESSAGES = 3  # Auto-tutorial: first login, first dungeon, first kill
+
+# =============================================================================
+# MESH NODES — 6-Node Architecture
+# =============================================================================
+# Each node connects to a meshtasticd SIM instance via TCP.
+# Connection strings from env vars, format: "host:port"
+
+import os
+
+MESH_NODES = {
+    "EMBR": {
+        "connection": os.environ.get("MMUD_NODE_EMBR", ""),
+        "role": "game",
+        "description": "The Last Ember — game server",
+    },
+    "DCRG": {
+        "connection": os.environ.get("MMUD_NODE_DCRG", ""),
+        "role": "broadcast",
+        "description": "The Darkcragg Depths — broadcast node",
+    },
+    "GRST": {
+        "connection": os.environ.get("MMUD_NODE_GRST", ""),
+        "role": "npc",
+        "npc": "grist",
+        "description": "Grist — barkeep",
+    },
+    "MRN": {
+        "connection": os.environ.get("MMUD_NODE_MRN", ""),
+        "role": "npc",
+        "npc": "maren",
+        "description": "Maren — healer",
+    },
+    "TRVL": {
+        "connection": os.environ.get("MMUD_NODE_TRVL", ""),
+        "role": "npc",
+        "npc": "torval",
+        "description": "Torval — merchant",
+    },
+    "WSPR": {
+        "connection": os.environ.get("MMUD_NODE_WSPR", ""),
+        "role": "npc",
+        "npc": "whisper",
+        "description": "Whisper — sage",
+    },
+}
+
+# =============================================================================
+# NPC CONVERSATION — LLM Chat Settings
+# =============================================================================
+
+NPC_LLM_MAX_TOKENS = 80           # Keep responses short → fits 150 chars
+NPC_LLM_TIMEOUT = 10              # Seconds before fallback to pre-generated dialogue
+NPC_SESSION_TTL = 300              # 5 minutes — session memory TTL in seconds
+
+# Static rejection messages for DCRG inbound
+DCRG_REJECTION = "The Darkcragg does not answer. It only speaks. DM EMBR to play."
+
+# Static rejection messages per NPC — unknown player (not registered)
+NPC_UNKNOWN_PLAYER = {
+    "grist":  "Don't know you. DM EMBR to start. Then we'll talk.",
+    "maren":  "I only patch up adventurers. DM EMBR to become one.",
+    "torval": "No account, no credit, friend. DM EMBR to join up.",
+    "whisper": "...not yet. EMBR. Begin there.",
+}
+
+# Static rejection messages per NPC — player not in town
+NPC_NOT_IN_TOWN = {
+    "grist":  "You're not here, {name}. Come back to the bar first.",
+    "maren":  "I can hear you're still in the Darkcragg. Come back alive.",
+    "torval": "I don't do deliveries. Get back to the Ember.",
+    "whisper": "...too far. Return.",
+}
+
+# =============================================================================
+# BROADCAST DRAIN — DCRG Outbound
+# =============================================================================
+
+BROADCAST_DRAIN_INTERVAL = 30      # Seconds between drain cycles
+BROADCAST_DRAIN_BATCH_SIZE = 5     # Max broadcasts per drain cycle
+BROADCAST_DRAIN_RATE_LIMIT = 3.0   # Minimum seconds between DCRG sends

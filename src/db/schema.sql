@@ -367,6 +367,7 @@ CREATE TABLE IF NOT EXISTS broadcasts (
     targeted INTEGER DEFAULT 0,         -- 1 = conditional delivery
     target_condition TEXT,              -- JSON for targeted broadcast conditions
     message TEXT NOT NULL,              -- ≤150 chars
+    dcrg_sent INTEGER DEFAULT 0,       -- 1 = already sent via DCRG node
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
