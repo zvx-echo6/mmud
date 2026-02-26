@@ -43,6 +43,12 @@ from src.generation.narrative import BackendInterface, DummyBackend, get_backend
 from src.models import player as player_model
 from src.systems import economy
 from src.systems import barkeep as barkeep_sys
+from src.systems.npc_lore import (
+    get_npc_lore,
+    get_layer_instructions,
+    build_trigger_hint,
+    build_depth_guidance,
+)
 from src.transport.message_logger import log_message
 
 logger = logging.getLogger(__name__)
@@ -411,6 +417,15 @@ def _get_npc_memory(conn: sqlite3.Connection, player_id: int, npc: str) -> str:
     return row["summary"] if row else ""
 
 
+def _get_interaction_count(conn: sqlite3.Connection, player_id: int, npc: str) -> int:
+    """Get the number of times a player has talked to this NPC."""
+    row = conn.execute(
+        "SELECT turn_count FROM npc_memory WHERE player_id = ? AND npc = ?",
+        (player_id, npc),
+    ).fetchone()
+    return row["turn_count"] if row else 0
+
+
 def _save_npc_memory(conn: sqlite3.Connection, player_id: int, npc: str, summary: str) -> None:
     """Save or update persistent memory for a player-NPC pair."""
     conn.execute(
@@ -558,6 +573,8 @@ def _build_system_prompt(
     conn: sqlite3.Connection, npc: str, game_state: str,
     player: Optional[dict] = None, memory: str = "",
     whisper_mentions: int = 0,
+    interaction_count: int = 0,
+    trigger_hint: str = "",
 ) -> str:
     """Build the full system prompt for an NPC conversation."""
     personality = NPC_PERSONALITIES.get(npc, NPC_PERSONALITIES["grist"])
@@ -635,12 +652,29 @@ def _build_system_prompt(
                 "'I was here before the tavern.' Then shut down. Don't elaborate further."
             )
 
+    # ── Deep lore injection ──
+    lore_block = get_npc_lore(npc)
+
+    # Layer-depth guidance based on interaction count
+    layer_guidance_block = ""
+    if interaction_count > 0 or (player and lore_block):
+        layer_guidance_block = (
+            f"\n\n{get_layer_instructions()}"
+            f"{build_depth_guidance(interaction_count)}"
+        )
+
+    # Trigger word hint (passed in from caller)
+    trigger_hint_block = trigger_hint  # already formatted or empty string
+
     return (
         f"You are {personality['name']}, {personality['title']}.\n\n"
         f"PERSONALITY: {personality['voice']}\n\n"
         f"KNOWLEDGE: {personality['knowledge']}"
         f"{examples_block}"
         f"{memory_block}"
+        f"{lore_block}"
+        f"{layer_guidance_block}"
+        f"{trigger_hint_block}"
         f"{death_history_block}"
         f"{maren_lullaby_block}"
         f"{whisper_countdown_block}"
@@ -1094,9 +1128,15 @@ class NPCConversationHandler:
                 if msg.get("role") == "user" and "whisper" in msg.get("content", "").lower():
                     whisper_mentions += 1
 
+        # Deep lore: interaction count + trigger word detection
+        interaction_count = _get_interaction_count(self.conn, player["id"], npc)
+        trigger_hint = build_trigger_hint(npc, text)
+
         system_prompt = _build_system_prompt(
             self.conn, npc, game_state, player=player, memory=memory,
             whisper_mentions=whisper_mentions,
+            interaction_count=interaction_count,
+            trigger_hint=trigger_hint,
         )
 
         try:
