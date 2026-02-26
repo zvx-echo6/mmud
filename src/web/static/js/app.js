@@ -111,6 +111,103 @@
     return div.innerHTML;
   }
 
+  // ═══ NPC BLURB MODAL ═══
+  var npcData = null;
+
+  function getNpcData() {
+    if (npcData) return npcData;
+    var el = document.getElementById('npc-blurbs');
+    if (!el) return null;
+    try { npcData = JSON.parse(el.textContent); } catch (e) { return null; }
+    return npcData;
+  }
+
+  function openNpcModal(key) {
+    var data = getNpcData();
+    if (!data || !data[key]) return;
+    var npc = data[key];
+    var backdrop = document.getElementById('npc-modal-backdrop');
+    document.getElementById('npc-modal-sigil').textContent = npc.sigil || '';
+    document.getElementById('npc-modal-name').textContent = npc.name;
+    document.getElementById('npc-modal-title').textContent = npc.title;
+    document.getElementById('npc-modal-blurb').textContent = npc.blurb;
+    backdrop.setAttribute('aria-hidden', 'false');
+    backdrop.classList.add('active');
+    // Store what had focus so we can restore it
+    backdrop._prevFocus = document.activeElement;
+    document.getElementById('npc-modal-close').focus();
+  }
+
+  function closeNpcModal() {
+    var backdrop = document.getElementById('npc-modal-backdrop');
+    if (!backdrop) return;
+    backdrop.classList.remove('active');
+    backdrop.setAttribute('aria-hidden', 'true');
+    if (backdrop._prevFocus) {
+      backdrop._prevFocus.focus();
+      backdrop._prevFocus = null;
+    }
+  }
+
+  // Click on .npc-name elements
+  document.addEventListener('click', function(e) {
+    var npcEl = e.target.closest('.npc-name[data-npc]');
+    if (npcEl) {
+      e.preventDefault();
+      openNpcModal(npcEl.dataset.npc);
+      return;
+    }
+    // Click on backdrop to close
+    var backdrop = document.getElementById('npc-modal-backdrop');
+    if (backdrop && backdrop.classList.contains('active') && e.target === backdrop) {
+      closeNpcModal();
+    }
+  });
+
+  // Keyboard: Enter/Space on .npc-name, Escape to close
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') {
+      var backdrop = document.getElementById('npc-modal-backdrop');
+      if (backdrop && backdrop.classList.contains('active')) {
+        closeNpcModal();
+        return;
+      }
+    }
+    if (e.key === 'Enter' || e.key === ' ') {
+      var npcEl = e.target.closest('.npc-name[data-npc]');
+      if (npcEl) {
+        e.preventDefault();
+        openNpcModal(npcEl.dataset.npc);
+      }
+    }
+  });
+
+  // Close button
+  document.addEventListener('click', function(e) {
+    if (e.target.id === 'npc-modal-close' || e.target.closest('#npc-modal-close')) {
+      closeNpcModal();
+    }
+  });
+
+  // Focus trap within modal
+  document.addEventListener('keydown', function(e) {
+    if (e.key !== 'Tab') return;
+    var backdrop = document.getElementById('npc-modal-backdrop');
+    if (!backdrop || !backdrop.classList.contains('active')) return;
+    var modal = backdrop.querySelector('.npc-modal');
+    var focusable = modal.querySelectorAll('button, [tabindex]:not([tabindex="-1"])');
+    if (!focusable.length) return;
+    var first = focusable[0];
+    var last = focusable[focusable.length - 1];
+    if (e.shiftKey && document.activeElement === first) {
+      e.preventDefault();
+      last.focus();
+    } else if (!e.shiftKey && document.activeElement === last) {
+      e.preventDefault();
+      first.focus();
+    }
+  });
+
   // ═══ INIT ═══
   function init() {
     // Initial secret dots render

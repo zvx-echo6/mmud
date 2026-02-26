@@ -739,6 +739,111 @@ body::before {
   text-transform: uppercase;
 }
 
+/* ═══ NPC NAME — INTERACTIVE ═══ */
+.npc-name[data-npc] {
+  cursor: pointer;
+  border-bottom: 1px dotted var(--ember-deep);
+  transition: color 0.2s, text-shadow 0.2s;
+}
+
+.npc-name[data-npc]:hover,
+.npc-name[data-npc]:focus-visible {
+  color: var(--ember-glow);
+  text-shadow: 0 0 8px rgba(232, 113, 58, 0.4);
+  outline: none;
+}
+
+/* ═══ NPC BLURB MODAL ═══ */
+.npc-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.85);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.2s, visibility 0.2s;
+}
+
+.npc-modal-backdrop.active {
+  opacity: 1;
+  visibility: visible;
+}
+
+.npc-modal {
+  position: relative;
+  max-width: 500px;
+  width: calc(100% - 48px);
+  padding: 32px 28px 28px;
+  background: linear-gradient(180deg, rgba(26, 23, 20, 0.98), rgba(13, 11, 9, 0.98));
+  border: 1px solid var(--smoke-light);
+  border-radius: 2px;
+  overflow: hidden;
+  transform: translateY(8px);
+  transition: transform 0.2s;
+}
+
+.npc-modal-backdrop.active .npc-modal {
+  transform: translateY(0);
+}
+
+.npc-modal::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, var(--ember), transparent);
+  opacity: 0.6;
+}
+
+.npc-modal-close {
+  position: absolute;
+  top: 12px; right: 14px;
+  background: none;
+  border: none;
+  color: var(--text-ghost);
+  font-size: 18px;
+  cursor: pointer;
+  padding: 4px 8px;
+  line-height: 1;
+  transition: color 0.2s;
+}
+
+.npc-modal-close:hover { color: var(--ember-glow); }
+
+.npc-modal-sigil {
+  font-size: 28px;
+  margin-bottom: 12px;
+  opacity: 0.7;
+}
+
+.npc-modal-name {
+  font-family: 'Cinzel', serif;
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  color: var(--parchment);
+  margin-bottom: 2px;
+}
+
+.npc-modal-title {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  color: var(--text-ghost);
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  margin-bottom: 16px;
+}
+
+.npc-modal-blurb {
+  font-family: 'Crimson Text', serif;
+  font-size: 16px;
+  line-height: 1.75;
+  color: var(--text-dim);
+}
+
 /* ═══ SECRETS COUNTER ═══ */
 .secrets-bar {
   display: flex;

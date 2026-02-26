@@ -32,11 +32,14 @@ def create_app(db_path=None):
     init_app(app)
 
     # Template context
+    from src.web.npc_blurbs import NPC_BLURBS
+
     @app.context_processor
     def inject_config():
         return {
             "poll_status_interval": web_config.POLL_STATUS_INTERVAL,
             "poll_broadcast_interval": web_config.POLL_BROADCAST_INTERVAL,
+            "npc_blurbs": NPC_BLURBS,
         }
 
     return app

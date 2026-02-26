@@ -1,0 +1,13 @@
+{# NPC Blurb Modal — single reusable overlay, populated by JS #}
+<div class="npc-modal-backdrop" id="npc-modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="npc-modal-name" aria-hidden="true">
+  <div class="npc-modal">
+    <button class="npc-modal-close" id="npc-modal-close" aria-label="Close">&times;</button>
+    <div class="npc-modal-sigil" id="npc-modal-sigil"></div>
+    <div class="npc-modal-name" id="npc-modal-name"></div>
+    <div class="npc-modal-title" id="npc-modal-title"></div>
+    <div class="npc-modal-blurb" id="npc-modal-blurb"></div>
+  </div>
+</div>
+{% if npc_blurbs %}
+<script id="npc-blurbs" type="application/json">{{ npc_blurbs | tojson }}</script>
+{% endif %}

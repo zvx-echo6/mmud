@@ -93,19 +93,19 @@
 
   {# NPC TABS #}
   <div class="npc-tabs" id="npc-tabs">
-    <a class="npc-tab active" data-npc="grist" onclick="showJournal('grist')">
+    <a class="npc-tab active" data-tab="grist" onclick="showJournal('grist')">
       <span class="tab-icon">🍺</span>
       Grist
     </a>
-    <a class="npc-tab" data-npc="maren" onclick="showJournal('maren')">
+    <a class="npc-tab" data-tab="maren" onclick="showJournal('maren')">
       <span class="tab-icon">🩸</span>
       Maren
     </a>
-    <a class="npc-tab" data-npc="torval" onclick="showJournal('torval')">
+    <a class="npc-tab" data-tab="torval" onclick="showJournal('torval')">
       <span class="tab-icon">⚖</span>
       Torval
     </a>
-    <a class="npc-tab" data-npc="whisper" onclick="showJournal('whisper')">
+    <a class="npc-tab" data-tab="whisper" onclick="showJournal('whisper')">
       <span class="tab-icon">👁</span>
       Whisper
     </a>
@@ -120,7 +120,7 @@
       <div class="journal-text">
         {{ entry.content|safe }}
       </div>
-      <div class="journal-npc-sig">— {{ npc|capitalize }}</div>
+      <div class="journal-npc-sig">— <span class="npc-name" data-npc="{{ npc }}" role="button" tabindex="0">{{ npc|capitalize }}</span></div>
     </div>
     {% else %}
     <div style="color:var(--text-ghost);font-style:italic;font-size:14px;padding:24px 0;text-align:center;">
@@ -140,7 +140,7 @@
 <script>
 function showJournal(npc) {
   document.querySelectorAll('.npc-tab').forEach(function(el) {
-    el.classList.toggle('active', el.dataset.npc === npc);
+    el.classList.toggle('active', el.dataset.tab === npc);
   });
   document.querySelectorAll('.journal-feed').forEach(function(el) {
     el.classList.toggle('active', el.id === 'journal-' + npc);

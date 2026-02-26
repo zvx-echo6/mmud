@@ -68,7 +68,7 @@
     <span class="msg-player">You:</span> <span class="msg-gold">W</span><br>
     <span class="msg-server">meshMUD:</span> Kael the Warrior. POW:5 DEF:4 SPD:3 HP:30. You stand in the tavern. Type L.<br>
     <span class="msg-player">You:</span> <span class="msg-gold">L</span><br>
-    <span class="msg-server">meshMUD:</span> The Last Ember. Lanterns burn without oil. Grist polishes a glass. Exits: dungeon.<br>
+    <span class="msg-server">meshMUD:</span> The Last Ember. Lanterns burn without oil. <span class="npc-name" data-npc="grist" role="button" tabindex="0">Grist</span> polishes a glass. Exits: dungeon.<br>
   </div>
 
   {# ═══ CLASSES ═══ #}
@@ -106,7 +106,7 @@
     <div class="flow-step">
       <div class="flow-step-num">1</div>
       <div class="flow-step-content">
-        <div class="flow-step-label">Visit Grist</div>
+        <div class="flow-step-label">Visit <span class="npc-name" data-npc="grist" role="button" tabindex="0">Grist</span></div>
         <div class="flow-step-text">The barkeep tells you what happened while you were gone. Who died, what fell, what the front line looks like. Always free. This is how the world stays alive between sessions.</div>
       </div>
     </div>
@@ -121,7 +121,7 @@
       <div class="flow-step-num">3</div>
       <div class="flow-step-content">
         <div class="flow-step-label">Gear up</div>
-        <div class="flow-step-text">Buy supplies from Torval, heal up with Maren if you need it, spend a bard token at the bar for a hint or buff. All free actions.</div>
+        <div class="flow-step-text">Buy supplies from <span class="npc-name" data-npc="torval" role="button" tabindex="0">Torval</span>, heal up with <span class="npc-name" data-npc="maren" role="button" tabindex="0">Maren</span> if you need it, spend a bard token at the bar for a hint or buff. All free actions.</div>
       </div>
     </div>
     <div class="flow-step">
@@ -150,7 +150,7 @@
   <div class="npc-guide">
     <span class="npc-guide-icon">🍺</span>
     <div>
-      <div class="npc-guide-name">Grist</div>
+      <div class="npc-guide-name"><span class="npc-name" data-npc="grist" role="button" tabindex="0">Grist</span></div>
       <div class="npc-guide-role">Barkeep</div>
       <div class="npc-guide-desc">Knows everything that happens in the dungeon because everyone tells him and he never forgets. Visit him first every session — he'll catch you up on what you missed. He also runs the bounty board, handles the epoch vote, and trades bard tokens for hints, buffs, and secrets. He doesn't trade because he's kind. He trades because he collects.</div>
     </div>
@@ -159,7 +159,7 @@
   <div class="npc-guide">
     <span class="npc-guide-icon">🩸</span>
     <div>
-      <div class="npc-guide-name">Maren</div>
+      <div class="npc-guide-name"><span class="npc-name" data-npc="maren" role="button" tabindex="0">Maren</span></div>
       <div class="npc-guide-role">Healer</div>
       <div class="npc-guide-desc">Used to be an adventurer. Went deeper than anyone. Came back done. Heals with her hands, not magic, and it hurts. She charges gold because free healing breeds carelessness. She's the reason you survive long enough to learn from your mistakes.</div>
     </div>
@@ -168,7 +168,7 @@
   <div class="npc-guide">
     <span class="npc-guide-icon">⚖</span>
     <div>
-      <div class="npc-guide-name">Torval</div>
+      <div class="npc-guide-name"><span class="npc-name" data-npc="torval" role="button" tabindex="0">Torval</span></div>
       <div class="npc-guide-role">Merchant</div>
       <div class="npc-guide-desc">Buys and sells gear. Appraises items by weight and sound. His inventory somehow matches what's in the dungeon each epoch. Nobody asks how. His prices are fair and his stock is real, which is more than you can say for most people in a town built around a hole full of monsters.</div>
     </div>
@@ -177,7 +177,7 @@
   <div class="npc-guide">
     <span class="npc-guide-icon">👁</span>
     <div>
-      <div class="npc-guide-name">Whisper</div>
+      <div class="npc-guide-name"><span class="npc-name" data-npc="whisper" role="button" tabindex="0">Whisper</span></div>
       <div class="npc-guide-role">Sage</div>
       <div class="npc-guide-desc">Sits in the same corner. Knows things about the dungeon that change each epoch — lore, connections, what the symbols mean. Speaks in fragments because that's how the information comes to her. Pay attention to her exact words. Players who dismiss her as flavor text miss half the game.</div>
     </div>
@@ -238,7 +238,7 @@
   {# ═══ SECRETS ═══ #}
   <div class="divider">Secrets &amp; Discovery</div>
 
-  <p class="prose">Twenty secrets hide in the dungeon each epoch. Some are behind walls that need a strong arm to break. Some are puzzles spread across multiple rooms. Some are hidden in things Whisper says that nobody thinks to write down. Finding them isn't required — but every secret you uncover gives a real mechanical advantage, and some of them benefit the entire server.</p>
+  <p class="prose">Twenty secrets hide in the dungeon each epoch. Some are behind walls that need a strong arm to break. Some are puzzles spread across multiple rooms. Some are hidden in things <span class="npc-name" data-npc="whisper" role="button" tabindex="0">Whisper</span> says that nobody thinks to write down. Finding them isn't required — but every secret you uncover gives a real mechanical advantage, and some of them benefit the entire server.</p>
 
   <p class="prose"><strong>Read the room descriptions carefully.</strong> The dungeon tells you where its secrets are. It just doesn't tell you plainly.</p>
 
@@ -269,9 +269,9 @@
   <div class="callout gold">
     <div class="callout-label">Town &amp; NPCs</div>
     <div class="cmd-grid">
-      <span class="cmd-key">barkeep</span><span class="cmd-desc">Talk to Grist — recap, tokens, bounties <span class="cmd-unlock">LV3</span></span>
-      <span class="cmd-key">heal</span><span class="cmd-desc">Visit Maren — restore HP for gold <span class="cmd-unlock">LV3</span></span>
-      <span class="cmd-key">shop</span><span class="cmd-desc">Browse Torval's inventory <span class="cmd-unlock">LV3</span></span>
+      <span class="cmd-key">barkeep</span><span class="cmd-desc">Talk to <span class="npc-name" data-npc="grist" role="button" tabindex="0">Grist</span> — recap, tokens, bounties <span class="cmd-unlock">LV3</span></span>
+      <span class="cmd-key">heal</span><span class="cmd-desc">Visit <span class="npc-name" data-npc="maren" role="button" tabindex="0">Maren</span> — restore HP for gold <span class="cmd-unlock">LV3</span></span>
+      <span class="cmd-key">shop</span><span class="cmd-desc">Browse <span class="npc-name" data-npc="torval" role="button" tabindex="0">Torval</span>'s inventory <span class="cmd-unlock">LV3</span></span>
       <span class="cmd-key">bank</span><span class="cmd-desc">Deposit gold safely <span class="cmd-unlock">LV3</span></span>
       <span class="cmd-key">board</span><span class="cmd-desc">View active bounties <span class="cmd-unlock">LV3</span></span>
     </div>
@@ -308,14 +308,14 @@
   </div>
 
   {# ═══ TIPS ═══ #}
-  <div class="divider">Grist's Advice for the New Arrival</div>
+  <div class="divider"><span class="npc-name" data-npc="grist" role="button" tabindex="0">Grist</span>'s Advice for the New Arrival</div>
 
   <div class="callout ember">
     <div class="callout-label">Things nobody tells you</div>
     <p class="prose"><strong>Bank before you descend.</strong> Death takes everything you're carrying. Not your gear, not your level — just your gold. The bank is free. Use it.</p>
-    <p class="prose"><strong>Visit Grist every session.</strong> His recap costs nothing and tells you everything you missed. The bounty board is there too. Five seconds of reading saves you from walking into something that killed Sable yesterday.</p>
+    <p class="prose"><strong>Visit <span class="npc-name" data-npc="grist" role="button" tabindex="0">Grist</span> every session.</strong> His recap costs nothing and tells you everything you missed. The bounty board is there too. Five seconds of reading saves you from walking into something that killed Sable yesterday.</p>
     <p class="prose"><strong>Leave messages.</strong> A 15-character note in a dangerous room saves someone's life tomorrow. This is a small network. Help each other.</p>
-    <p class="prose"><strong>Read room descriptions.</strong> The dungeon hides things in plain sight. If the text mentions scratches on a wall, there's a reason. If Whisper mumbles about the eastern branch, there's a reason. The game rewards attention.</p>
+    <p class="prose"><strong>Read room descriptions.</strong> The dungeon hides things in plain sight. If the text mentions scratches on a wall, there's a reason. If <span class="npc-name" data-npc="whisper" role="button" tabindex="0">Whisper</span> mumbles about the eastern branch, there's a reason. The game rewards attention.</p>
     <p class="prose"><strong>You don't have to fight everything.</strong> Twelve actions is enough for a good day, not enough for a reckless one. Know when to push and when to walk away. The dungeon will be here tomorrow.</p>
     <p class="prose"><strong>Bard tokens accrue whether you log in or not.</strong> One per day, cap at five. Spend them at the barkeep for things gold can't buy — hints, buffs, intel. A patient player who saves five tokens gets information that changes everything.</p>
   </div>
