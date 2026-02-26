@@ -79,13 +79,19 @@ def create_player(
     stats = CLASSES[cls]
     hp = BASE_HP.get(cls, 45)
 
+    # Find town center room for spawn
+    center = conn.execute(
+        "SELECT id FROM rooms WHERE floor = 0 AND is_hub = 1 LIMIT 1"
+    ).fetchone()
+    center_id = center["id"] if center else None
+
     cursor = conn.execute(
         """INSERT INTO players
            (account_id, name, class, hp, hp_max, pow, def, spd,
             resource, resource_max,
             dungeon_actions_remaining, social_actions_remaining,
-            special_actions_remaining, last_login)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            special_actions_remaining, last_login, room_id)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (
             account_id, name, cls, hp, hp,
             stats["POW"], stats["DEF"], stats["SPD"],
@@ -94,6 +100,7 @@ def create_player(
             SOCIAL_ACTIONS_PER_DAY,
             SPECIAL_ACTIONS_PER_DAY,
             datetime.now(timezone.utc).isoformat(),
+            center_id,
         ),
     )
     conn.commit()
@@ -185,6 +192,37 @@ def restore_resource(conn: sqlite3.Connection, player_id: int, amount: int) -> N
     conn.commit()
 
 
+def _ensure_death_log_table(conn: sqlite3.Connection) -> None:
+    """Create death_log table if it doesn't exist (migration-safe)."""
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS death_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            player_id INTEGER NOT NULL,
+            floor INTEGER NOT NULL,
+            monster_name TEXT NOT NULL,
+            died_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+
+
+def _log_death(conn: sqlite3.Connection, player: dict) -> None:
+    """Log death with monster name and floor for NPC memory."""
+    _ensure_death_log_table(conn)
+    monster_name = "unknown"
+    floor = player.get("floor", 0) or 0
+    if player.get("combat_monster_id"):
+        monster = conn.execute(
+            "SELECT name FROM monsters WHERE id = ?",
+            (player["combat_monster_id"],),
+        ).fetchone()
+        if monster:
+            monster_name = monster["name"]
+    conn.execute(
+        "INSERT INTO death_log (player_id, floor, monster_name) VALUES (?, ?, ?)",
+        (player["id"], floor, monster_name),
+    )
+
+
 def apply_death(conn: sqlite3.Connection, player_id: int) -> dict:
     """Apply death penalties and return loss details.
 
@@ -202,12 +240,21 @@ def apply_death(conn: sqlite3.Connection, player_id: int) -> dict:
     if not player:
         return {"gold_lost": 0, "xp_lost": 0}
 
+    # Capture death info before state is reset
+    _log_death(conn, player)
+
     gold_lost = math.floor(player["gold_carried"] * DEATH_GOLD_LOSS_PERCENT / 100)
     xp_lost = math.floor(player["xp"] * 0.15)
     new_hp = max(1, player["hp_max"] // 2)
     new_actions = max(0, player["dungeon_actions_remaining"] - 1)
 
     new_resource = max(1, player.get("resource_max", RESOURCE_MAX) // 2)
+
+    # Respawn at town center
+    center = conn.execute(
+        "SELECT id FROM rooms WHERE floor = 0 AND is_hub = 1 LIMIT 1"
+    ).fetchone()
+    center_id = center["id"] if center else None
 
     conn.execute(
         """UPDATE players SET
@@ -217,12 +264,12 @@ def apply_death(conn: sqlite3.Connection, player_id: int) -> dict:
            resource = ?,
            state = 'town',
            floor = 0,
-           room_id = NULL,
+           room_id = ?,
            combat_monster_id = NULL,
            town_location = NULL,
            dungeon_actions_remaining = ?
            WHERE id = ?""",
-        (gold_lost, xp_lost, new_hp, new_resource, new_actions, player_id),
+        (gold_lost, xp_lost, new_hp, new_resource, center_id, new_actions, player_id),
     )
     conn.commit()
     return {"gold_lost": gold_lost, "xp_lost": xp_lost}

@@ -13,13 +13,20 @@ from src.models import world as world_model
 def enter_dungeon(conn: sqlite3.Connection, player: dict) -> Optional[dict]:
     """Enter the dungeon from town. Places player in floor 1 hub.
 
+    Requires the player to be at the town center room (bar).
+
     Args:
         conn: Database connection.
         player: Player dict.
 
     Returns:
-        Hub room dict, or None if no floor 1 hub exists.
+        Hub room dict, or None if no floor 1 hub exists or not at center.
     """
+    # Check player is at the dungeon entrance (town center)
+    center = world_model.get_hub_room(conn, floor=0)
+    if center and player.get("room_id") and player["room_id"] != center["id"]:
+        return None
+
     hub = world_model.get_hub_room(conn, floor=1)
     if not hub:
         return None
@@ -42,13 +49,13 @@ def move_player(
 
     Args:
         conn: Database connection.
-        player: Player dict (must be in dungeon state).
+        player: Player dict (must be in dungeon or town state).
         direction: Direction code (n, s, e, w, u, d).
 
     Returns:
         Tuple of (new_room or None, error_message).
     """
-    if player["state"] != "dungeon":
+    if player["state"] not in ("dungeon", "town"):
         return None, "You can't move right now."
 
     room_id = player["room_id"]
@@ -75,14 +82,16 @@ def move_player(
 
 
 def return_to_town(conn: sqlite3.Connection, player_id: int) -> None:
-    """Return a player to town. Restores some resource."""
+    """Return a player to town center. Restores some resource."""
+    center = world_model.get_hub_room(conn, floor=0)
+    center_id = center["id"] if center else None
     conn.execute(
         """UPDATE players SET
-           state = 'town', floor = 0, room_id = NULL,
+           state = 'town', floor = 0, room_id = ?,
            combat_monster_id = NULL, town_location = NULL,
            resource = MIN(resource + ?, resource_max)
            WHERE id = ?""",
-        (RESOURCE_REGEN_TOWN, player_id),
+        (center_id, RESOURCE_REGEN_TOWN, player_id),
     )
     conn.commit()
 

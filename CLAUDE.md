@@ -9,7 +9,7 @@ MMUD is a text-based multiplayer dungeon crawler designed for Meshtastic LoRa me
 ## Core Constraints (Non-Negotiable)
 
 - **150 characters per message** — hard ceiling from Meshtastic LoRa
-- **Zero runtime LLM calls** — all text content is batch-generated at epoch start and served via template substitution
+- **Game engine never calls LLMs at runtime** — all text content is batch-generated at epoch start and served via template substitution. The one exception is NPC conversation DMs, which use runtime LLM calls through a transaction tag (TX) system.
 - **Async-first** — no guarantee two players are ever online simultaneously. Every multiplayer mechanic works through shared state in the database.
 - **12 dungeon actions per day** — the primary scarcity mechanic. Town actions are always free.
 - **30-day epochs** — everything except player accounts and meta-progression resets
@@ -23,34 +23,61 @@ MMUD is a text-based multiplayer dungeon crawler designed for Meshtastic LoRa me
 - **Jinja2** — server-side templates, no React, no build step
 - **Docker** — containerized deployment (python:3.11-slim)
 
+## Classes & Resource System
+
+| Class | Stats | HP | Resource | Special | Command |
+|-------|-------|----|----------|---------|---------|
+| Warrior | POW:3 DEF:2 SPD:1 | 50 | Focus (5) | Charge | `charge` |
+| Rogue | POW:2 DEF:1 SPD:3 | 40 | Tricks (5) | Sneak | `sneak` |
+| Caster | POW:1 DEF:1 SPD:2 | 35 | Mana (5) | Cast | `cast` |
+
+### Class Abilities
+
+- **Charge** (Warrior, 2 Focus): In combat — 1.5x damage, no counterattack. In dungeon — double-move through 2 rooms (player picks first direction, second is random). Stops on monster contact.
+- **Sneak** (Rogue, 1 Trick): In combat — 85% backstab (2x damage + exit combat). In dungeon — 85% bypass monster in room.
+- **Cast** (Caster, 1 Mana): In combat — 2x POW magic damage (ignores DEF, uses epoch spell name). In dungeon — reveals hidden room content (gold, lore fragments, secrets). Once per room per player per epoch.
+
+### Resource Regen
+
+- Day tick: +2 (capped at max 5)
+- Return to town: +1
+- Rest (town, special action): +1
+- Death: resource set to max/2
+
 ## Architecture
 
 ```
 src/
   core/           # Game engine — state machine, action processing, combat resolver
-    engine.py     # Main game loop: receive message → parse → execute → respond
-    actions.py    # Action handlers (move, fight, flee, examine, etc.)
+    engine.py     # Main game loop: receive message -> parse -> execute -> respond
+    actions.py    # 35+ action handlers (move, fight, charge, sneak, cast, rest, etc.)
     combat.py     # Combat resolution, damage calc, flee mechanics
-    world.py      # World state management, room transitions
+    world.py      # World state management, room transitions, enter/exit combat
   models/         # Database models and state
-    player.py     # Player state, stats, inventory, progression
-    world.py      # Rooms, floors, monsters, items, secrets
-    epoch.py      # Epoch state, mode tracking, breach state, boss state
+    player.py     # Player state, stats, inventory, progression, resource management
+    world.py      # Rooms, exits, monsters, reveal tracking (player_reveals)
+    epoch.py      # Epoch state, mode tracking, spell names
   generation/     # Epoch generation pipeline (runs once at epoch start)
-    worldgen.py   # Dungeon layout, room placement, monster distribution
+    worldgen.py   # Dungeon layout, room placement, monster distribution, reveal content
     secretgen.py  # Secret placement, puzzle generation, hint tiers
     bossgen.py    # Floor boss and raid boss mechanic rolling
     breachgen.py  # Breach zone generation and mini-event selection
-    narrative.py  # LLM batch calls for narrative skins, descriptions, hints
-    validation.py # 150-char enforcement, hint verb checking, template validation
+    narrative.py  # LLM backends (Dummy/Anthropic/OpenAI/Google), spell names, lore
+    validation.py # 150-char enforcement, spell name validation, lore length checks
   systems/        # Game systems
     bounty.py     # Bounty board, shared HP pools, reward distribution
     discovery.py  # Secret tracking, puzzle state, buff management
     broadcast.py  # Broadcast tiers, targeted broadcasts, message queuing
-    economy.py    # Gold, shops, banking, death penalties
+    economy.py    # Gold, shops, banking, effective stats (gear bonuses)
     barkeep.py    # Recap, bard tokens, hint system
-    endgame.py    # Mode-specific logic (R&E, Raid Boss, HtL)
-    breach.py     # Breach mini-event logic (Heist, Emergence, Incursion, Resonance)
+    social.py     # Player messages, mail, who list
+    daytick.py    # Day rollover: action reset, resource regen, bounty rotation
+    npc_conversation.py  # NPC DM conversations via LLM with TX tag transaction system
+    endgame_htl.py   # Hold the Line mode
+    endgame_raid.py  # Raid Boss mode
+    endgame_rne.py   # Retrieve and Escape mode
+    breach.py     # Breach activation and state management
+    breach_*.py   # Four breach mini-events (heist, emergence, incursion, resonance)
   transport/      # Message layer
     meshtastic.py # Meshtastic API wrapper, send/receive, DM vs broadcast
     parser.py     # Command parsing from 150-char messages
@@ -64,12 +91,12 @@ src/
     routes/
       public.py   # / /chronicle /howto
       api.py      # /api/status /api/broadcasts /api/bounties /api/mode /api/leaderboard
-      admin.py    # /admin/* (session auth)
+      admin.py    # /admin/* (session auth, LLM config page)
     services/
       gamedb.py       # SQLite queries (read-only + admin RW via WAL)
       dashboard.py    # Dashboard data aggregation
       chronicle.py    # Epoch history + journal queries
-      admin_service.py  # Admin write operations
+      admin_service.py  # Admin write operations (bans, broadcasts, LLM config)
     templates/        # Jinja2 templates (dark tavern aesthetic)
     static/
       css/ember.css   # Full design system
@@ -78,8 +105,8 @@ src/
     prototypes/       # Original HTML design references
   db/
     schema.sql    # Database schema
-    migrations/   # Schema versioning (004 = web tables)
-tests/            # Mirror src/ structure
+    migrations/   # Schema versioning (008 = reveal + spells)
+tests/            # 738+ tests, mirror src/ structure
 scripts/
   epoch_generate.py  # Run epoch generation pipeline
   epoch_reset.py     # Wipe and start new epoch
@@ -94,123 +121,105 @@ docker-compose.yml   # Container orchestration
 
 ### Message Processing Loop
 ```
-receive_message() → parse_command() → check_action_budget() → execute_action() → format_response() → send_message()
+receive_message() -> parse_command() -> check_action_budget() -> execute_action() -> format_response() -> send_message()
+                                                                       |
+                                                              (maybe_queue_npc_dm)
 ```
-Every inbound message follows this pipeline. No exceptions. If the action costs a dungeon action, decrement the budget before executing.
+Every inbound message follows this pipeline. If the action costs a dungeon action, decrement the budget before executing. After execution, the engine checks if the player entered an NPC's town location and queues a greeting DM if cooldown permits.
 
 ### State Machine
-Player state is simple: `town`, `dungeon:floor:room`, `combat:monster_id`, `dead`. Actions are validated against current state — you can't `fight` in town, you can't `shop` in the dungeon.
+Player state is simple: `town`, `dungeon`, `combat`, `dead`. Actions are validated against current state — you can't `fight` in town, you can't `shop` in the dungeon.
+
+### NPC Transaction System (TX Tags)
+NPC conversations use runtime LLM calls via `npc_conversation.py`. The LLM response must be prefixed with a transaction tag: `[TX:action:detail]`. The system parses the tag, validates it against allowed actions per NPC, executes the game mechanic, then delivers the narrative text as a DM.
+
+| NPC | Allowed TX Actions |
+|-----|--------------------|
+| Maren (healer) | `heal` |
+| Torval (merchant) | `buy`, `sell`, `browse` |
+| Grist (barkeep) | `recap`, `hint` |
+| Whisper (sage) | `hint` |
+
+### NPC Greeting DMs
+When a player moves to a town location where an NPC lives, the engine queues a greeting DM (one per NPC per cooldown period). The NPC greeting is generated by the LLM backend and delivered via the router as a separate message after the main action response.
 
 ### Shared HP Pools
-Bounties, raid boss, floor bosses, and the Warden all use the same shared HP pool pattern. Store current HP in DB, apply damage on hit, check regen on tick. The only differences are regen rate and mechanic overlays.
+Bounties, raid boss, floor bosses, and the Warden all use the same shared HP pool pattern. Store current HP in DB, apply damage on hit, check regen on tick.
 
 ### Broadcast Tiers
 - **Tier 1**: Server-wide, always delivered. Deaths, discoveries, mode progress.
-- **Tier 2**: Server-wide, batched into barkeep recap if player is offline. Bounty progress, combat milestones.
-- **Targeted**: Only delivered to players who meet a condition (e.g., have visited a specific room). Used for multi-room puzzle feedback.
+- **Tier 2**: Server-wide, batched into barkeep recap if player is offline.
+- **Targeted**: Only delivered to players who meet a condition.
 
 ### 150-Character Formatting
-Every outbound message MUST fit in 150 characters. The formatter is the last gate before send. If a message exceeds 150 chars, it gets truncated with `...` or split into multiple messages. Test every response template against this limit.
+Every outbound message MUST fit in 150 characters. The formatter is the last gate before send. If a message exceeds 150 chars, it gets truncated with `...`. Test every response template against this limit.
 
-## Database Principles
+### Reveal System (Caster)
+Rooms are populated with hidden content during epoch generation:
+- **reveal_gold** (30-40% of rooms): Gold award on cast reveal
+- **reveal_lore** (10-15% of rooms): Lore fragment (<=80 chars) + bard token
+- **Secrets**: Auto-detected if undiscovered secret exists in room
+- Tracking: `player_reveals` table enforces once-per-room-per-player-per-epoch
 
-- SQLite single file. No ORM — raw SQL with parameterized queries.
-- Player state is one row per player. No joins for the hot path (action processing).
-- Shared state (bounty HP, room clear status, boss HP) uses atomic UPDATE statements to handle concurrent access from multiple player sessions.
-- Epoch generation writes all content to DB at epoch start. Runtime is pure reads + state updates.
+### Epoch Spell Names
+Three themed spell names are generated per epoch (<=20 chars each) and stored comma-separated in `epoch.spell_names`. In-combat cast uses a random spell name instead of hardcoded text. DummyBackend picks from a pool of 9 names; real LLM backends prompt for themed names.
+
+## Database
+
+- SQLite single file at `/data/mmud.db`. No ORM — raw SQL with parameterized queries.
+- Player state is one row per player. No joins for the hot path.
+- Shared state uses atomic UPDATE statements for concurrent access.
+- Epoch generation writes all content at epoch start. Runtime is reads + state updates.
+- Schema migrations via `src/db/migrations/` (currently 008). Engine applies idempotent `ALTER TABLE` on startup.
 
 ## Config Constants
 
-All tunable game values live in `config.py`. See that file for the complete list with rationale. When in doubt about a number, check config.py first — every value has been deliberately chosen during design.
-
-## Development Priorities
-
-### Phase 1: Core Loop
-1. Message receive/send via Meshtastic API
-2. Command parser
-3. Player creation (name + class)
-4. Room navigation (move, look)
-5. Basic combat (fight, flee)
-6. Death and respawn
-7. Action budget enforcement
-
-### Phase 2: Economy & Progression
-1. XP and leveling
-2. Gold and shops
-3. Gear system (weapon, armor, trinket)
-4. Bank
-5. Healer
-
-### Phase 3: Social Systems
-1. Broadcast system (tier 1, tier 2)
-2. Barkeep (recap, tokens, hints)
-3. Bounty board and shared HP pools
-4. Player messages (15-char freeform)
-5. Mail system
-
-### Phase 4: Epoch Generation
-1. World generation (dungeon layout, rooms, monsters)
-2. LLM narrative pipeline (batch generation, validation)
-3. Secret placement and hint generation
-4. Bounty pool generation
-
-### Phase 5: Endgame Modes
-1. Hold the Line (regen, checkpoints, floor bosses)
-2. Raid Boss (HP scaling, mechanic tables, phases)
-3. Retrieve and Escape (Pursuer, support roles)
-4. Epoch vote system
-
-### Phase 6: The Breach
-1. Breach zone generation
-2. Four mini-event types
-3. Breach secret integration
-4. Day 15 trigger and barkeep foreshadowing
+All tunable game values live in `config.py`. See that file for the complete list with rationale. Key sections:
+- Classes, stats, HP, resource system
+- Dungeon layout (floors, rooms per floor, branches)
+- Combat math, XP/gold curves
+- Ability costs and multipliers
+- Reveal chances and ranges
+- Spell name / lore fragment pools (DummyBackend)
+- Endgame mode constants
+- Social action limits, bard token caps
 
 ## Web Dashboard (Last Ember)
 
-The Last Ember is a Flask web dashboard consolidated into `src/web/`. It runs in-process with the mesh daemon as a background daemon thread. It reads from the same SQLite database (WAL mode for concurrent access).
+The Last Ember is a Flask web dashboard in `src/web/`. It runs in-process with the mesh daemon as a daemon thread. Reads from the same SQLite database (WAL mode).
 
 ### Key Constraints
-- **Read-only** access to game DB on all public routes (uses `file:{path}?mode=ro` URI)
-- **Read-write** only for admin operations (node assignment, bans, broadcast)
-- **150-character** message limit enforced on admin broadcast
+- **Read-only** access to game DB on all public routes (`file:{path}?mode=ro`)
+- **Read-write** only for admin operations (bans, broadcasts, LLM config)
 - **No game logic** — display and admin only, never processes game turns
-- **use_reloader=False** — critical to prevent forking that would break mesh connections
+- **use_reloader=False** — prevents forking that would break mesh connections
 
 ### Design System
-- Dark tavern aesthetic — `static/css/ember.css` (1500+ lines)
+- Dark tavern aesthetic — `static/css/ember.css`
 - Fonts: Cinzel (headings), Crimson Text (body), JetBrains Mono (data)
-- Canvas particle animation (ember sparks) — `static/js/embers.js`
-- AJAX polling: status every 30s, broadcasts every 15s — `static/js/app.js`
-- Prototypes in `prototypes/` are the design truth
-
-### CLI Integration
-- `--web-port PORT` — override web dashboard port (default: 5000)
-- `--no-web` — disable the web dashboard entirely
-- `MMUD_WEB_PORT`, `MMUD_WEB_HOST`, `MMUD_WEB_SECRET`, `MMUD_ADMIN_PASSWORD` env vars
+- Canvas ember particle animation — `static/js/embers.js`
+- AJAX polling: status every 30s, broadcasts every 15s
+- Class badges: WAR (warrior), CST (caster), ROG (rogue)
 
 ### Routes
-- **Public:** `/` (dashboard), `/chronicle` (epoch history), `/howto` (guide)
+- **Public:** `/` (dashboard), `/chronicle` (epoch history), `/howto` (class guide)
 - **API:** `/api/status`, `/api/broadcasts`, `/api/bounties`, `/api/mode`, `/api/leaderboard`
-- **Admin:** `/admin/*` (session auth, password from `MMUD_ADMIN_PASSWORD`)
+- **Admin:** `/admin/*` (session auth), `/admin/llm` (LLM backend config)
 
-### Web Tables (migration 004)
-- `node_config` — Meshtastic sim node assignments
-- `admin_log` — Admin action audit trail
-- `banned_players` — Ban list with reasons
-- `npc_journals` — Journal entries for Grist, Maren, Torval, Whisper
+## Testing
 
-## Testing Strategy
-
-- Unit tests for combat math, action budget, damage calculations
-- Integration tests for full action pipelines (message in → state change → message out)
-- Epoch generation tests (validate all output under 150 chars, check secret placement, verify boss mechanic rolls)
-- No mocking the DB — use an in-memory SQLite for tests
+- **738+ tests** — unit tests for combat math, integration tests for full action pipelines, epoch generation validation
+- No mocking the DB — use in-memory SQLite
+- `python3 -m pytest tests/ -x -v` to run all
+- Tests use `helpers.py:generate_test_epoch()` for full epoch setup
 
 ## Important Gotchas
 
-- **Never call an LLM at runtime.** All text is pre-generated. If you're tempted to call an LLM during action processing, you're doing it wrong.
+- **The game engine never calls an LLM at runtime.** All game text is pre-generated. NPC conversations DO use runtime LLM calls, but that's the `npc_conversation.py` system, not the game engine.
 - **150 chars is a hard limit**, not a guideline. Test every message template.
-- **Actions are atomic.** A player sends one command, gets one response. No multi-step wizards or "are you sure?" confirmations — the radio is too slow for that.
-- **Town is free.** Never charge an action for anything that happens in town. The scarcity is dungeon actions only.
+- **Spell names must be <= 20 chars**, lore fragments <= 80 chars.
+- **Actions are atomic.** One command in, one response out. No multi-step confirmations.
+- **Town is free.** Never charge a dungeon action for anything in town.
+- **Class abilities refund resource if dungeon action fails.** Check resource first, then dungeon action. If dungeon action fails, restore the resource.
+- **Reveal is once per room per player.** The `player_reveals` table tracks this with a UNIQUE constraint.
 - **The design doc is the source of truth.** If code contradicts `docs/planned.md`, the code is wrong.

@@ -151,6 +151,13 @@ def generate_secrets(
                 _place_breach_secret(conn, dict(room), backend)
                 stats["breach"] += 1
 
+    # ── Town (3-5) — Floor 0 rooms, bard token rewards only ──
+    town_rooms = _get_town_rooms(conn)
+    num_town_secrets = random.randint(3, 5)
+    for room in random.sample(town_rooms, min(num_town_secrets, len(town_rooms))):
+        _place_town_secret(conn, room, backend)
+        stats["town"] = stats.get("town", 0) + 1
+
     stats["total"] = sum(v for k, v in stats.items() if k != "total")
     conn.commit()
     return stats
@@ -400,4 +407,47 @@ def _inject_feature_into_room(conn: sqlite3.Connection, room_id: int,
     conn.execute(
         "UPDATE rooms SET description = ? WHERE id = ?",
         (combined[:LLM_OUTPUT_CHAR_LIMIT], room_id),
+    )
+
+
+def _get_town_rooms(conn: sqlite3.Connection) -> list[dict]:
+    """Get non-hub Floor 0 rooms for town secret placement."""
+    rows = conn.execute(
+        "SELECT id, floor, name FROM rooms WHERE floor = 0 AND is_hub = 0"
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+# Town secret name/description pools
+_TOWN_SECRET_NAMES = [
+    "Loose Cobblestone", "Cracked Beam", "Hidden Niche",
+    "Old Graffiti", "Buried Token", "Hollow Brick",
+    "Faded Map Fragment", "Scratched Symbol", "Dusty Alcove",
+]
+
+_TOWN_SECRET_DESCS = [
+    "A cobblestone shifts, revealing a small cavity beneath.",
+    "A cracked beam hides a notch with something tucked inside.",
+    "Behind loose plaster, a niche holds a forgotten trinket.",
+    "Old graffiti on the wall forms a pattern when traced.",
+    "Beneath the dust, a small token glints in the light.",
+]
+
+
+def _place_town_secret(conn: sqlite3.Connection, room: dict,
+                        backend: DummyBackend) -> None:
+    """Place a town secret — bard token reward only, no gold."""
+    name = random.choice(_TOWN_SECRET_NAMES)
+    desc = random.choice(_TOWN_SECRET_DESCS)
+
+    hint1 = "Something is hidden in town."
+    hint2 = f"Look carefully near {room['name']}."
+    hint3 = f"Examine {room['name']} closely."
+
+    conn.execute(
+        """INSERT INTO secrets (type, floor, room_id, name, description, reward_type,
+           hint_tier1, hint_tier2, hint_tier3)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        ("town", 0, room["id"], name[:80], desc[:LLM_OUTPUT_CHAR_LIMIT],
+         "bard_token", hint1, hint2, hint3),
     )

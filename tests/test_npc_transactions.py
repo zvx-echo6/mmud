@@ -653,6 +653,7 @@ class TestTemplateLengths(unittest.TestCase):
             # Fill with large but realistic values
             filled = template.format(
                 cost=99999, gold=99999, item="A" * 30, value=99999, tokens=5,
+                amount=99999,
             )
             self.assertLessEqual(
                 len(filled), 150,
@@ -661,7 +662,7 @@ class TestTemplateLengths(unittest.TestCase):
 
     def test_rejection_templates(self):
         for key, template in _REJECTIONS.items():
-            filled = template.format(cost=99999, gold=99999)
+            filled = template.format(cost=99999, gold=99999, min=99999)
             self.assertLessEqual(
                 len(filled), 150,
                 f"Rejection template {key} too long: {len(filled)} chars: {filled}",
@@ -673,6 +674,7 @@ class TestTemplateLengths(unittest.TestCase):
                 hp_restored=999, gold_remaining=99999,
                 item="A" * 30, value=99999,
                 recap_text="A" * 100, hint_text="A" * 100,
+                amount=99999,
             )
             self.assertLessEqual(
                 len(filled), 150,

@@ -45,10 +45,12 @@ def ban_player(admin, player_id, reason=""):
         "INSERT OR IGNORE INTO banned_players (mesh_node_id, reason, banned_by) VALUES (?, ?, ?)",
         (player["mesh_id"], reason, admin),
     )
-    # Reset to town, clear combat
+    # Reset to town center, clear combat
+    center = db.execute("SELECT id FROM rooms WHERE floor = 0 AND is_hub = 1 LIMIT 1").fetchone()
+    center_id = center["id"] if center else None
     db.execute(
-        "UPDATE players SET state = 'town', floor = 0, room_id = NULL, combat_monster_id = NULL, town_location = NULL WHERE id = ?",
-        (player_id,),
+        "UPDATE players SET state = 'town', floor = 0, room_id = ?, combat_monster_id = NULL, town_location = NULL WHERE id = ?",
+        (center_id, player_id),
     )
     _log_action(db, admin, "ban", player["name"], reason)
     db.commit()
@@ -61,9 +63,11 @@ def kick_player(admin, player_id):
     player = db.execute("SELECT name FROM players WHERE id = ?", (player_id,)).fetchone()
     if not player:
         return False
+    center = db.execute("SELECT id FROM rooms WHERE floor = 0 AND is_hub = 1 LIMIT 1").fetchone()
+    center_id = center["id"] if center else None
     db.execute(
-        "UPDATE players SET state = 'town', floor = 0, room_id = NULL, combat_monster_id = NULL, town_location = NULL WHERE id = ?",
-        (player_id,),
+        "UPDATE players SET state = 'town', floor = 0, room_id = ?, combat_monster_id = NULL, town_location = NULL WHERE id = ?",
+        (center_id, player_id),
     )
     _log_action(db, admin, "kick", player["name"])
     db.commit()
@@ -76,13 +80,15 @@ def reset_player(admin, player_id):
     player = db.execute("SELECT name FROM players WHERE id = ?", (player_id,)).fetchone()
     if not player:
         return False
+    center = db.execute("SELECT id FROM rooms WHERE floor = 0 AND is_hub = 1 LIMIT 1").fetchone()
+    center_id = center["id"] if center else None
     db.execute(
         """UPDATE players SET level = 1, xp = 0, gold_carried = 0, gold_banked = 0,
-           state = 'town', floor = 0, room_id = NULL, combat_monster_id = NULL,
+           state = 'town', floor = 0, room_id = ?, combat_monster_id = NULL,
            town_location = NULL, stat_points = 0, secrets_found = 0,
            resource = 5, resource_max = 5
            WHERE id = ?""",
-        (player_id,),
+        (center_id, player_id),
     )
     _log_action(db, admin, "reset", player["name"])
     db.commit()

@@ -8,7 +8,7 @@ from src.generation.bossgen import generate_bosses
 from src.generation.breachgen import generate_breach
 from src.generation.narrative import DummyBackend
 from src.generation.secretgen import generate_secrets
-from src.generation.worldgen import generate_world
+from src.generation.worldgen import generate_town, generate_world
 from src.models.epoch import create_epoch
 from src.systems.endgame_rne import init_escape_run
 
@@ -34,6 +34,9 @@ def generate_test_epoch(
 
     # Create epoch
     create_epoch(conn, 1, endgame_mode, breach_type)
+
+    # Generate town (Floor 0)
+    town_stats = generate_town(conn, backend)
 
     # Generate world
     world_stats = generate_world(conn, backend)

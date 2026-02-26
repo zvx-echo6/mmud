@@ -37,6 +37,7 @@ def validate_epoch(conn: sqlite3.Connection) -> dict:
     errors: list[str] = []
     warnings: list[str] = []
 
+    _validate_town(conn, errors, warnings)
     _validate_room_descriptions(conn, errors, warnings)
     _validate_room_exits(conn, errors, warnings)
     _validate_monsters(conn, errors, warnings)
@@ -46,6 +47,8 @@ def validate_epoch(conn: sqlite3.Connection) -> dict:
     _validate_narrative_skins(conn, errors, warnings)
     _validate_npc_dialogue(conn, errors, warnings)
     _validate_template_variables(conn, errors, warnings)
+    _validate_spell_names(conn, errors, warnings)
+    _validate_lore_fragments(conn, errors, warnings)
 
     return {"errors": errors, "warnings": warnings}
 
@@ -283,3 +286,86 @@ def _validate_template_variables(conn: sqlite3.Connection,
                     f"Secret {s['id']} {tier} has unresolved template: "
                     f"{hint[:50]}"
                 )
+
+
+def _validate_spell_names(conn: sqlite3.Connection,
+                           errors: list, warnings: list) -> None:
+    """Check epoch spell names exist and are under 20 chars."""
+    epoch = conn.execute("SELECT spell_names FROM epoch WHERE id = 1").fetchone()
+    if not epoch:
+        return
+    spell_csv = epoch["spell_names"]
+    if not spell_csv:
+        warnings.append("No spell names generated for epoch")
+        return
+    names = [s.strip() for s in spell_csv.split(",")]
+    if len(names) != 3:
+        errors.append(f"Expected 3 spell names, got {len(names)}")
+    for name in names:
+        if len(name) > 20:
+            errors.append(f"Spell name exceeds 20 chars: '{name}' ({len(name)})")
+
+
+def _validate_lore_fragments(conn: sqlite3.Connection,
+                              errors: list, warnings: list) -> None:
+    """Check lore fragments are under 80 chars."""
+    from config import REVEAL_LORE_MAX_CHARS
+    rooms = conn.execute(
+        "SELECT id, name, reveal_lore FROM rooms WHERE reveal_lore != ''"
+    ).fetchall()
+    for room in rooms:
+        if len(room["reveal_lore"]) > REVEAL_LORE_MAX_CHARS:
+            errors.append(
+                f"Room {room['id']} ({room['name']}) lore exceeds {REVEAL_LORE_MAX_CHARS} chars: "
+                f"{len(room['reveal_lore'])}"
+            )
+
+
+def _validate_town(conn: sqlite3.Connection,
+                    errors: list, warnings: list) -> None:
+    """Validate Floor 0 town grid."""
+    from config import TOWN_GRID_SIZE, TOWN_NPC_POSITIONS
+
+    rooms = conn.execute(
+        "SELECT id, name, is_hub, npc_name FROM rooms WHERE floor = 0"
+    ).fetchall()
+
+    if not rooms:
+        warnings.append("No Floor 0 (town) rooms found")
+        return
+
+    expected = TOWN_GRID_SIZE * TOWN_GRID_SIZE
+    if len(rooms) != expected:
+        errors.append(f"Floor 0 has {len(rooms)} rooms, expected {expected}")
+
+    # Center room is hub
+    hubs = [r for r in rooms if r["is_hub"]]
+    if not hubs:
+        errors.append("Floor 0 has no hub room")
+    elif len(hubs) > 1:
+        errors.append(f"Floor 0 has {len(hubs)} hub rooms, expected 1")
+
+    # NPC rooms exist
+    expected_npcs = set(TOWN_NPC_POSITIONS.values())
+    found_npcs = {r["npc_name"] for r in rooms if r["npc_name"]}
+    missing = expected_npcs - found_npcs
+    if missing:
+        errors.append(f"Floor 0 missing NPC rooms: {missing}")
+
+    # All rooms connected (no orphans)
+    for room in rooms:
+        exits = conn.execute(
+            "SELECT COUNT(*) as cnt FROM room_exits WHERE from_room_id = ? OR to_room_id = ?",
+            (room["id"], room["id"]),
+        ).fetchone()
+        if exits["cnt"] == 0:
+            errors.append(f"Floor 0 room {room['id']} ({room['name']}) is an orphan")
+
+    # No monsters on Floor 0
+    monsters = conn.execute(
+        """SELECT m.id, m.name FROM monsters m
+           JOIN rooms r ON m.room_id = r.id
+           WHERE r.floor = 0"""
+    ).fetchall()
+    if monsters:
+        errors.append(f"Floor 0 has {len(monsters)} monsters (should be 0)")

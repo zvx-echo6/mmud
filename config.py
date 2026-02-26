@@ -58,6 +58,60 @@ SNEAK_BYPASS_CHANCE = 0.85
 CAST_RESOURCE_COST = 1
 CAST_DAMAGE_MULT = 2.0
 
+# Reveal system (caster out-of-combat cast)
+REVEAL_GOLD_CHANCE = 0.35     # 30-40% of rooms get reveal gold
+REVEAL_GOLD_MIN = 5
+REVEAL_GOLD_MAX = 20
+REVEAL_LORE_CHANCE = 0.12     # 10-15% of rooms get lore fragments
+REVEAL_LORE_MAX_CHARS = 80
+
+# Dummy spell / lore pools (used by DummyBackend)
+DUMMY_SPELL_NAMES = [
+    "Arcane Bolt", "Ember Flare", "Void Spike",
+    "Shadow Lance", "Frost Shard", "Thunder Snap",
+    "Soul Rend", "Stone Curse", "Wind Slash",
+]
+DUMMY_LORE_FRAGMENTS = [
+    "The walls whisper of a king who traded his crown for silence.",
+    "An old map is scratched into the stone. It leads nowhere.",
+    "Someone carved 'THE DOOR LIES' into the lintel.",
+    "A faded mural shows a city swallowed by roots.",
+    "Dried flowers mark a grave. No name.",
+    "The air tastes of iron and regret.",
+    "A child's toy sits on a shelf, perfectly preserved.",
+    "Claw marks score the ceiling. Something climbed out.",
+    "A broken clock is fused to the wall, hands at midnight.",
+    "The stone here is warm, as if something breathes beneath.",
+    "A torn journal page reads: 'It follows the light.'",
+    "Salt crystals trace a circle on the floor.",
+]
+
+# =============================================================================
+# FLOOR 0 TOWN
+# =============================================================================
+
+TOWN_GRID_SIZE = 5
+TOWN_CENTER = (2, 2)  # Row, col of center room (bar)
+TOWN_NPC_POSITIONS = {
+    (2, 2): "grist",   # Center — the bar
+    (1, 2): "maren",   # North of center
+    (2, 3): "torval",  # East of center
+    (3, 2): "whisper", # South of center
+}
+
+# =============================================================================
+# TUTORIAL ZONE (Floor 1 first 25%)
+# =============================================================================
+
+TUTORIAL_ZONE_RATIO = 0.25
+TUTORIAL_MONSTER_HP_MULT = 0.5
+TUTORIAL_MONSTER_DMG_MULT = 0.5
+TUTORIAL_MONSTER_GOLD_MULT = 1.25
+TUTORIAL_MONSTER_NAMES = [
+    "Cave Rat", "Dust Beetle", "Blind Crawler", "Fungal Mite",
+    "Ash Roach", "Pale Grub", "Soot Sprite", "Bone Moth",
+]
+
 # =============================================================================
 # DUNGEON
 # =============================================================================
@@ -537,3 +591,10 @@ COMMAND_NPC_DM_MAP = {
     "buy": "torval",
     "rumor": "whisper",
 }
+
+# =============================================================================
+# TORVAL'S GAMBLE
+# =============================================================================
+
+GAMBLE_MIN_BET = 5
+GAMBLE_MAX_BET_RATIO = 0.5   # Max 50% of carried gold

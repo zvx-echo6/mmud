@@ -62,6 +62,96 @@ class BackendInterface(ABC):
                 break
         return self.complete(f"{system}\n\nPlayer says: {last_user}", max_tokens)
 
+    def generate_spell_names(self, theme: str = "") -> list[str]:
+        """Generate 3 spell names for the epoch (each <=20 chars).
+
+        Default implementation calls self.complete() with a themed prompt.
+        DummyBackend overrides this with a static pool.
+        Falls back to static pool on invalid LLM results.
+        """
+        from config import DUMMY_SPELL_NAMES
+
+        theme_desc = theme if theme else "a dark underground dungeon"
+        prompt = (
+            f"Generate 3 short spell names for a dungeon epoch themed around {theme_desc}. "
+            f"Each name must be under 20 characters. "
+            f"Return only the names, one per line."
+        )
+        try:
+            raw = self.complete(prompt, max_tokens=100)
+            names = [line.strip() for line in raw.strip().splitlines() if line.strip()]
+            # Strip leading markers like "1.", "- ", "* "
+            cleaned = []
+            for n in names:
+                n = n.lstrip("0123456789.-)*# ").strip()
+                if n:
+                    cleaned.append(n)
+            names = cleaned
+
+            # Validate: exactly 3 names, each <=20 chars
+            if len(names) >= 3:
+                names = names[:3]
+            else:
+                logger.warning(f"LLM returned {len(names)} spell names, need 3. Falling back.")
+                return random.sample(DUMMY_SPELL_NAMES, 3)
+
+            valid = all(len(n) <= 20 for n in names)
+            if not valid:
+                # Truncate long names rather than discarding
+                names = [n[:20] for n in names]
+
+            return names
+        except Exception as e:
+            logger.warning(f"Spell name generation failed: {e}. Falling back to static pool.")
+            return random.sample(DUMMY_SPELL_NAMES, 3)
+
+    def generate_town_room_name(self, row: int, col: int, npc_name: str = None) -> str:
+        """Generate a town room name for Floor 0."""
+        if npc_name == "grist":
+            return "The Last Ember"
+        if npc_name == "maren":
+            return "Maren's Clinic"
+        if npc_name == "torval":
+            return "Torval's Trading Post"
+        if npc_name == "whisper":
+            return "Whisper's Alcove"
+        return f"Town ({row},{col})"
+
+    def generate_town_description(self, name: str, npc_name: str = None) -> str:
+        """Generate a town room description for Floor 0."""
+        return name
+
+    def generate_lore_fragment(self, floor: int) -> str:
+        """Generate a lore fragment for a room (<=80 chars).
+
+        Default implementation calls self.complete() with a themed prompt.
+        DummyBackend overrides this with a static pool.
+        Falls back to static pool on invalid LLM results.
+        """
+        from config import DUMMY_LORE_FRAGMENTS, FLOOR_THEMES, REVEAL_LORE_MAX_CHARS
+
+        theme = FLOOR_THEMES.get(floor, "The Depths")
+        prompt = (
+            f"Write one mysterious lore fragment for a dungeon room on floor {floor} "
+            f"themed around '{theme}'. It should be a single cryptic sentence about "
+            f"the dungeon's history. Must be under {REVEAL_LORE_MAX_CHARS} characters total. "
+            f"Return only the fragment, no quotes."
+        )
+        try:
+            raw = self.complete(prompt, max_tokens=60)
+            text = raw.strip().strip('"\'')
+            # Take only the first line if multi-line
+            if "\n" in text:
+                text = text.split("\n")[0].strip()
+            if len(text) > REVEAL_LORE_MAX_CHARS:
+                text = text[:REVEAL_LORE_MAX_CHARS]
+            if not text:
+                return random.choice(DUMMY_LORE_FRAGMENTS)[:REVEAL_LORE_MAX_CHARS]
+            return text
+        except Exception as e:
+            logger.warning(f"Lore fragment generation failed: {e}. Falling back to static pool.")
+            return random.choice(DUMMY_LORE_FRAGMENTS)[:REVEAL_LORE_MAX_CHARS]
+
 
 # ── Dummy Backend ──────────────────────────────────────────────────────────
 
@@ -346,11 +436,52 @@ _BREACH_NAMES = [
 ]
 
 
+_TOWN_ROOM_NAMES = [
+    "The Last Ember", "Maren's Clinic", "Torval's Trading Post", "Whisper's Alcove",
+    "Dusty Alley", "Cobblestone Path", "Market Square", "Old Well",
+    "Crumbling Wall", "Iron Gate", "Lantern Row", "Ash Garden",
+    "Broken Fountain", "Stone Bench", "Ember Street", "Charcoal Lane",
+    "Collapsed Archway", "Mossy Corner", "Watchtower Base", "Root Cellar",
+    "Dried Canal", "Scaffold Walk", "Rubble Pile", "Merchant Row", "Quiet Nook",
+]
+
+_TOWN_DESCRIPTIONS = {
+    "grist": "Smoke and amber light. The bar stretches across the back wall. A trapdoor leads down.",
+    "maren": "Clean linens and the smell of herbs. Maren's tools line the shelves.",
+    "torval": "Crates and barrels stacked high. Torval's wares gleam in lamplight.",
+    "whisper": "Shadows pool in the corners. Old books and strange symbols cover the walls.",
+    None: [
+        "Worn cobblestones underfoot. The buildings lean close overhead.",
+        "A narrow lane between soot-stained walls. Quiet here.",
+        "Cracked flagstones and dry weeds. The town feels old.",
+        "Faded shop fronts line the path. Most are boarded up.",
+        "A crossroads of packed earth. Boot prints everywhere.",
+        "The street widens here. A dry fountain marks the center.",
+        "Rubble fills one side. The other stands weathered but whole.",
+        "Lamplight spills from a high window. Otherwise, shadow.",
+        "A low wall separates the path from overgrown gardens.",
+        "Stone steps lead nowhere. The upper floor collapsed long ago.",
+        "Wind whistles through gaps in the stonework.",
+        "A quiet corner where the noise of the bar barely reaches.",
+        "Ash dusts every surface. The air is still and warm.",
+        "Iron rings are bolted into the wall. Old hitching posts.",
+        "The smell of earth and old stone. Nothing stirs.",
+        "A sheltered nook between two leaning walls.",
+        "Broken tiles crunch underfoot. The ceiling is open sky.",
+        "A narrow passage barely wide enough for two.",
+        "Scaffolding props up a sagging wall. It looks recent.",
+        "The remains of a market stall. Empty crates and rope.",
+        "A patch of stubborn moss brightens the grey stone.",
+    ],
+}
+
+
 class DummyBackend(BackendInterface):
     """Template-based backend that produces valid, playable content without LLM."""
 
     def __init__(self):
         self._used_room_names: set[str] = set()
+        self._town_name_index: int = 0
 
     def complete(self, prompt: str, max_tokens: int = 200) -> str:
         """Return template-based text. Ignores the prompt, uses context hints."""
@@ -398,6 +529,34 @@ class DummyBackend(BackendInterface):
         """Generate abbreviated room description for revisits."""
         sensory = random.choice(_FLOOR_SENSORY.get(floor, _FLOOR_SENSORY[1]))
         return sensory[:LLM_OUTPUT_CHAR_LIMIT]
+
+    def generate_town_room_name(self, row: int, col: int, npc_name: str = None) -> str:
+        """Generate a town room name for Floor 0."""
+        if npc_name == "grist":
+            return "The Last Ember"
+        if npc_name == "maren":
+            return "Maren's Clinic"
+        if npc_name == "torval":
+            return "Torval's Trading Post"
+        if npc_name == "whisper":
+            return "Whisper's Alcove"
+        # Use sequential names from pool for variety
+        idx = self._town_name_index % len(_TOWN_ROOM_NAMES)
+        name = _TOWN_ROOM_NAMES[idx]
+        # Skip NPC room names already assigned
+        while name in ("The Last Ember", "Maren's Clinic", "Torval's Trading Post", "Whisper's Alcove"):
+            self._town_name_index += 1
+            idx = self._town_name_index % len(_TOWN_ROOM_NAMES)
+            name = _TOWN_ROOM_NAMES[idx]
+        self._town_name_index += 1
+        return name
+
+    def generate_town_description(self, name: str, npc_name: str = None) -> str:
+        """Generate a town room description for Floor 0."""
+        if npc_name and npc_name in _TOWN_DESCRIPTIONS:
+            return _TOWN_DESCRIPTIONS[npc_name][:LLM_OUTPUT_CHAR_LIMIT]
+        generic = _TOWN_DESCRIPTIONS[None]
+        return random.choice(generic)[:LLM_OUTPUT_CHAR_LIMIT]
 
     def generate_monster_name(self, tier: int) -> str:
         """Pick a monster name for a tier."""
@@ -468,6 +627,16 @@ class DummyBackend(BackendInterface):
                 f"The {theme} shudders."[:LLM_OUTPUT_CHAR_LIMIT],
             ],
         }
+
+    def generate_spell_names(self, theme: str = "") -> list[str]:
+        """Generate 3 spell names for the epoch (each ≤20 chars)."""
+        from config import DUMMY_SPELL_NAMES
+        return random.sample(DUMMY_SPELL_NAMES, 3)
+
+    def generate_lore_fragment(self, floor: int) -> str:
+        """Generate a lore fragment for a room (≤80 chars)."""
+        from config import DUMMY_LORE_FRAGMENTS
+        return random.choice(DUMMY_LORE_FRAGMENTS)[:80]
 
     def generate_atmospheric_broadcast(self, theme: str) -> str:
         """Generate a generic atmospheric broadcast message."""

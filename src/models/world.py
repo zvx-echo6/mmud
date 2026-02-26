@@ -102,3 +102,25 @@ def get_stairway_room(conn: sqlite3.Connection, floor: int) -> Optional[dict]:
         (floor,),
     ).fetchone()
     return dict(row) if row else None
+
+
+def has_player_revealed(
+    conn: sqlite3.Connection, player_id: int, room_id: int
+) -> bool:
+    """Check if a player has already revealed this room."""
+    row = conn.execute(
+        "SELECT 1 FROM player_reveals WHERE player_id = ? AND room_id = ?",
+        (player_id, room_id),
+    ).fetchone()
+    return row is not None
+
+
+def record_player_reveal(
+    conn: sqlite3.Connection, player_id: int, room_id: int
+) -> None:
+    """Record that a player has revealed a room."""
+    conn.execute(
+        "INSERT OR IGNORE INTO player_reveals (player_id, room_id) VALUES (?, ?)",
+        (player_id, room_id),
+    )
+    conn.commit()

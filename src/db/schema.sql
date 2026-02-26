@@ -57,7 +57,8 @@ CREATE TABLE IF NOT EXISTS epoch (
     breach_type TEXT NOT NULL,          -- heist, emergence, incursion, resonance
     breach_open INTEGER DEFAULT 0,     -- 1 after day 15
     narrative_theme TEXT,
-    day_number INTEGER DEFAULT 1
+    day_number INTEGER DEFAULT 1,
+    spell_names TEXT DEFAULT ''        -- Comma-separated spell names (3 per epoch, ≤20 chars each)
 );
 
 -- =============================================================================
@@ -123,7 +124,10 @@ CREATE TABLE IF NOT EXISTS rooms (
     riddle_answer TEXT,                 -- NULL if no riddle
     htl_cleared INTEGER DEFAULT 0,     -- Hold the Line: 1 = currently clear
     htl_cleared_at DATETIME,
-    ward_active INTEGER DEFAULT 0      -- R&E: warded room slows Pursuer
+    ward_active INTEGER DEFAULT 0,     -- R&E: warded room slows Pursuer
+    reveal_gold INTEGER DEFAULT 0,     -- Gold found when caster reveals room
+    reveal_lore TEXT DEFAULT '',       -- Lore fragment shown on reveal (≤80 chars)
+    npc_name TEXT                      -- NULL, grist, maren, torval, whisper (Floor 0 only)
 );
 
 CREATE TABLE IF NOT EXISTS room_exits (
@@ -131,6 +135,14 @@ CREATE TABLE IF NOT EXISTS room_exits (
     from_room_id INTEGER NOT NULL REFERENCES rooms(id),
     to_room_id INTEGER NOT NULL REFERENCES rooms(id),
     direction TEXT NOT NULL             -- n, s, e, w, u, d
+);
+
+CREATE TABLE IF NOT EXISTS player_reveals (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    player_id INTEGER NOT NULL REFERENCES players(id),
+    room_id INTEGER NOT NULL REFERENCES rooms(id),
+    revealed_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(player_id, room_id)
 );
 
 CREATE TABLE IF NOT EXISTS monsters (
@@ -521,6 +533,19 @@ CREATE TABLE IF NOT EXISTS npc_memory (
     UNIQUE(player_id, npc)
 );
 CREATE INDEX IF NOT EXISTS idx_npc_memory_player ON npc_memory(player_id, npc);
+
+-- =============================================================================
+-- DEATH LOG (NPC memory — Maren remembers deaths)
+-- =============================================================================
+
+CREATE TABLE IF NOT EXISTS death_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    player_id INTEGER NOT NULL REFERENCES players(id),
+    floor INTEGER NOT NULL,
+    monster_name TEXT NOT NULL,
+    died_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_death_log_player ON death_log(player_id);
 
 -- =============================================================================
 -- INDEXES

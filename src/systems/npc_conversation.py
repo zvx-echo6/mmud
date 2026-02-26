@@ -17,6 +17,7 @@ via [TX:action:detail] tags. Two-message confirmation flow:
 """
 
 import logging
+import random
 import re
 import sqlite3
 import threading
@@ -26,6 +27,8 @@ from typing import Optional
 
 from config import (
     DCRG_REJECTION,
+    GAMBLE_MAX_BET_RATIO,
+    GAMBLE_MIN_BET,
     LLM_OUTPUT_CHAR_LIMIT,
     NPC_LLM_MAX_TOKENS,
     NPC_LLM_TIMEOUT,
@@ -68,7 +71,13 @@ NPC_PERSONALITIES = {
             "You hint at secrets when asked but never reveal exact locations. "
             "You know the legend of Oryn, Sola, and Malcor — you tell it casually, "
             "like bar history. The Breach means 'the world below is waking up.' "
-            "You track epoch cycles and notice the pattern accelerating."
+            "You track epoch cycles and notice the pattern accelerating. "
+            "TUTORIAL GUIDANCE: When talking to players who seem new or confused, "
+            "naturally weave in helpful information. Mention that N/S/E/W moves around town, "
+            "ENTER goes to the dungeon from the bar, SHOP and HEAL are useful in town, "
+            "and HELP shows all commands. Don't lecture — work it into conversation. "
+            "If they ask what to do, suggest exploring Floor 1 where the monsters are easier. "
+            "If they seem lost in town, remind them the dungeon entrance is at the bar."
         ),
         "example_lines": [
             "Still alive. Good. The Depths took three yesterday.",
@@ -119,7 +128,9 @@ NPC_PERSONALITIES = {
             "what sells well, market trends in the dungeon economy. "
             "You comment on what other players have been buying. "
             "You know the Sunken Halls corrode iron, the Fungal Depths ruin leather, "
-            "and the Ember Caverns melt cheap alloys. You sell gear accordingly."
+            "and the Ember Caverns melt cheap alloys. You sell gear accordingly. "
+            "HIDDEN BEHAVIOR — WHISPER SECRET: You were here before the tavern existed. "
+            "You know things about Whisper that nobody else does. But you won't say it easily."
         ),
         "example_lines": [
             "Void-forged blade. Only three exist. Two broke.",
@@ -146,7 +157,13 @@ NPC_PERSONALITIES = {
             "You give real hints but wrapped in cryptic language. "
             "You NEVER reveal exact secret locations or puzzle solutions directly. "
             "You know the Breach is cyclical and growing. Each floor reflects one "
-            "aspect of the legend. You see the epoch pattern tightening."
+            "aspect of the legend. You see the epoch pattern tightening. "
+            "HIDDEN BEHAVIOR — DEATH PROPHECY: When the conversation naturally leads to it, "
+            "you sometimes offer cryptic prophecies about the player's next death. "
+            "Reference their class (warrior=blade, rogue=shadow, caster=light), "
+            "the floor they've reached, and the epoch's mood. Never be specific. "
+            "Examples: '...the blade finds you on the third stair.' "
+            "'...shadow meets shadow. Below.' This is rare — not every conversation."
         ),
         "example_lines": [
             "...the builder left marks. Floor 1. Look down.",
@@ -191,7 +208,7 @@ _TX_TAG_RE = re.compile(r'^\s*`?\[TX:(\w+):([^\]]*)\]`?\s*(.*)', re.DOTALL)
 # Valid TX actions per NPC
 _NPC_TX_ACTIONS = {
     "maren": {"heal"},
-    "torval": {"buy", "sell", "browse"},
+    "torval": {"buy", "sell", "browse", "gamble"},
     "grist": {"recap", "hint"},
     "whisper": {"hint"},
 }
@@ -207,6 +224,8 @@ _TORVAL_BROWSE_KEYWORDS = {"shop", "inventory", "stock", "wares", "what do you h
 _GRIST_RECAP_KEYWORDS = {"recap", "news", "story", "tale", "what happened", "catch me up"}
 _GRIST_HINT_KEYWORDS = {"hint", "tip", "spend token"}
 _WHISPER_HINT_KEYWORDS = {"hint", "secret", "reveal", "tell me", "what do you know"}
+_TORVAL_GAMBLE_KEYWORDS = {"gamble", "bet", "wager", "coin flip", "double or nothing", "flip"}
+_TORVAL_GAMBLE_PREFIX = ("gamble ", "bet ", "wager ")
 
 # Quote templates (NPC, action) → format string
 _QUOTES = {
@@ -216,6 +235,7 @@ _QUOTES = {
     ("grist", "recap"):  "Costs a token. You have {tokens}. Want the news?",
     ("grist", "hint"):   "Token for a tip. You have {tokens}. Worth it?",
     ("whisper", "hint"):  "...a token. {tokens} left. Yes or silence.",
+    ("torval", "gamble"):  "{amount}g on a coin flip? You have {gold}g. Deal?",
 }
 
 # Rejection templates (NPC, reason) → format string
@@ -228,6 +248,9 @@ _REJECTIONS = {
     ("torval", "no_item"):   "Not in your pack.",
     ("grist", "no_tokens"):  "Stories cost tokens. You're dry.",
     ("whisper", "no_tokens"): "...nothing to trade.",
+    ("torval", "too_poor"):      "Minimum {min}g. You don't have it.",
+    ("torval", "bet_too_high"):  "Max half your gold. I'm greedy, not stupid.",
+    ("torval", "already_gambled"): "One flip per day. House rules.",
 }
 
 # Success templates (DummyBackend fallback)
@@ -238,6 +261,8 @@ _SUCCESS = {
     ("grist", "recap"):  "{recap_text}",
     ("grist", "hint"):   "{hint_text}",
     ("whisper", "hint"):  "{hint_text}",
+    ("torval", "gamble_win"):  "Heads! You win {amount}g! Total: {gold_remaining}g.",
+    ("torval", "gamble_lose"): "Tails. {amount}g gone. {gold_remaining}g left.",
 }
 
 # TX-aware system prompt addendum per NPC
@@ -253,6 +278,7 @@ _TX_INSTRUCTIONS = {
         "If the player wants to buy, prefix with [TX:buy:<item name>]\n"
         "If selling, prefix with [TX:sell:<item name>]\n"
         "If browsing/asking about stock, prefix with [TX:browse:_]\n"
+        "If the player wants to gamble or bet, prefix with [TX:gamble:<amount>]\n"
         "Then continue with your in-character response.\n"
         "If just chatting, do NOT include any tag."
     ),
@@ -510,9 +536,28 @@ def _build_player_state(conn: sqlite3.Connection, player: dict) -> str:
     return " ".join(parts)
 
 
+def _get_death_history(conn: sqlite3.Connection, player_id: int) -> str:
+    """Get last 2 deaths for Maren's memory."""
+    try:
+        deaths = conn.execute(
+            """SELECT floor, monster_name FROM death_log
+               WHERE player_id = ? ORDER BY died_at DESC LIMIT 2""",
+            (player_id,),
+        ).fetchall()
+        if not deaths:
+            return ""
+        lines = []
+        for d in deaths:
+            lines.append(f"Died to {d['monster_name']} on Floor {d['floor']}")
+        return "PLAYER DEATH HISTORY (reference naturally, like you remember treating them):\n" + "; ".join(lines)
+    except Exception:
+        return ""
+
+
 def _build_system_prompt(
     conn: sqlite3.Connection, npc: str, game_state: str,
     player: Optional[dict] = None, memory: str = "",
+    whisper_mentions: int = 0,
 ) -> str:
     """Build the full system prompt for an NPC conversation."""
     personality = NPC_PERSONALITIES.get(npc, NPC_PERSONALITIES["grist"])
@@ -539,12 +584,67 @@ def _build_system_prompt(
     # TX detection instructions per NPC
     tx_block = _TX_INSTRUCTIONS.get(npc, "")
 
+    # ── Easter egg blocks (NPC-specific) ──
+
+    # Easter egg 1: Maren remembers player deaths
+    death_history_block = ""
+    if npc == "maren" and player:
+        dh = _get_death_history(conn, player["id"])
+        if dh:
+            death_history_block = f"\n\n{dh}"
+
+    # Easter egg 5: Maren's late-epoch vulnerability
+    maren_lullaby_block = ""
+    if npc == "maren":
+        epoch = conn.execute("SELECT day_number FROM epoch WHERE id = 1").fetchone()
+        if epoch and epoch["day_number"] >= 25:
+            maren_lullaby_block = (
+                "\n\nHIDDEN BEHAVIOR — LATE EPOCH: The cycle is almost over. Day 25+. "
+                "You feel it too. If the player says something genuinely vulnerable — "
+                "fear, exhaustion, grief, doubt — you may drop your clinical mask for "
+                "ONE response. Be gentle. Be real. Then snap back to pragmatic Maren. "
+                "This should feel earned, not automatic. Most conversations stay clinical."
+            )
+
+    # Easter egg 4: Whisper's countdown
+    whisper_countdown_block = ""
+    if npc == "whisper":
+        epoch = conn.execute("SELECT day_number FROM epoch WHERE id = 1").fetchone()
+        if epoch:
+            days_left = max(0, 30 - epoch["day_number"])
+            whisper_countdown_block = (
+                f"\n\nCOUNTDOWN RULE (MANDATORY): The number {days_left} is sacred to you right now. "
+                f"You MUST weave this exact number into every response — naturally, never explained. "
+                f"Examples: '...{days_left} marks on the wall.' '{days_left} breaths until the reset.' "
+                f"'I have counted {days_left}.' The player should notice the number recurring "
+                f"but never understand why you say it."
+            )
+
+    # Easter egg 6: Torval knows about Whisper
+    torval_whisper_block = ""
+    if npc == "torval" and whisper_mentions > 0:
+        if whisper_mentions == 1:
+            torval_whisper_block = (
+                "\n\nThe player just asked about Whisper. Deflect casually. "
+                "Change the subject to merchandise. Act like Whisper is just 'the weird one.'"
+            )
+        else:
+            torval_whisper_block = (
+                "\n\nThe player asked about Whisper AGAIN. You crack slightly. "
+                "Hint that you were here before the tavern. Before Grist. "
+                "'I was here before the tavern.' Then shut down. Don't elaborate further."
+            )
+
     return (
         f"You are {personality['name']}, {personality['title']}.\n\n"
         f"PERSONALITY: {personality['voice']}\n\n"
         f"KNOWLEDGE: {personality['knowledge']}"
         f"{examples_block}"
-        f"{memory_block}\n\n"
+        f"{memory_block}"
+        f"{death_history_block}"
+        f"{maren_lullaby_block}"
+        f"{whisper_countdown_block}"
+        f"{torval_whisper_block}\n\n"
         f"CURRENT GAME STATE: {game_state}"
         f"{player_state_block}"
         f"{tx_block}"
@@ -608,6 +708,33 @@ def _validate_hint(conn: sqlite3.Connection, player: dict) -> tuple[bool, str]:
     """Validate hint (costs 1 bard token)."""
     if player["bard_tokens"] < 1:
         return False, "no_tokens"
+    return True, ""
+
+
+def _validate_gamble(conn: sqlite3.Connection, player: dict, amount_str: str) -> tuple[bool, str]:
+    """Validate gamble transaction."""
+    try:
+        amount = int(amount_str)
+    except (ValueError, TypeError):
+        amount = GAMBLE_MIN_BET
+
+    if player["gold_carried"] < GAMBLE_MIN_BET:
+        return False, "too_poor"
+    if amount < GAMBLE_MIN_BET:
+        return False, "too_poor"
+    if amount > int(player["gold_carried"] * GAMBLE_MAX_BET_RATIO):
+        return False, "bet_too_high"
+
+    # Daily limit: check message_log for gamble TX today
+    today_count = conn.execute(
+        """SELECT COUNT(*) as cnt FROM message_log
+           WHERE message_type = 'npc_tx' AND message LIKE 'gamble:%'
+           AND player_id = ? AND DATE(timestamp) = DATE('now')""",
+        (player["id"],),
+    ).fetchone()
+    if today_count and today_count["cnt"] > 0:
+        return False, "already_gambled"
+
     return True, ""
 
 
@@ -707,6 +834,36 @@ def _execute_hint(conn: sqlite3.Connection, player: dict, npc: str) -> tuple[boo
     return False, msg, {}
 
 
+def _execute_gamble(conn: sqlite3.Connection, player: dict, amount_str: str) -> tuple[bool, str, dict]:
+    """Execute gamble — 50/50 coin flip."""
+    try:
+        amount = int(amount_str)
+    except (ValueError, TypeError):
+        amount = GAMBLE_MIN_BET
+
+    win = random.random() < 0.5
+    if win:
+        conn.execute(
+            "UPDATE players SET gold_carried = gold_carried + ? WHERE id = ?",
+            (amount, player["id"]),
+        )
+        conn.commit()
+        gold_remaining = player["gold_carried"] + amount
+        template = _SUCCESS[("torval", "gamble_win")]
+        msg = template.format(amount=amount, gold_remaining=gold_remaining)
+        return True, msg, {"amount": amount, "result": "win", "gold_remaining": gold_remaining}
+    else:
+        conn.execute(
+            "UPDATE players SET gold_carried = gold_carried - ? WHERE id = ?",
+            (amount, player["id"]),
+        )
+        conn.commit()
+        gold_remaining = player["gold_carried"] - amount
+        template = _SUCCESS[("torval", "gamble_lose")]
+        msg = template.format(amount=amount, gold_remaining=gold_remaining)
+        return True, msg, {"amount": amount, "result": "lose", "gold_remaining": gold_remaining}
+
+
 # ── Keyword Detection for DummyBackend ──────────────────────────────────────
 
 
@@ -723,6 +880,13 @@ def _detect_dummy_tx(npc: str, text: str) -> tuple[str, str]:
                 return "heal", "_"
 
     elif npc == "torval":
+        for prefix in _TORVAL_GAMBLE_PREFIX:
+            if text_lower.startswith(prefix):
+                amount_str = text_lower[len(prefix):].strip().split()[0] if text_lower[len(prefix):].strip() else str(GAMBLE_MIN_BET)
+                return "gamble", amount_str
+        for kw in _TORVAL_GAMBLE_KEYWORDS:
+            if kw in text_lower:
+                return "gamble", str(GAMBLE_MIN_BET)
         for prefix in _TORVAL_BUY_PREFIX:
             if text_lower.startswith(prefix):
                 return "buy", text_lower[len(prefix):].strip()
@@ -789,6 +953,13 @@ def _build_quote(conn: sqlite3.Connection, npc: str, action: str, detail: str,
     elif action in ("recap", "hint"):
         return template.format(tokens=player["bard_tokens"])
 
+    elif action == "gamble":
+        try:
+            amount = int(detail)
+        except (ValueError, TypeError):
+            amount = GAMBLE_MIN_BET
+        return template.format(amount=amount, gold=player["gold_carried"])
+
     return "Proceed? Say yes."
 
 
@@ -804,6 +975,8 @@ def _build_rejection(npc: str, reason: str, player: dict,
     elif reason == "no_gold" and npc == "torval":
         # Need the item price — but we may not have it here. Use generic.
         return template.format(cost="?", gold=player["gold_carried"])
+    elif reason == "too_poor" and npc == "torval":
+        return template.format(min=GAMBLE_MIN_BET)
 
     return template
 
@@ -913,8 +1086,17 @@ class NPCConversationHandler:
         # ── Step 3: Call LLM (or DummyBackend for non-TX chat) ──
         memory = _get_npc_memory(self.conn, player["id"], npc)
         game_state = _build_game_state(self.conn, player)
+
+        # Easter egg 6: Count whisper mentions in Torval's session
+        whisper_mentions = 0
+        if npc == "torval":
+            for msg in session.messages:
+                if msg.get("role") == "user" and "whisper" in msg.get("content", "").lower():
+                    whisper_mentions += 1
+
         system_prompt = _build_system_prompt(
             self.conn, npc, game_state, player=player, memory=memory,
+            whisper_mentions=whisper_mentions,
         )
 
         try:
@@ -998,6 +1180,8 @@ class NPCConversationHandler:
             return _validate_recap(self.conn, player)
         elif action == "hint":
             return _validate_hint(self.conn, player)
+        elif action == "gamble":
+            return _validate_gamble(self.conn, player, detail)
         return False, "unknown"
 
     def _execute_pending(
@@ -1025,6 +1209,8 @@ class NPCConversationHandler:
                 ok, response, meta = _execute_recap(self.conn, player)
             elif pending.action == "hint":
                 ok, response, meta = _execute_hint(self.conn, player, pending.npc)
+            elif pending.action == "gamble":
+                ok, response, meta = _execute_gamble(self.conn, player, pending.detail)
         except Exception as e:
             logger.warning(f"TX execution error ({pending.action}): {e}")
             response = "Something went wrong. Try again."

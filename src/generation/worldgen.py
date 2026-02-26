@@ -14,6 +14,7 @@ Layout per floor:
 import math
 import random
 import sqlite3
+from collections import deque
 from typing import Optional
 
 from config import (
@@ -23,15 +24,91 @@ from config import (
     LOOPS_PER_FLOOR,
     LLM_OUTPUT_CHAR_LIMIT,
     NUM_FLOORS,
+    REVEAL_GOLD_CHANCE,
+    REVEAL_GOLD_MAX,
+    REVEAL_GOLD_MIN,
+    REVEAL_LORE_CHANCE,
     ROOMS_PER_BRANCH_MAX,
     ROOMS_PER_BRANCH_MIN,
     ROOMS_PER_FLOOR_MAX,
     ROOMS_PER_FLOOR_MIN,
+    TOWN_CENTER,
+    TOWN_GRID_SIZE,
+    TOWN_NPC_POSITIONS,
     TRAPS_PER_FLOOR,
+    TUTORIAL_MONSTER_DMG_MULT,
+    TUTORIAL_MONSTER_GOLD_MULT,
+    TUTORIAL_MONSTER_HP_MULT,
+    TUTORIAL_MONSTER_NAMES,
+    TUTORIAL_ZONE_RATIO,
     VAULT_ROOMS_PER_FLOOR_MAX,
     VAULT_ROOMS_PER_FLOOR_MIN,
 )
 from src.generation.narrative import DummyBackend, _TRAP_DESCS, _TRAP_TYPES, _VAULT_TYPES
+
+
+def generate_town(conn: sqlite3.Connection, backend: Optional[DummyBackend] = None) -> dict:
+    """Generate Floor 0 town as a 5x5 grid with NPC rooms.
+
+    Args:
+        conn: Database connection (schema must already be initialized).
+        backend: Narrative backend for text generation.
+
+    Returns:
+        Stats dict with rooms, npc_rooms, exits.
+    """
+    if backend is None:
+        backend = DummyBackend()
+
+    stats = {"rooms": 0, "npc_rooms": 0, "exits": 0}
+    size = TOWN_GRID_SIZE
+    center_r, center_c = TOWN_CENTER
+
+    # Grid of room IDs: grid[row][col]
+    grid: list[list[int]] = [[0] * size for _ in range(size)]
+
+    # Create all 25 rooms
+    for r in range(size):
+        for c in range(size):
+            npc = TOWN_NPC_POSITIONS.get((r, c))
+            is_hub = 1 if (r, c) == (center_r, center_c) else 0
+
+            name = backend.generate_town_room_name(r, c, npc_name=npc)
+            desc = backend.generate_town_description(name, npc_name=npc)
+            short = desc  # Town rooms use same desc for short
+
+            room_id = _insert_room(
+                conn, floor=0, name=name, desc=desc, desc_short=short,
+                is_hub=is_hub, npc_name=npc,
+            )
+            grid[r][c] = room_id
+            stats["rooms"] += 1
+            if npc:
+                stats["npc_rooms"] += 1
+
+    # Connect adjacent rooms N/S/E/W
+    for r in range(size):
+        for c in range(size):
+            room_id = grid[r][c]
+            # North: r-1
+            if r > 0:
+                _insert_exit(conn, room_id, grid[r - 1][c], "n")
+                stats["exits"] += 1
+            # South: r+1
+            if r < size - 1:
+                _insert_exit(conn, room_id, grid[r + 1][c], "s")
+                stats["exits"] += 1
+            # West: c-1
+            if c > 0:
+                _insert_exit(conn, room_id, grid[r][c - 1], "w")
+                stats["exits"] += 1
+            # East: c+1
+            if c < size - 1:
+                _insert_exit(conn, room_id, grid[r][c + 1], "e")
+                stats["exits"] += 1
+
+    conn.commit()
+    return stats
 
 
 def generate_world(conn: sqlite3.Connection, backend: Optional[DummyBackend] = None) -> dict:
@@ -110,9 +187,14 @@ def _generate_floor(
             desc = backend.generate_room_description(floor, name)
             short = backend.generate_room_description_short(floor, name)
 
+            # Roll for reveal content
+            rgold = random.randint(REVEAL_GOLD_MIN, REVEAL_GOLD_MAX) if random.random() < REVEAL_GOLD_CHANCE else 0
+            rlore = backend.generate_lore_fragment(floor) if random.random() < REVEAL_LORE_CHANCE else ""
+
             room_id = _insert_room(
                 conn, floor, name, desc, short,
                 is_stairway=1 if is_stairway else 0,
+                reveal_gold=rgold, reveal_lore=rlore,
             )
             stats["rooms"] += 1
             all_room_ids.append(room_id)
@@ -206,9 +288,21 @@ def _generate_floor(
     num_monsters = int(len(monster_rooms) * random.uniform(0.6, 0.75))
     monster_rooms = random.sample(monster_rooms, min(num_monsters, len(monster_rooms)))
 
+    # Determine tutorial rooms for floor 1
+    tutorial_room_ids: set[int] = set()
+    if floor == 1:
+        distances = _bfs_distances(conn, hub_id)
+        # Sort rooms by distance, take first 25% as tutorial
+        sorted_rooms = sorted(all_room_ids, key=lambda rid: distances.get(rid, 999))
+        num_tutorial = max(1, int(len(sorted_rooms) * TUTORIAL_ZONE_RATIO))
+        tutorial_room_ids = set(sorted_rooms[:num_tutorial])
+
     for room_id in monster_rooms:
-        tier = _floor_to_tier(floor)
-        monster_id = _insert_monster(conn, room_id, tier, backend)
+        if room_id in tutorial_room_ids:
+            _insert_tutorial_monster(conn, room_id, backend)
+        else:
+            tier = _floor_to_tier(floor)
+            _insert_monster(conn, room_id, tier, backend)
         stats["monsters"] += 1
 
     return stats
@@ -257,7 +351,9 @@ def _generate_items(conn: sqlite3.Connection, backend: DummyBackend) -> int:
 def _insert_room(conn: sqlite3.Connection, floor: int, name: str, desc: str,
                  desc_short: str, is_hub: int = 0, is_checkpoint: int = 0,
                  is_stairway: int = 0, is_vault: int = 0,
-                 riddle_answer: Optional[str] = None) -> int:
+                 riddle_answer: Optional[str] = None,
+                 reveal_gold: int = 0, reveal_lore: str = "",
+                 npc_name: Optional[str] = None) -> int:
     """Insert a room and return its ID."""
     # Enforce 150-char limit
     desc = desc[:LLM_OUTPUT_CHAR_LIMIT]
@@ -265,10 +361,11 @@ def _insert_room(conn: sqlite3.Connection, floor: int, name: str, desc: str,
 
     cursor = conn.execute(
         """INSERT INTO rooms (floor, name, description, description_short,
-           is_hub, is_checkpoint, is_stairway, is_vault, riddle_answer)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+           is_hub, is_checkpoint, is_stairway, is_vault, riddle_answer,
+           reveal_gold, reveal_lore, npc_name)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (floor, name, desc, desc_short, is_hub, is_checkpoint, is_stairway,
-         is_vault, riddle_answer),
+         is_vault, riddle_answer, reveal_gold, reveal_lore, npc_name),
     )
     return cursor.lastrowid
 
@@ -291,6 +388,46 @@ def _insert_monster(conn: sqlite3.Connection, room_id: int, tier: int,
     spd = _monster_stat(tier, "spd")
     xp = _monster_xp(tier)
     gold_min, gold_max = _monster_gold(tier)
+
+    cursor = conn.execute(
+        """INSERT INTO monsters (room_id, name, hp, hp_max, pow, def, spd,
+           xp_reward, gold_reward_min, gold_reward_max, tier)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        (room_id, name, hp_max, hp_max, pow_, def_, spd, xp, gold_min, gold_max, tier),
+    )
+    return cursor.lastrowid
+
+
+def _bfs_distances(conn: sqlite3.Connection, hub_id: int) -> dict[int, int]:
+    """BFS from hub, returns {room_id: distance}."""
+    distances = {hub_id: 0}
+    queue = deque([hub_id])
+    while queue:
+        rid = queue.popleft()
+        exits = conn.execute(
+            "SELECT to_room_id FROM room_exits WHERE from_room_id = ?", (rid,)
+        ).fetchall()
+        for ex in exits:
+            tid = ex["to_room_id"]
+            if tid not in distances:
+                distances[tid] = distances[rid] + 1
+                queue.append(tid)
+    return distances
+
+
+def _insert_tutorial_monster(conn: sqlite3.Connection, room_id: int,
+                             backend: DummyBackend) -> int:
+    """Insert a tutorial-zone monster with reduced stats."""
+    tier = 1
+    name = random.choice(TUTORIAL_MONSTER_NAMES)
+    hp_max = max(1, int(_monster_hp(tier) * TUTORIAL_MONSTER_HP_MULT))
+    pow_ = max(1, int(_monster_stat(tier, "pow") * TUTORIAL_MONSTER_DMG_MULT))
+    def_ = _monster_stat(tier, "def")
+    spd = _monster_stat(tier, "spd")
+    xp = _monster_xp(tier)
+    gold_min, gold_max = _monster_gold(tier)
+    gold_min = int(gold_min * TUTORIAL_MONSTER_GOLD_MULT)
+    gold_max = int(gold_max * TUTORIAL_MONSTER_GOLD_MULT)
 
     cursor = conn.execute(
         """INSERT INTO monsters (room_id, name, hp, hp_max, pow, def, spd,

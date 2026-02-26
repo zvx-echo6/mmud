@@ -28,7 +28,7 @@ ALIASES = {
     # Look
     "l": "look",
     # Examine
-    "x": "examine",
+    "x": "examine", "ex": "examine", "examine": "examine",
     # Stats
     "st": "stats",
     # Inventory
@@ -55,6 +55,8 @@ ALIASES = {
     "rest": "rest",
     # Leave / Exit
     "exit": "leave", "go back": "leave", "back": "leave",
+    # Floor transition aliases
+    "descend": "enter", "ascend": "town",
     # Town location keywords
     "tavern": "barkeep", "barkeep": "grist", "grist": "grist", "drink": "grist",
     "maren": "healer", "clinic": "healer", "infirmary": "healer",

@@ -14,6 +14,7 @@ from typing import Optional
 from config import CLASSES, COMMAND_NPC_DM_MAP, NPC_GREETING_COOLDOWN, NPC_TO_NODE
 from src.core.actions import handle_action
 from src.models import player as player_model
+from src.models import world as world_data
 from src.systems import barkeep as barkeep_sys
 from src.systems import broadcast as broadcast_sys
 from src.transport.formatter import fmt
@@ -47,6 +48,37 @@ class GameEngine:
             conn.commit()
         except Exception:
             pass  # Columns already exist
+
+        # Schema migration: reveal system + spell names (idempotent)
+        try:
+            conn.execute("ALTER TABLE rooms ADD COLUMN reveal_gold INTEGER DEFAULT 0")
+            conn.execute("ALTER TABLE rooms ADD COLUMN reveal_lore TEXT DEFAULT ''")
+            conn.commit()
+        except Exception:
+            pass
+
+        # Schema migration: npc_name for Floor 0 town rooms (idempotent)
+        try:
+            conn.execute("ALTER TABLE rooms ADD COLUMN npc_name TEXT")
+            conn.commit()
+        except Exception:
+            pass
+        try:
+            conn.execute("ALTER TABLE epoch ADD COLUMN spell_names TEXT DEFAULT ''")
+            conn.commit()
+        except Exception:
+            pass
+        try:
+            conn.execute("""CREATE TABLE IF NOT EXISTS player_reveals (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                player_id INTEGER NOT NULL REFERENCES players(id),
+                room_id INTEGER NOT NULL REFERENCES rooms(id),
+                revealed_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(player_id, room_id)
+            )""")
+            conn.commit()
+        except Exception:
+            pass
 
     def process_message(self, sender_id: str, sender_name: str, text: str) -> Optional[str]:
         """Process an inbound message and return a response.
@@ -154,7 +186,17 @@ class GameEngine:
         if player["state"] != "town":
             return
 
+        # Command-based NPC detection (existing)
         npc = COMMAND_NPC_DM_MAP.get(command)
+
+        # Room-based NPC detection (Floor 0 movement)
+        if not npc and command == "move":
+            updated = player_model.get_player(self.conn, player["id"])
+            if updated and updated.get("room_id"):
+                room = world_data.get_room(self.conn, updated["room_id"])
+                if room and room.get("npc_name"):
+                    npc = room["npc_name"]
+
         if not npc:
             return
 

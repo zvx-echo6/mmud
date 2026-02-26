@@ -40,7 +40,7 @@ from src.generation.breachgen import generate_breach
 from src.generation.narrative import DummyBackend, get_backend
 from src.generation.secretgen import generate_secrets
 from src.generation.validation import validate_epoch
-from src.generation.worldgen import generate_world
+from src.generation.worldgen import generate_town, generate_world
 from src.models.epoch import create_epoch
 
 
@@ -87,6 +87,12 @@ def generate_epoch(
     # 2. Create epoch
     print("[2/9] Creating epoch record...")
     create_epoch(conn, epoch_number, endgame_mode, breach_type, theme)
+
+    # 2b. Town generation (Floor 0)
+    print("[2b/9] Generating town (Floor 0)...")
+    town_stats = generate_town(conn, backend)
+    stats["town"] = town_stats
+    print(f"  Town rooms: {town_stats['rooms']}, NPCs: {town_stats['npc_rooms']}")
 
     # 3. World generation
     print("[3/9] Generating dungeon world...")
@@ -244,6 +250,17 @@ def _generate_narrative_content(
                 (msg[:LLM_OUTPUT_CHAR_LIMIT],),
             )
             counts["broadcasts"] += 1
+
+    # Spell names (3 per epoch, ≤20 chars each)
+    theme = FLOOR_THEMES.get(1, "")
+    spell_names = backend.generate_spell_names(theme)
+    spell_names = [s[:20] for s in spell_names]  # Enforce limit
+    spell_csv = ",".join(spell_names)
+    conn.execute(
+        "UPDATE epoch SET spell_names = ? WHERE id = 1",
+        (spell_csv,),
+    )
+    counts["spells"] = len(spell_names)
 
     conn.commit()
     return counts
