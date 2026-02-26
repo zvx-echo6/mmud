@@ -594,7 +594,7 @@ def action_barkeep(conn: sqlite3.Connection, player: dict, args: list[str]) -> s
         return fmt("The bar is in town. Head back first.")
 
     if player.get("town_location") in ("bar", "grist"):
-        return fmt("Smoke and noise. You're already here. HEALER MERCHANT HINT or LEAVE.")
+        return fmt("Smoke and noise. You're already here. GRIST MAREN TORVAL WHISPER or LEAVE.")
 
     player_model.update_state(conn, player["id"], town_location="bar")
     return fmt(TOWN_DESCRIPTIONS["bar"])

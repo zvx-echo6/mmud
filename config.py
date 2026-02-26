@@ -480,7 +480,7 @@ TOWN_DESCRIPTIONS = {
     # Tier 2: BAR command — inside the bar, see all four NPCs
     "bar": (
         "Smoke and amber light. Grist behind the bar. Maren by the hearth. "
-        "Torval with his wares. Whisper in shadow. HEALER MERCHANT HINT LEAVE."
+        "Torval with his wares. Whisper in shadow. GRIST MAREN TORVAL WHISPER LEAVE."
     ),
     # Tier 3: NPC approach — short acknowledgment, then DM from NPC node
     "grist": "Grist sets down a glass and leans on the bar.",
