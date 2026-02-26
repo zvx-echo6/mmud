@@ -440,9 +440,9 @@ def _place_town_secret(conn: sqlite3.Connection, room: dict,
     name = random.choice(_TOWN_SECRET_NAMES)
     desc = random.choice(_TOWN_SECRET_DESCS)
 
-    hint1 = "Something is hidden in town."
-    hint2 = f"Look carefully near {room['name']}."
-    hint3 = f"Examine {room['name']} closely."
+    hint1 = _sanitize_hint("Something is hidden in town.")
+    hint2 = _sanitize_hint(f"Look carefully near {room['name']}.")
+    hint3 = _sanitize_hint(f"Examine {room['name']} closely.")
 
     conn.execute(
         """INSERT INTO secrets (type, floor, room_id, name, description, reward_type,
