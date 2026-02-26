@@ -675,7 +675,7 @@ class AnthropicBackend(BackendInterface):
         client = anthropic.Anthropic(api_key=self.api_key)
         response = client.messages.create(
             model=self.model,
-            max_tokens=max_tokens,
+            max_tokens=4096,
             messages=[{"role": "user", "content": prompt}],
         )
         return response.content[0].text.strip()
@@ -685,7 +685,7 @@ class AnthropicBackend(BackendInterface):
         client = anthropic.Anthropic(api_key=self.api_key)
         response = client.messages.create(
             model=self.model,
-            max_tokens=max_tokens,
+            max_tokens=4096,
             system=system,
             messages=messages,
         )
@@ -710,7 +710,6 @@ class OpenAIBackend(BackendInterface):
         client = OpenAI(**kwargs)
         response = client.chat.completions.create(
             model=self.model,
-            max_tokens=max_tokens,
             messages=[{"role": "user", "content": prompt}],
         )
         return response.choices[0].message.content.strip()
@@ -724,7 +723,6 @@ class OpenAIBackend(BackendInterface):
         chat_messages = [{"role": "system", "content": system}] + messages
         response = client.chat.completions.create(
             model=self.model,
-            max_tokens=max_tokens,
             messages=chat_messages,
         )
         return response.choices[0].message.content.strip()
@@ -744,12 +742,10 @@ class GoogleBackend(BackendInterface):
         return genai.Client(api_key=self.api_key)
 
     def complete(self, prompt: str, max_tokens: int = 200) -> str:
-        from google.genai import types
         client = self._get_client()
         response = client.models.generate_content(
             model=self.model,
             contents=prompt,
-            config=types.GenerateContentConfig(max_output_tokens=max_tokens),
         )
         return response.text.strip()
 
