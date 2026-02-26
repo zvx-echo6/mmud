@@ -18,6 +18,7 @@ def get_dashboard_data():
         "bounties": gamedb.get_bounties(),
         "secrets": gamedb.get_secrets_status(),
         "player_count": gamedb.get_player_count(),
+        "floor_themes": gamedb.get_floor_themes_public(),
         "mode": mode,
         "mode_status": None,
     }

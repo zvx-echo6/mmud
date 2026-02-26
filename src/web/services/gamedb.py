@@ -383,3 +383,14 @@ def get_player_count():
     db = get_db()
     row = db.execute("SELECT COUNT(*) as cnt FROM players").fetchone()
     return row["cnt"] if row else 0
+
+
+# ═══ FLOOR THEMES ═══
+
+def get_floor_themes_public():
+    """Floor themes for the public dashboard descent section."""
+    db = get_db()
+    rows = db.execute(
+        "SELECT floor, floor_name, atmosphere FROM floor_themes ORDER BY floor"
+    ).fetchall()
+    return [dict(r) for r in rows]

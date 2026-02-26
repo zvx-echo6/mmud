@@ -13,42 +13,112 @@
 {% endblock %}
 
 {% block content %}
-  {# ═══ EPOCH STATUS BAR ═══ #}
-  <div class="epoch-bar">
-    <div class="epoch-stat">
-      <div class="label">Epoch Day</div>
-      <div class="value ember" id="epoch-day">{{ epoch.day_number if epoch else '—' }}</div>
-      <div class="breach-status">
-        {% if breach and breach.breach_open %}
-        <span class="dot open" id="breach-dot"></span>
-        <span id="breach-text">BREACH OPEN</span>
-        {% else %}
-        <span class="dot sealed" id="breach-dot"></span>
-        <span id="breach-text">BREACH SEALED</span>
-        {% endif %}
+  {# ═══ EPOCH IDENTITY ═══ #}
+  {% set mode_labels = {
+    'hold_the_line': 'HOLD THE LINE',
+    'raid_boss': 'RAID BOSS',
+    'retrieve_and_escape': 'RETRIEVE & ESCAPE'
+  } %}
+
+  <div class="epoch-id">
+    {% if epoch %}
+    <div class="epoch-id-stats">
+      <div class="epoch-id-stat">
+        <span class="eis-label">Epoch</span>
+        <span class="eis-value">{{ epoch.epoch_number }}</span>
+      </div>
+      <div class="epoch-id-sep"></div>
+      <div class="epoch-id-stat">
+        <span class="eis-label">Day</span>
+        <span class="eis-value ember" id="epoch-day">{{ epoch.day_number }}</span>
+      </div>
+      <div class="epoch-id-sep"></div>
+      <div class="epoch-id-stat">
+        <span class="eis-label">Mode</span>
+        <span class="epoch-mode-badge" id="epoch-mode">{{ mode_labels.get(mode, 'PENDING') if mode else 'PENDING' }}</span>
+      </div>
+      <div class="epoch-id-sep"></div>
+      <div class="epoch-id-stat">
+        <span class="eis-label">Breach</span>
+        <span class="breach-status">
+          {% if breach and breach.breach_open %}
+          <span class="dot open" id="breach-dot"></span>
+          <span id="breach-text">OPEN</span>
+          {% else %}
+          <span class="dot sealed" id="breach-dot"></span>
+          <span id="breach-text">SEALED</span>
+          {% endif %}
+        </span>
+      </div>
+      <div class="epoch-id-sep"></div>
+      <div class="epoch-id-stat">
+        <span class="eis-label">Remain</span>
+        <span class="eis-value gold" id="days-remain">{{ 30 - epoch.day_number }}</span>
       </div>
     </div>
-    <div class="epoch-center-divider"></div>
-    <div class="epoch-stat">
-      <div class="label">Active Mode</div>
-      {% set mode_labels = {
-        'hold_the_line': 'HOLD THE LINE',
-        'raid_boss': 'RAID BOSS',
-        'retrieve_and_escape': 'RETRIEVE & ESCAPE'
-      } %}
-      <div class="epoch-mode-badge" id="epoch-mode">{{ mode_labels.get(mode, 'PENDING') if mode else 'PENDING' }}</div>
-      <div class="epoch-info-line">
-        <span id="players-online">{{ player_count }} adventurer{{ 's' if player_count != 1 else '' }} this epoch</span>
-      </div>
+    <div class="epoch-id-meta">
+      <span id="players-online">{{ player_count }} adventurer{{ 's' if player_count != 1 else '' }} this epoch</span>
     </div>
-    <div class="epoch-center-divider"></div>
-    <div class="epoch-stat">
-      <div class="label">Days Remain</div>
-      <div class="value gold" id="days-remain">{{ 30 - epoch.day_number if epoch else '—' }}</div>
+    {% else %}
+    <div class="epoch-id-dormant">
+      The dungeon sleeps. No active epoch.
     </div>
+    {% endif %}
   </div>
 
+  {# ═══ THE TAVERN ═══ #}
+  <div class="divider">THE TAVERN</div>
+
+  <div class="tavern-body">
+    <p class="tavern-intro">
+      The Last Ember sits where the world ends and the dungeon begins.
+      Four figures wait inside &mdash;
+      <span class="npc-name" data-npc="grist" role="button" tabindex="0">Grist</span> the barkeep,
+      <span class="npc-name" data-npc="maren" role="button" tabindex="0">Maren</span> the healer,
+      <span class="npc-name" data-npc="torval" role="button" tabindex="0">Torval</span> the merchant,
+      and <span class="npc-name" data-npc="whisper" role="button" tabindex="0">Whisper</span> &mdash;
+      a voice from the corner that knows too much.
+      The drinks are strong. The advice is free.
+      What happens below is not.
+    </p>
+  </div>
+
+  <div class="npc-roster">
+    {% for key in ['grist', 'maren', 'torval', 'whisper'] %}
+    {% set npc = npc_blurbs[key] %}
+    <div class="npc-entry" data-npc="{{ key }}" role="button" tabindex="0">
+      <div class="npc-entry-head">
+        <span class="npc-entry-sigil">{{ npc.sigil }}</span>
+        <div class="npc-entry-id">
+          <span class="npc-entry-name">{{ npc.name }}</span>
+          <span class="npc-entry-title">{{ npc.title }}</span>
+        </div>
+      </div>
+      <p class="npc-entry-blurb">{{ npc.blurb }}</p>
+    </div>
+    {% endfor %}
+  </div>
+
+  {# ═══ THE DESCENT ═══ #}
+  {% if floor_themes %}
+  <div class="divider">THE DESCENT</div>
+
+  <div class="descent-list">
+    {% for ft in floor_themes %}
+    <div class="descent-floor">
+      <span class="df-num">{{ ft.floor }}</span>
+      <div class="df-info">
+        <span class="df-name">{{ ft.floor_name }}</span>
+        <span class="df-atmo">{{ ft.atmosphere }}</span>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
   {# ═══ MAIN GRID ═══ #}
+  <div class="divider">THE BOARD</div>
+
   <div class="board-grid">
 
     {# ── LEADERBOARD ── #}
@@ -209,32 +279,6 @@
       </div>
     </div>
 
-  </div>
-
-  {# ═══ NPC STRIP ═══ #}
-  <div class="divider">THE REGULARS</div>
-
-  <div class="npc-strip">
-    <div class="npc-card" data-npc="grist" role="button" tabindex="0">
-      <div class="npc-sigil">🍺</div>
-      <div class="npc-name">Grist</div>
-      <div class="npc-role">Barkeep</div>
-    </div>
-    <div class="npc-card" data-npc="maren" role="button" tabindex="0">
-      <div class="npc-sigil">🩸</div>
-      <div class="npc-name">Maren</div>
-      <div class="npc-role">Healer</div>
-    </div>
-    <div class="npc-card" data-npc="torval" role="button" tabindex="0">
-      <div class="npc-sigil">⚖</div>
-      <div class="npc-name">Torval</div>
-      <div class="npc-role">Merchant</div>
-    </div>
-    <div class="npc-card" data-npc="whisper" role="button" tabindex="0">
-      <div class="npc-sigil">👁</div>
-      <div class="npc-name">Whisper</div>
-      <div class="npc-role">Sage</div>
-    </div>
   </div>
 {% endblock %}
 
