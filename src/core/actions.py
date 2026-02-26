@@ -593,7 +593,7 @@ def action_barkeep(conn: sqlite3.Connection, player: dict, args: list[str]) -> s
         return fmt("The bar is in town. Head back first.")
 
     if player.get("town_location") == "bar":
-        return fmt("You're already at the bar. HEAL SHOP HINT or LEAVE.")
+        return fmt("Smoke and noise. You're already here. HEALER MERCHANT HINT or LEAVE.")
 
     player_model.update_state(conn, player["id"], town_location="bar")
     return fmt(TOWN_DESCRIPTIONS["bar"])
@@ -605,7 +605,7 @@ def action_healer_desc(conn: sqlite3.Connection, player: dict, args: list[str]) 
         return fmt("Maren is in town. Head back first.")
 
     if player.get("town_location") == "maren":
-        return fmt("Maren is right here. DM her or LEAVE.")
+        return fmt("Maren glances up. She hasn't gone anywhere. DM her or LEAVE.")
 
     if not player.get("town_location"):
         return fmt("You're outside. BAR to enter the tavern first.")
@@ -620,7 +620,7 @@ def action_merchant_desc(conn: sqlite3.Connection, player: dict, args: list[str]
         return fmt("Torval is in town. Head back first.")
 
     if player.get("town_location") == "torval":
-        return fmt("Torval is right here. SHOP BUY SELL or LEAVE.")
+        return fmt("Torval drums his fingers on the counter. DM him or LEAVE.")
 
     if not player.get("town_location"):
         return fmt("You're outside. BAR to enter the tavern first.")
@@ -635,7 +635,7 @@ def action_rumor_desc(conn: sqlite3.Connection, player: dict, args: list[str]) -
         return fmt("Whisper is in town. Head back first.")
 
     if player.get("town_location") == "whisper":
-        return fmt("Whisper is right here. DM her or LEAVE.")
+        return fmt("Whisper's gaze hasn't left you. DM her or LEAVE.")
 
     if not player.get("town_location"):
         return fmt("You're outside. BAR to enter the tavern first.")

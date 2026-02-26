@@ -456,25 +456,28 @@ class TestTownLocationTracking(unittest.TestCase):
         self.assertIn("already", resp.lower())
 
     def test_healer_already_there(self):
-        """Typing HEALER when already at maren returns 'right here' message."""
+        """Typing HEALER when already at maren returns atmospheric stay message."""
         self.engine.process_message("!abc123", "TestPlayer", "bar")
         self.engine.process_message("!abc123", "TestPlayer", "healer")
         resp = self.engine.process_message("!abc123", "TestPlayer", "healer")
-        self.assertIn("right here", resp.lower())
+        self.assertIn("Maren", resp)
+        self.assertIn("LEAVE", resp)
 
     def test_merchant_already_there(self):
-        """Typing MERCHANT when already at torval returns 'right here' message."""
+        """Typing MERCHANT when already at torval returns atmospheric stay message."""
         self.engine.process_message("!abc123", "TestPlayer", "bar")
         self.engine.process_message("!abc123", "TestPlayer", "merchant")
         resp = self.engine.process_message("!abc123", "TestPlayer", "merchant")
-        self.assertIn("right here", resp.lower())
+        self.assertIn("Torval", resp)
+        self.assertIn("LEAVE", resp)
 
     def test_sage_already_there(self):
-        """Typing SAGE when already at whisper returns 'right here' message."""
+        """Typing HINT when already at whisper returns atmospheric stay message."""
         self.engine.process_message("!abc123", "TestPlayer", "bar")
         self.engine.process_message("!abc123", "TestPlayer", "rumor")
         resp = self.engine.process_message("!abc123", "TestPlayer", "rumor")
-        self.assertIn("right here", resp.lower())
+        self.assertIn("Whisper", resp)
+        self.assertIn("LEAVE", resp)
 
     def test_leave_from_npc_to_bar(self):
         """LEAVE from NPC goes back to bar."""
