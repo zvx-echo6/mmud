@@ -53,7 +53,7 @@ ALIASES = {
     # Leave / Exit
     "exit": "leave", "go back": "leave", "back": "leave",
     # Town location keywords
-    "tavern": "barkeep", "grist": "barkeep", "drink": "barkeep",
+    "tavern": "barkeep", "barkeep": "grist", "grist": "grist", "drink": "grist",
     "maren": "healer", "clinic": "healer", "infirmary": "healer",
     "torval": "merchant", "trader": "merchant",
     "whisper": "rumor", "rumor": "rumor", "hint": "rumor",

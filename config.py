@@ -483,6 +483,7 @@ TOWN_DESCRIPTIONS = {
         "Torval with his wares. Whisper in shadow. HEALER MERCHANT HINT LEAVE."
     ),
     # Tier 3: NPC approach — short acknowledgment, then DM from NPC node
+    "grist": "Grist sets down a glass and leans on the bar.",
     "maren": "Maren looks up from her needle and thread.",
     "torval": "Torval's eyes flick to your coin pouch.",
     "whisper": "Whisper stops muttering. Barely.",
@@ -514,7 +515,7 @@ NPC_GREETINGS = {
 
 # Map EMBR commands → NPC that should send a greeting DM
 COMMAND_NPC_DM_MAP = {
-    "barkeep": "grist",
+    "grist": "grist",
     "healer": "maren",
     "heal": "maren",
     "merchant": "torval",

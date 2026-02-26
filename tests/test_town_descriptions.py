@@ -23,6 +23,7 @@ from config import (
 )
 from src.core.actions import (
     action_barkeep,
+    action_grist_desc,
     action_heal,
     action_healer_desc,
     action_look,
@@ -412,9 +413,10 @@ class TestTownKeywords(unittest.TestCase):
         """Verify all town keyword aliases parse correctly."""
         alias_map = {
             "tavern": "barkeep",
-            "grist": "barkeep",
-            "drink": "barkeep",
             "bar": "barkeep",
+            "barkeep": "grist",
+            "grist": "grist",
+            "drink": "grist",
             "maren": "healer",
             "clinic": "healer",
             "infirmary": "healer",
@@ -537,6 +539,26 @@ class TestTownLocationTracking(unittest.TestCase):
         self.engine.process_message("!abc123", "TestPlayer", "rumor")
         self.assertEqual(len(self.engine.npc_dm_queue), 0)
 
+    def test_grist_already_there(self):
+        """Typing BARKEEP when already at grist returns atmospheric stay message."""
+        self.engine.process_message("!abc123", "TestPlayer", "bar")
+        self.engine.process_message("!abc123", "TestPlayer", "barkeep")
+        resp = self.engine.process_message("!abc123", "TestPlayer", "barkeep")
+        self.assertIn("Grist", resp)
+        self.assertIn("LEAVE", resp)
+
+    def test_grist_from_exterior_rejected(self):
+        """Approaching Grist from exterior requires bar first."""
+        resp = self.engine.process_message("!abc123", "TestPlayer", "barkeep")
+        self.assertIn("BAR", resp)
+
+    def test_bar_when_at_grist_already_here(self):
+        """Typing BAR when at grist says already here."""
+        self.engine.process_message("!abc123", "TestPlayer", "bar")
+        self.engine.process_message("!abc123", "TestPlayer", "grist")
+        resp = self.engine.process_message("!abc123", "TestPlayer", "bar")
+        self.assertIn("already", resp.lower())
+
     def test_direct_npc_navigation(self):
         """Can go directly from one NPC to another (both in bar)."""
         self.engine.process_message("!abc123", "TestPlayer", "bar")
@@ -607,8 +629,10 @@ class TestHealAndShopAdditive(unittest.TestCase):
         self.assertEqual(recipient, "!abc123")
 
     def test_barkeep_queues_grist_dm(self):
-        """'bar' enters the bar AND queues a Grist greeting DM."""
+        """Approaching Grist (barkeep/grist/drink) queues a Grist greeting DM."""
         self.engine.process_message("!abc123", "TestPlayer", "bar")
+        self.assertEqual(len(self.engine.npc_dm_queue), 0)  # bar alone no greeting
+        self.engine.process_message("!abc123", "TestPlayer", "barkeep")
         self.assertEqual(len(self.engine.npc_dm_queue), 1)
         npc, recipient = self.engine.npc_dm_queue[0]
         self.assertEqual(npc, "grist")

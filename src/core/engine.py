@@ -151,7 +151,7 @@ class GameEngine:
             return
 
         # Don't re-greet if player was already at this NPC's location
-        npc_locations = {"grist": "bar", "maren": "maren", "torval": "torval", "whisper": "whisper"}
+        npc_locations = {"grist": "grist", "maren": "maren", "torval": "torval", "whisper": "whisper"}
         expected_loc = npc_locations.get(npc)
         if expected_loc and player.get("town_location") == expected_loc:
             return

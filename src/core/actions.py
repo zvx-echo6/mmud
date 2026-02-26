@@ -44,7 +44,7 @@ FREE_ACTIONS = {
     "shop", "buy", "sell", "heal", "bank", "deposit", "withdraw",
     "barkeep", "token", "spend", "train", "equip", "unequip", "drop",
     "enter", "town", "leave", "bounty", "read", "helpful", "message", "mail",
-    "healer", "merchant", "rumor",
+    "grist", "healer", "merchant", "rumor",
 }
 
 
@@ -77,6 +77,7 @@ def handle_action(
         "heal": action_heal,
         # Phase 3: Social Systems
         "barkeep": action_barkeep,
+        "grist": action_grist_desc,
         "healer": action_healer_desc,
         "merchant": action_merchant_desc,
         "rumor": action_rumor_desc,
@@ -382,7 +383,7 @@ def action_leave(
     """Leave current location. In town: navigate back. In dungeon: return to town."""
     if player["state"] == "town":
         loc = player.get("town_location")
-        if loc in ("maren", "torval", "whisper"):
+        if loc in ("grist", "maren", "torval", "whisper"):
             # NPC → bar
             player_model.update_state(conn, player["id"], town_location="bar")
             return fmt(TOWN_DESCRIPTIONS["bar"])
@@ -592,11 +593,26 @@ def action_barkeep(conn: sqlite3.Connection, player: dict, args: list[str]) -> s
     if player["state"] != "town":
         return fmt("The bar is in town. Head back first.")
 
-    if player.get("town_location") == "bar":
+    if player.get("town_location") in ("bar", "grist"):
         return fmt("Smoke and noise. You're already here. HEALER MERCHANT HINT or LEAVE.")
 
     player_model.update_state(conn, player["id"], town_location="bar")
     return fmt(TOWN_DESCRIPTIONS["bar"])
+
+
+def action_grist_desc(conn: sqlite3.Connection, player: dict, args: list[str]) -> str:
+    """Approach Grist. Short acknowledgment, NPC DM follows. Town only, bar required."""
+    if player["state"] != "town":
+        return fmt("Grist is in town. Head back first.")
+
+    if player.get("town_location") == "grist":
+        return fmt("Grist is already watching you. DM him or LEAVE.")
+
+    if not player.get("town_location"):
+        return fmt("You're outside. BAR to enter the tavern first.")
+
+    player_model.update_state(conn, player["id"], town_location="grist")
+    return fmt(TOWN_DESCRIPTIONS["grist"])
 
 
 def action_healer_desc(conn: sqlite3.Connection, player: dict, args: list[str]) -> str:
