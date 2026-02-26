@@ -1,10 +1,10 @@
 {% extends "admin/base.html" %}
 
-{% block title %}Epoch Controls{% endblock %}
+{% block title %}Epoch Management{% endblock %}
 
 {% block admin_content %}
   <div class="page-header" style="padding-top:20px;">
-    <h1 class="page-title" style="font-size:22px;">Epoch Controls</h1>
+    <h1 class="page-title" style="font-size:22px;">Epoch Management</h1>
   </div>
 
   {# ═══ CURRENT STATUS ═══ #}
@@ -20,10 +20,12 @@
     <div class="admin-stat-card">
       <div class="admin-stat-label">Breach</div>
       <div class="admin-stat-value">
-        {% if breach and breach.breach_open %}
+        {% if breach and breach.active %}
           <span style="color:var(--ember-glow);">OPEN</span>
-        {% else %}
+        {% elif epoch %}
           <span style="color:var(--text-ghost);">SEALED</span>
+        {% else %}
+          <span style="color:var(--text-ghost);">—</span>
         {% endif %}
       </div>
     </div>
@@ -38,7 +40,79 @@
     </div>
   </div>
 
-  {# ═══ ACTIONS ═══ #}
+  {# ═══ BACKEND STATUS ═══ #}
+  <div class="backend-indicator">
+    <span class="backend-dot {% if backend_ready %}ready{% else %}dummy{% endif %}"></span>
+    <span class="backend-label">{{ backend_name }}</span>
+    {% if not backend_ready %}
+      <span class="backend-warning">Placeholder content — configure a real backend on the LLM page</span>
+    {% endif %}
+  </div>
+
+  {# ═══ GENERATION ═══ #}
+  <div class="divider">GENERATE EPOCH</div>
+
+  <div class="gen-controls">
+    <div class="gen-overrides">
+      <div class="gen-field">
+        <label class="gen-label">Endgame Mode</label>
+        <select id="endgame-mode" class="admin-input" style="width:200px;margin-bottom:0;appearance:auto;">
+          <option value="">Auto (random)</option>
+          <option value="hold_the_line">Hold the Line</option>
+          <option value="raid_boss">Raid Boss</option>
+          <option value="retrieve_and_escape">Retrieve &amp; Escape</option>
+        </select>
+      </div>
+      <div class="gen-field">
+        <label class="gen-label">Breach Type</label>
+        <select id="breach-type" class="admin-input" style="width:200px;margin-bottom:0;appearance:auto;">
+          <option value="">Auto (random)</option>
+          <option value="heist">Heist</option>
+          <option value="emergence">Emergence</option>
+          <option value="incursion">Incursion</option>
+          <option value="resonance">Resonance</option>
+        </select>
+      </div>
+    </div>
+    <button id="generate-btn" class="admin-btn gen-btn" {% if gen_running %}disabled{% endif %}>
+      {% if gen_running %}Generating...{% else %}Initialize New Epoch{% endif %}
+    </button>
+  </div>
+
+  {# ═══ GENERATION LOG ═══ #}
+  <div id="generation-log" class="gen-log" style="{% if not gen_running and not gen_result %}display:none{% endif %}">
+    <div class="gen-log-header">
+      <span class="panel-title">Generation Log</span>
+      <span id="gen-status-dot" class="gen-status-dot {% if gen_running %}active{% endif %}"></span>
+    </div>
+    <div id="gen-log-body" class="gen-log-body">
+      {# Log lines appended here by JS #}
+    </div>
+  </div>
+
+  {# ═══ EPOCH SUMMARY ═══ #}
+  <div id="epoch-summary" class="gen-summary" style="{% if not gen_result or not gen_result.get('success') %}display:none{% endif %}">
+    {% if gen_result and gen_result.get('success') %}
+      {% set r = gen_result %}
+      <div class="divider">EPOCH SUMMARY</div>
+      <div class="gen-summary-grid">
+        <div class="gen-summary-item"><span class="gs-label">Rooms</span><span class="gs-value">{{ r.rooms }}</span></div>
+        <div class="gen-summary-item"><span class="gs-label">Monsters</span><span class="gs-value">{{ r.monsters }}</span></div>
+        <div class="gen-summary-item"><span class="gs-label">Items</span><span class="gs-value">{{ r.items }}</span></div>
+        <div class="gen-summary-item"><span class="gs-label">Secrets</span><span class="gs-value">{{ r.secrets }}</span></div>
+        <div class="gen-summary-item"><span class="gs-label">Bounties</span><span class="gs-value">{{ r.bounties }}</span></div>
+        <div class="gen-summary-item"><span class="gs-label">Floor Bosses</span><span class="gs-value">{{ r.floor_bosses }}</span></div>
+        <div class="gen-summary-item"><span class="gs-label">Dialogue</span><span class="gs-value">{{ r.dialogue }}</span></div>
+        <div class="gen-summary-item"><span class="gs-label">Journals</span><span class="gs-value">{{ r.journals }}</span></div>
+        <div class="gen-summary-item"><span class="gs-label">Validation</span><span class="gs-value {% if r.validation_errors > 0 %}error{% endif %}">{{ r.validation_errors }} errors</span></div>
+        <div class="gen-summary-item"><span class="gs-label">Backend</span><span class="gs-value">{{ r.backend }}</span></div>
+        <div class="gen-summary-item"><span class="gs-label">Time</span><span class="gs-value">{{ r.elapsed }}s</span></div>
+      </div>
+    {% endif %}
+  </div>
+
+  {# ═══ EPOCH ACTIONS ═══ #}
+  {% if epoch %}
   <div class="divider">ACTIONS</div>
 
   <div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:32px;">
@@ -46,7 +120,7 @@
       <button type="submit" class="admin-btn" onclick="return confirm('Advance epoch to the next day?')">Advance Day</button>
     </form>
 
-    {% if not (breach and breach.breach_open) %}
+    {% if not (breach and breach.active) %}
     <form method="post" action="{{ url_for('admin.force_breach') }}">
       <button type="submit" class="admin-btn danger" onclick="return confirm('Force open the Breach?')">Force Breach</button>
     </form>
@@ -69,4 +143,162 @@
       <button type="submit" class="admin-btn">Broadcast</button>
     </div>
   </form>
+  {% endif %}
+{% endblock %}
+
+{% block scripts %}
+{{ super() }}
+<script>
+(function() {
+  var btn = document.getElementById('generate-btn');
+  var logEl = document.getElementById('generation-log');
+  var logBody = document.getElementById('gen-log-body');
+  var summaryEl = document.getElementById('epoch-summary');
+  var statusDot = document.getElementById('gen-status-dot');
+
+  function appendLog(msg, cls) {
+    var line = document.createElement('div');
+    line.className = 'gen-log-line' + (cls ? ' ' + cls : '');
+    line.textContent = '$ ' + msg;
+    logBody.appendChild(line);
+    logBody.scrollTop = logBody.scrollHeight;
+  }
+
+  function startGeneration() {
+    var mode = document.getElementById('endgame-mode').value;
+    var breach = document.getElementById('breach-type').value;
+
+    // Confirm if epoch already exists
+    {% if epoch %}
+    if (!confirm('An epoch is currently active (Day {{ epoch.day_number if epoch else "?" }} of 30). Starting a new epoch will reset everything. Continue?')) {
+      return;
+    }
+    {% endif %}
+
+    btn.disabled = true;
+    btn.textContent = 'Generating...';
+    logEl.style.display = 'block';
+    logBody.innerHTML = '';
+    summaryEl.style.display = 'none';
+    statusDot.classList.add('active');
+
+    var body = 'endgame_mode=' + encodeURIComponent(mode) + '&breach_type=' + encodeURIComponent(breach);
+
+    fetch('{{ url_for("admin.epoch_generate") }}', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+      body: body
+    }).then(function(r) {
+      if (r.status === 409) {
+        appendLog('Generation already in progress.', 'log-error');
+        btn.disabled = false;
+        btn.textContent = 'Initialize New Epoch';
+        statusDot.classList.remove('active');
+        return;
+      }
+      if (!r.ok) throw new Error('Failed to start generation: ' + r.status);
+
+      // Connect to SSE stream
+      var source = new EventSource('{{ url_for("admin.epoch_generate_stream") }}');
+
+      source.onmessage = function(event) {
+        var data = JSON.parse(event.data);
+
+        if (data.type === 'log') {
+          var cls = '';
+          if (data.message.indexOf('Done') >= 0 || data.message.indexOf('COMPLETE') >= 0) cls = 'log-success';
+          if (data.message.indexOf('ERROR') >= 0 || data.message.indexOf('FATAL') >= 0) cls = 'log-error';
+          if (data.message.indexOf('WARNING') >= 0) cls = 'log-warn';
+          appendLog(data.message, cls);
+        }
+
+        if (data.type === 'complete') {
+          source.close();
+          btn.disabled = false;
+          btn.textContent = 'Initialize New Epoch';
+          statusDot.classList.remove('active');
+
+          if (data.result && data.result.success) {
+            renderSummary(data.result);
+          }
+        }
+      };
+
+      source.onerror = function() {
+        source.close();
+        btn.disabled = false;
+        btn.textContent = 'Initialize New Epoch';
+        statusDot.classList.remove('active');
+        appendLog('Connection lost. Check server logs.', 'log-error');
+      };
+
+    }).catch(function(err) {
+      btn.disabled = false;
+      btn.textContent = 'Initialize New Epoch';
+      statusDot.classList.remove('active');
+      appendLog('Failed: ' + err.message, 'log-error');
+    });
+  }
+
+  function renderSummary(r) {
+    var html = '<div class="divider">EPOCH SUMMARY</div>';
+    html += '<div class="gen-summary-grid">';
+    var items = [
+      ['Rooms', r.rooms],
+      ['Monsters', r.monsters],
+      ['Items', r.items],
+      ['Secrets', r.secrets],
+      ['Bounties', r.bounties],
+      ['Floor Bosses', r.floor_bosses],
+      ['Dialogue', r.dialogue],
+      ['Journals', r.journals],
+      ['Validation', r.validation_errors + ' errors'],
+      ['Backend', r.backend],
+      ['Time', r.elapsed + 's'],
+    ];
+    for (var i = 0; i < items.length; i++) {
+      var errCls = (items[i][0] === 'Validation' && r.validation_errors > 0) ? ' error' : '';
+      html += '<div class="gen-summary-item"><span class="gs-label">' + items[i][0] + '</span><span class="gs-value' + errCls + '">' + items[i][1] + '</span></div>';
+    }
+    html += '</div>';
+    summaryEl.innerHTML = html;
+    summaryEl.style.display = 'block';
+  }
+
+  btn.addEventListener('click', startGeneration);
+
+  // If generation was already running on page load, reconnect to stream
+  {% if gen_running %}
+  (function() {
+    logEl.style.display = 'block';
+    statusDot.classList.add('active');
+    appendLog('Reconnecting to running generation...', '');
+
+    var source = new EventSource('{{ url_for("admin.epoch_generate_stream") }}');
+    source.onmessage = function(event) {
+      var data = JSON.parse(event.data);
+      if (data.type === 'log') {
+        var cls = '';
+        if (data.message.indexOf('Done') >= 0 || data.message.indexOf('COMPLETE') >= 0) cls = 'log-success';
+        if (data.message.indexOf('ERROR') >= 0 || data.message.indexOf('FATAL') >= 0) cls = 'log-error';
+        appendLog(data.message, cls);
+      }
+      if (data.type === 'complete') {
+        source.close();
+        btn.disabled = false;
+        btn.textContent = 'Initialize New Epoch';
+        statusDot.classList.remove('active');
+        if (data.result && data.result.success) renderSummary(data.result);
+      }
+    };
+    source.onerror = function() {
+      source.close();
+      btn.disabled = false;
+      btn.textContent = 'Initialize New Epoch';
+      statusDot.classList.remove('active');
+    };
+  })();
+  {% endif %}
+})();
+</script>
 {% endblock %}

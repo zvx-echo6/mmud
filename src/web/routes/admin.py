@@ -2,16 +2,19 @@
 Admin routes — behind session-based auth.
 """
 import functools
+import json
 import os
+import queue
 
 from flask import (
-    Blueprint, current_app, flash, jsonify, redirect, render_template,
-    request, session, url_for,
+    Blueprint, Response, current_app, flash, jsonify, redirect,
+    render_template, request, session, url_for,
 )
 
 from src.web import config as web_config
 from src.web.services import gamedb
 from src.web.services import admin_service as admin_svc
+from src.web.services import epoch_service
 
 bp = Blueprint("admin", __name__, template_folder="../templates/admin")
 
@@ -329,9 +332,88 @@ def join_config_save():
 @bp.route("/epoch")
 @login_required
 def epoch():
-    epoch = gamedb.get_epoch_status()
+    epoch_data = gamedb.get_epoch_status()
     breach = gamedb.get_breach_status()
-    return render_template("admin/epoch.html", epoch=epoch, breach=breach)
+
+    # Detect backend
+    db_path = web_config.DB_PATH
+    try:
+        from src.generation.narrative import get_backend
+        backend = get_backend(db_path=db_path)
+        backend_name = type(backend).__name__
+        backend_ready = "Dummy" not in backend_name
+    except Exception as e:
+        backend_name = f"Error: {e}"
+        backend_ready = False
+
+    # Check if generation is in progress
+    gen_running = epoch_service.is_running()
+    gen_result = epoch_service.get_result()
+
+    return render_template(
+        "admin/epoch.html",
+        epoch=epoch_data,
+        breach=breach,
+        backend_name=backend_name,
+        backend_ready=backend_ready,
+        gen_running=gen_running,
+        gen_result=gen_result,
+    )
+
+
+@bp.route("/epoch/generate", methods=["POST"])
+@login_required
+def epoch_generate():
+    if epoch_service.is_running():
+        return jsonify({"error": "Generation already in progress"}), 409
+
+    db_path = web_config.DB_PATH
+    endgame_mode = request.form.get("endgame_mode", "").strip()
+    breach_type = request.form.get("breach_type", "").strip()
+
+    # Determine epoch number
+    epoch_data = gamedb.get_epoch_status()
+    epoch_number = (epoch_data["epoch_number"] + 1) if epoch_data else 1
+
+    started = epoch_service.start_generation(
+        db_path=db_path,
+        epoch_number=epoch_number,
+        endgame_mode=endgame_mode,
+        breach_type=breach_type,
+        admin_user=session.get("admin_user", "operator"),
+    )
+
+    if not started:
+        return jsonify({"error": "Generation already in progress"}), 409
+
+    return jsonify({"status": "started", "epoch_number": epoch_number}), 202
+
+
+@bp.route("/epoch/generate/stream")
+@login_required
+def epoch_generate_stream():
+    log_queue = epoch_service.get_log_queue()
+
+    def event_stream():
+        while True:
+            try:
+                msg = log_queue.get(timeout=30)
+                if msg is None:
+                    result = epoch_service.get_result()
+                    yield f"data: {json.dumps({'type': 'complete', 'result': result})}\n\n"
+                    break
+                yield f"data: {json.dumps({'type': 'log', 'message': msg})}\n\n"
+            except queue.Empty:
+                yield f"data: {json.dumps({'type': 'keepalive'})}\n\n"
+
+    return Response(
+        event_stream(),
+        mimetype="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 @bp.route("/epoch/advance-day", methods=["POST"])
