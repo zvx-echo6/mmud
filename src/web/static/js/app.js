@@ -149,9 +149,9 @@
     }
   }
 
-  // Click on .npc-name elements
+  // Click on .npc-name or .npc-card elements
   document.addEventListener('click', function(e) {
-    var npcEl = e.target.closest('.npc-name[data-npc]');
+    var npcEl = e.target.closest('.npc-name[data-npc]') || e.target.closest('.npc-card[data-npc]');
     if (npcEl) {
       e.preventDefault();
       openNpcModal(npcEl.dataset.npc);
@@ -174,7 +174,7 @@
       }
     }
     if (e.key === 'Enter' || e.key === ' ') {
-      var npcEl = e.target.closest('.npc-name[data-npc]');
+      var npcEl = e.target.closest('.npc-name[data-npc]') || e.target.closest('.npc-card[data-npc]');
       if (npcEl) {
         e.preventDefault();
         openNpcModal(npcEl.dataset.npc);
