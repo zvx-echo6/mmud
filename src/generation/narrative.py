@@ -483,6 +483,57 @@ class BackendInterface(ABC):
             logger.warning(f"Atmospheric broadcast generation failed: {e}")
         return DummyBackend().generate_atmospheric_broadcast(theme)
 
+    def generate_epoch_announcements(self, endgame_mode: str,
+                                     breach_type: str,
+                                     narrative_theme: str = "") -> list[str]:
+        """Generate 3 atmospheric broadcast messages announcing a new epoch.
+
+        Default implementation calls self.complete() with a themed prompt.
+        DummyBackend overrides with static messages.
+        Falls back to static messages on failure.
+        """
+        theme_ctx = f" themed around '{narrative_theme}'" if narrative_theme else ""
+        prompt = (
+            f"A living dungeon has just regenerated. The old epoch is gone. "
+            f"A new one has begun — mode: {endgame_mode.replace('_', ' ')}, "
+            f"breach: {breach_type}{theme_ctx}.\n\n"
+            f"Write exactly 3 announcement messages the dungeon broadcasts to "
+            f"nearby adventurers. These are the dungeon waking up — not a "
+            f"system notification.\n\n"
+            f"Message 1: The Shiver. The old world ending. Ominous, disorienting.\n"
+            f"Message 2: The Reveal. What the dungeon has become. Atmospheric.\n"
+            f"Message 3: The Invitation. Come. Short, direct, menacing.\n\n"
+            f"Rules:\n"
+            f"- Each message MUST be under 150 characters\n"
+            f"- No quotes, labels, prefixes, or emoji\n"
+            f"- Sensory, not informational\n\n"
+            f"Return exactly 3 lines, one message per line, nothing else."
+        )
+        fallback = [
+            "The ground shifts. Stone grinds against stone. The air tastes different.",
+            "A new shape stirs below. The dungeon remembers something it hasn't been yet.",
+            "The stairs are open. The tavern door holds. For now.",
+        ]
+        try:
+            raw = self.complete(prompt, max_tokens=300)
+            lines = [ln.strip() for ln in raw.strip().split('\n') if ln.strip()]
+            announcements = []
+            for line in lines[:3]:
+                # Strip any accidental numbering like "1. " or "1) "
+                cleaned = line.lstrip('0123456789.)- ').strip()
+                if not cleaned:
+                    cleaned = line.strip()
+                if len(cleaned) > LLM_OUTPUT_CHAR_LIMIT:
+                    cleaned = cleaned[:LLM_OUTPUT_CHAR_LIMIT - 3].rsplit(' ', 1)[0] + '...'
+                announcements.append(cleaned)
+            # Pad with fallbacks if fewer than 3
+            while len(announcements) < 3:
+                announcements.append(fallback[len(announcements)])
+            return announcements
+        except Exception as e:
+            logger.warning(f"Epoch announcement generation failed: {e}")
+        return list(fallback)
+
 
 # ── Dummy Backend ──────────────────────────────────────────────────────────
 
@@ -1329,6 +1380,16 @@ class DummyBackend(BackendInterface):
             "The Breach pulses faintly. Waiting.",
         ]
         return random.choice(msgs)[:LLM_OUTPUT_CHAR_LIMIT]
+
+    def generate_epoch_announcements(self, endgame_mode: str,
+                                     breach_type: str,
+                                     narrative_theme: str = "") -> list[str]:
+        """Static epoch announcements for DummyBackend."""
+        return [
+            "The ground trembles. The air shifts. Something ancient stirs below.",
+            "A new epoch has begun. The dungeon remembers a different shape.",
+            "The stairs are open.",
+        ]
 
 
 # ── Real LLM Backends ─────────────────────────────────────────────────────

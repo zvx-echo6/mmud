@@ -45,6 +45,7 @@ PIPELINE_METHODS = [
     "generate_breach_name",
     "generate_narrative_skin",
     "generate_atmospheric_broadcast",
+    "generate_epoch_announcements",
 ]
 
 
@@ -83,7 +84,7 @@ class VerboseBackend(BackendInterface):
 
 
 def test_interface_has_all_pipeline_methods():
-    """All 12 pipeline methods exist on BackendInterface."""
+    """All 13 pipeline methods exist on BackendInterface."""
     for method in PIPELINE_METHODS:
         assert hasattr(BackendInterface, method), f"Missing method: {method}"
 
@@ -106,6 +107,8 @@ def test_minimal_backend_inherits_all_methods():
     assert riddle and answer
     skin = b.generate_narrative_skin("hold_the_line", "dark")
     assert "title" in skin and "description" in skin
+    announcements = b.generate_epoch_announcements("hold_the_line", "heist")
+    assert len(announcements) == 3
 
 
 def test_dummy_backend_all_methods():
@@ -125,6 +128,10 @@ def test_dummy_backend_all_methods():
     skin = b.generate_narrative_skin("hold_the_line", "dark")
     assert "title" in skin and "description" in skin and "broadcasts" in skin
     assert b.generate_atmospheric_broadcast("dark")
+    announcements = b.generate_epoch_announcements("hold_the_line", "heist")
+    assert len(announcements) == 3
+    for msg in announcements:
+        assert len(msg) <= LLM_OUTPUT_CHAR_LIMIT
 
 
 def test_base_class_fallback_on_error():
@@ -233,3 +240,75 @@ def test_full_epoch_generation_with_dummy():
     assert stats["rooms"] > 0
     assert stats["monsters"] > 0
     conn.close()
+
+
+# ── Epoch Announcement Tests ─────────────────────────────────────────────
+
+
+def test_dummy_backend_announcements_returns_three_strings():
+    """DummyBackend.generate_epoch_announcements returns exactly 3 strings."""
+    b = DummyBackend()
+    msgs = b.generate_epoch_announcements("hold_the_line", "heist")
+    assert isinstance(msgs, list)
+    assert len(msgs) == 3
+    for msg in msgs:
+        assert isinstance(msg, str)
+        assert len(msg) > 0
+        assert len(msg) <= LLM_OUTPUT_CHAR_LIMIT
+
+
+def test_base_class_announcements_returns_three_strings():
+    """BackendInterface default generates 3 announcements via complete()."""
+    b = EchoBackend("The walls shudder.\nA new epoch dawns.\nThe stairs are open.")
+    msgs = b.generate_epoch_announcements("hold_the_line", "heist")
+    assert isinstance(msgs, list)
+    assert len(msgs) == 3
+    assert msgs[0] == "The walls shudder."
+    assert msgs[1] == "A new epoch dawns."
+    assert msgs[2] == "The stairs are open."
+
+
+def test_announcements_fallback_on_error():
+    """Announcements fall back to static messages when complete() fails."""
+    b = BrokenBackend()
+    msgs = b.generate_epoch_announcements("hold_the_line", "heist")
+    assert isinstance(msgs, list)
+    assert len(msgs) == 3
+    for msg in msgs:
+        assert len(msg) > 0
+        assert len(msg) <= LLM_OUTPUT_CHAR_LIMIT
+
+
+def test_announcements_pads_if_fewer_than_three():
+    """If LLM returns fewer than 3 lines, pad with fallbacks."""
+    b = EchoBackend("Only one line here.")
+    msgs = b.generate_epoch_announcements("hold_the_line", "heist")
+    assert len(msgs) == 3
+    assert msgs[0] == "Only one line here."
+
+
+def test_announcements_truncates_long_messages():
+    """Each announcement is truncated to LLM_OUTPUT_CHAR_LIMIT."""
+    long_line = "X" * 200
+    b = EchoBackend(f"{long_line}\n{long_line}\n{long_line}")
+    msgs = b.generate_epoch_announcements("hold_the_line", "heist")
+    assert len(msgs) == 3
+    for msg in msgs:
+        assert len(msg) <= LLM_OUTPUT_CHAR_LIMIT
+
+
+def test_announcements_strips_numbering():
+    """Leading '1.' or '2)' numbering is stripped from LLM output."""
+    b = EchoBackend("1. The ground shakes.\n2. A new shape emerges.\n3. Enter.")
+    msgs = b.generate_epoch_announcements("hold_the_line", "heist")
+    assert msgs[0] == "The ground shakes."
+    assert msgs[1] == "A new shape emerges."
+    assert msgs[2] == "Enter."
+
+
+def test_minimal_backend_inherits_announcements():
+    """A minimal complete()-only backend can call generate_epoch_announcements."""
+    b = MinimalBackend()
+    msgs = b.generate_epoch_announcements("hold_the_line", "heist")
+    assert isinstance(msgs, list)
+    assert len(msgs) == 3

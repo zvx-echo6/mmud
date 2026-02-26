@@ -213,6 +213,32 @@ def _run_generation(db_path: str, epoch_number: int,
         _log(f"[9/9] Validation: {len(validation['errors'])} errors, "
              f"{len(validation['warnings'])} warnings ({_elapsed(step_start)})")
 
+        # Announce the new epoch (non-fatal)
+        announcement_count = 0
+        try:
+            epoch_row = conn.execute("SELECT * FROM epoch WHERE id = 1").fetchone()
+            narrative_theme = epoch_row["narrative_theme"] if epoch_row else ""
+            announcements = backend.generate_epoch_announcements(
+                endgame_mode, breach_type, narrative_theme or "",
+            )
+            # Store in epoch record as JSON
+            conn.execute(
+                "UPDATE epoch SET announcements = ? WHERE id = 1",
+                (json.dumps(announcements),),
+            )
+            # Broadcast as tier 1 (server-wide immediate)
+            for msg in announcements:
+                conn.execute(
+                    "INSERT INTO broadcasts (tier, message) VALUES (1, ?)",
+                    (msg[:LLM_OUTPUT_CHAR_LIMIT],),
+                )
+            conn.commit()
+            announcement_count = len(announcements)
+            _log(f"Epoch announced: {announcement_count} broadcasts queued")
+        except Exception as e:
+            logger.warning(f"Epoch announcement failed (non-fatal): {e}")
+            _log(f"WARNING: Epoch announcement failed: {e}")
+
         conn.close()
 
         total_time = time.time() - start_time

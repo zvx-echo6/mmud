@@ -58,7 +58,8 @@ CREATE TABLE IF NOT EXISTS epoch (
     breach_open INTEGER DEFAULT 0,     -- 1 after day 15
     narrative_theme TEXT,
     day_number INTEGER DEFAULT 1,
-    spell_names TEXT DEFAULT ''        -- Comma-separated spell names (3 per epoch, ≤20 chars each)
+    spell_names TEXT DEFAULT '',       -- Comma-separated spell names (3 per epoch, ≤20 chars each)
+    announcements TEXT DEFAULT ''      -- JSON array of 3 epoch announcement strings
 );
 
 CREATE TABLE IF NOT EXISTS floor_themes (
