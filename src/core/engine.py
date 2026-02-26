@@ -80,6 +80,99 @@ class GameEngine:
         except Exception:
             pass
 
+        # Schema migration: broadcasts.dcrg_sent (migration 002)
+        try:
+            conn.execute("ALTER TABLE broadcasts ADD COLUMN dcrg_sent INTEGER DEFAULT 0")
+            conn.commit()
+        except Exception:
+            pass
+
+        # Schema migration: death log — Maren's memory (migration 010)
+        try:
+            conn.execute("""CREATE TABLE IF NOT EXISTS death_log (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                player_id INTEGER NOT NULL REFERENCES players(id),
+                floor INTEGER NOT NULL,
+                monster_name TEXT NOT NULL,
+                died_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )""")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_death_log_player ON death_log(player_id)")
+            conn.commit()
+        except Exception:
+            pass
+
+        # Schema migration: floor themes — epoch sub-themes (migration 011)
+        try:
+            conn.execute("""CREATE TABLE IF NOT EXISTS floor_themes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                floor INTEGER NOT NULL,
+                floor_name TEXT NOT NULL,
+                atmosphere TEXT NOT NULL,
+                narrative_beat TEXT NOT NULL,
+                floor_transition TEXT NOT NULL
+            )""")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_floor_themes_floor ON floor_themes(floor)")
+            conn.commit()
+        except Exception:
+            pass
+
+        # Schema migration: floor progress + boss gates (migration 012)
+        try:
+            conn.execute("""CREATE TABLE IF NOT EXISTS floor_progress (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                player_id INTEGER NOT NULL REFERENCES players(id),
+                floor INTEGER NOT NULL,
+                boss_killed INTEGER DEFAULT 0,
+                boss_killed_at DATETIME,
+                UNIQUE(player_id, floor)
+            )""")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_floor_progress_player ON floor_progress(player_id)")
+            conn.commit()
+        except Exception:
+            pass
+        try:
+            conn.execute("ALTER TABLE players ADD COLUMN deepest_floor_reached INTEGER DEFAULT 1")
+            conn.commit()
+        except Exception:
+            pass
+
+        # Schema migration: epoch announcements (migration 013)
+        try:
+            conn.execute("ALTER TABLE epoch ADD COLUMN announcements TEXT DEFAULT ''")
+            conn.commit()
+        except Exception:
+            pass
+
+        # Schema migration: NPC persistent memory
+        try:
+            conn.execute("""CREATE TABLE IF NOT EXISTS npc_memory (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                player_id INTEGER NOT NULL REFERENCES players(id),
+                npc TEXT NOT NULL,
+                summary TEXT NOT NULL DEFAULT '',
+                turn_count INTEGER DEFAULT 0,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(player_id, npc)
+            )""")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_npc_memory_player ON npc_memory(player_id, npc)")
+            conn.commit()
+        except Exception:
+            pass
+
+        # Schema migration: floor boss flag on monsters
+        try:
+            conn.execute("ALTER TABLE monsters ADD COLUMN is_floor_boss INTEGER DEFAULT 0")
+            conn.commit()
+        except Exception:
+            pass
+
+        # Schema migration: node_config.connection
+        try:
+            conn.execute("ALTER TABLE node_config ADD COLUMN connection TEXT")
+            conn.commit()
+        except Exception:
+            pass
+
     def process_message(self, sender_id: str, sender_name: str, text: str) -> Optional[str]:
         """Process an inbound message and return a response.
 

@@ -4,7 +4,7 @@ Tracks current epoch number, day, mode, and breach state.
 """
 
 import sqlite3
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from config import EPOCH_DAYS
@@ -26,7 +26,7 @@ def create_epoch(
         breach_type: Random breach mini-event type.
         narrative_theme: LLM-generated theme name.
     """
-    start = datetime.utcnow()
+    start = datetime.now(timezone.utc)
     end = start + timedelta(days=EPOCH_DAYS)
 
     conn.execute(

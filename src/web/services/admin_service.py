@@ -4,7 +4,7 @@ All writes are logged to admin_log.
 """
 import logging
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timezone
 
 from src.web.services.gamedb import get_db, get_rw_db
 
@@ -113,7 +113,7 @@ def force_breach(admin):
     )
     db.execute(
         "UPDATE breach SET active = 1, opened_at = ? WHERE id = 1",
-        (datetime.utcnow().isoformat(),),
+        (datetime.now(timezone.utc).isoformat(),),
     )
     _log_action(db, admin, "force_breach")
     db.commit()
@@ -171,7 +171,7 @@ def save_join_config(admin, channel_name, channel_psk, modem_preset, region,
                      channel_num, game_node_name, custom_instructions):
     """Save join configuration to DB."""
     db = get_rw_db()
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).isoformat()
     db.execute(
         """INSERT INTO join_config (id, channel_name, channel_psk, modem_preset,
              region, channel_num, game_node_name, custom_instructions,
@@ -228,7 +228,7 @@ def save_llm_config(admin, backend, api_key, model, base_url):
         else:
             api_key = ""
 
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).isoformat()
     db.execute(
         """INSERT INTO llm_config (id, backend, api_key, model, base_url, updated_at, updated_by)
            VALUES (1, ?, ?, ?, ?, ?, ?)

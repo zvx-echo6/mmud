@@ -11,7 +11,7 @@ message_log table for the Last Ember dashboard.
 import json
 import logging
 import sqlite3
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 logger = logging.getLogger(__name__)
@@ -76,7 +76,7 @@ def prune_old_logs(conn: sqlite3.Connection, retention_days: int) -> int:
     Returns count deleted. Non-blocking: failures are logged and swallowed.
     """
     try:
-        cutoff = datetime.utcnow() - timedelta(days=retention_days)
+        cutoff = datetime.now(timezone.utc) - timedelta(days=retention_days)
         cutoff_str = cutoff.strftime("%Y-%m-%d %H:%M:%S")
         cursor = conn.execute(
             "DELETE FROM message_log WHERE timestamp < ?", (cutoff_str,)

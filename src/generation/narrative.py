@@ -1399,19 +1399,24 @@ class AnthropicBackend(BackendInterface):
     """Claude API backend."""
 
     def __init__(self, api_key=None, model=None):
-        try:
-            import anthropic  # noqa: F401
-        except ImportError:
-            raise ImportError("Install 'anthropic' package: pip install anthropic")
         self.api_key = api_key or os.environ.get("MMUD_ANTHROPIC_API_KEY", "")
         self.model = model or os.environ.get("MMUD_LLM_MODEL", "claude-sonnet-4-5-20250929")
         if not self.api_key:
             raise ValueError("Anthropic API key required")
+        self._client = None
+
+    @property
+    def client(self):
+        if self._client is None:
+            try:
+                import anthropic
+            except ImportError:
+                raise ImportError("Install 'anthropic' package: pip install anthropic")
+            self._client = anthropic.Anthropic(api_key=self.api_key)
+        return self._client
 
     def complete(self, prompt: str, max_tokens: int = 200) -> str:
-        import anthropic
-        client = anthropic.Anthropic(api_key=self.api_key)
-        response = client.messages.create(
+        response = self.client.messages.create(
             model=self.model,
             max_tokens=4096,
             messages=[{"role": "user", "content": prompt}],
@@ -1419,9 +1424,7 @@ class AnthropicBackend(BackendInterface):
         return response.content[0].text.strip()
 
     def chat(self, system: str, messages: list[dict], max_tokens: int = 80) -> str:
-        import anthropic
-        client = anthropic.Anthropic(api_key=self.api_key)
-        response = client.messages.create(
+        response = self.client.messages.create(
             model=self.model,
             max_tokens=4096,
             system=system,
@@ -1434,36 +1437,36 @@ class OpenAIBackend(BackendInterface):
     """OpenAI-compatible API backend."""
 
     def __init__(self, api_key=None, model=None, base_url=None):
-        try:
-            import openai  # noqa: F401
-        except ImportError:
-            raise ImportError("Install 'openai' package: pip install openai")
         self.api_key = api_key or os.environ.get("MMUD_OPENAI_API_KEY", "")
         self.model = model or os.environ.get("MMUD_LLM_MODEL", "gpt-4o-mini")
         self.base_url = base_url or os.environ.get("MMUD_OPENAI_BASE_URL")
         if not self.api_key:
             raise ValueError("OpenAI API key required")
+        self._client = None
+
+    @property
+    def client(self):
+        if self._client is None:
+            try:
+                from openai import OpenAI
+            except ImportError:
+                raise ImportError("Install 'openai' package: pip install openai")
+            kwargs = {"api_key": self.api_key}
+            if self.base_url:
+                kwargs["base_url"] = self.base_url
+            self._client = OpenAI(**kwargs)
+        return self._client
 
     def complete(self, prompt: str, max_tokens: int = 200) -> str:
-        from openai import OpenAI
-        kwargs = {"api_key": self.api_key}
-        if self.base_url:
-            kwargs["base_url"] = self.base_url
-        client = OpenAI(**kwargs)
-        response = client.chat.completions.create(
+        response = self.client.chat.completions.create(
             model=self.model,
             messages=[{"role": "user", "content": prompt}],
         )
         return response.choices[0].message.content.strip()
 
     def chat(self, system: str, messages: list[dict], max_tokens: int = 80) -> str:
-        from openai import OpenAI
-        kwargs = {"api_key": self.api_key}
-        if self.base_url:
-            kwargs["base_url"] = self.base_url
-        client = OpenAI(**kwargs)
         chat_messages = [{"role": "system", "content": system}] + messages
-        response = client.chat.completions.create(
+        response = self.client.chat.completions.create(
             model=self.model,
             messages=chat_messages,
         )
@@ -1478,14 +1481,17 @@ class GoogleBackend(BackendInterface):
         self.model = model or os.environ.get("MMUD_LLM_MODEL", "gemini-2.0-flash")
         if not self.api_key:
             raise ValueError("Google API key required")
+        self._client = None
 
-    def _get_client(self):
-        from google import genai
-        return genai.Client(api_key=self.api_key)
+    @property
+    def client(self):
+        if self._client is None:
+            from google import genai
+            self._client = genai.Client(api_key=self.api_key)
+        return self._client
 
     def complete(self, prompt: str, max_tokens: int = 200) -> str:
-        client = self._get_client()
-        response = client.models.generate_content(
+        response = self.client.models.generate_content(
             model=self.model,
             contents=prompt,
         )
@@ -1493,7 +1499,6 @@ class GoogleBackend(BackendInterface):
 
     def chat(self, system: str, messages: list[dict], max_tokens: int = 80) -> str:
         from google.genai import types
-        client = self._get_client()
         contents = []
         for msg in messages:
             role = "user" if msg["role"] == "user" else "model"
@@ -1501,7 +1506,7 @@ class GoogleBackend(BackendInterface):
                 role=role,
                 parts=[types.Part(text=msg["content"])],
             ))
-        response = client.models.generate_content(
+        response = self.client.models.generate_content(
             model=self.model,
             contents=contents,
             config=types.GenerateContentConfig(

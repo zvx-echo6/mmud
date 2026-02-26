@@ -30,7 +30,7 @@ Every 30 days the world wipes and regenerates. New dungeon layout, new narrative
 ## Quick Start
 
 ```bash
-git clone https://github.com/YOUR_ORG/mmud.git
+git clone https://github.com/zvx-echo6/mmud.git
 cd mmud
 pip install -r requirements.txt
 python scripts/epoch_generate.py   # Generate first epoch

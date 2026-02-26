@@ -66,7 +66,6 @@ src/
     validation.py # 150-char enforcement, spell name validation, lore length checks
   systems/        # Game systems
     bounty.py     # Bounty board, shared HP pools, reward distribution
-    discovery.py  # Secret tracking, puzzle state, buff management
     broadcast.py  # Broadcast tiers, targeted broadcasts, message queuing
     economy.py    # Gold, shops, banking, effective stats (gear bonuses)
     barkeep.py    # Recap, bard tokens, hint system
@@ -106,7 +105,7 @@ src/
   db/
     schema.sql    # Database schema
     migrations/   # Schema versioning (008 = reveal + spells)
-tests/            # 738+ tests, mirror src/ structure
+tests/            # 900+ tests, mirror src/ structure
 scripts/
   epoch_generate.py  # Run epoch generation pipeline
   epoch_reset.py     # Wipe and start new epoch
@@ -208,7 +207,7 @@ The Last Ember is a Flask web dashboard in `src/web/`. It runs in-process with t
 
 ## Testing
 
-- **738+ tests** — unit tests for combat math, integration tests for full action pipelines, epoch generation validation
+- **900+ tests** — unit tests for combat math, integration tests for full action pipelines, epoch generation validation
 - No mocking the DB — use in-memory SQLite
 - `python3 -m pytest tests/ -x -v` to run all
 - Tests use `helpers.py:generate_test_epoch()` for full epoch setup

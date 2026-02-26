@@ -3,7 +3,7 @@
 import json
 import sys
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -320,7 +320,7 @@ def test_error_type():
 def test_prune_deletes_old_entries():
     conn = make_test_db()
     # Insert an entry with an old timestamp
-    old_ts = (datetime.utcnow() - timedelta(days=100)).strftime("%Y-%m-%d %H:%M:%S")
+    old_ts = (datetime.now(timezone.utc) - timedelta(days=100)).strftime("%Y-%m-%d %H:%M:%S")
     conn.execute(
         """INSERT INTO message_log (timestamp, node, direction, message, message_type)
            VALUES (?, 'EMBR', 'inbound', 'old msg', 'command')""",
@@ -358,7 +358,7 @@ def test_prune_empty_table():
 
 def test_prune_returns_count():
     conn = make_test_db()
-    old_ts = (datetime.utcnow() - timedelta(days=100)).strftime("%Y-%m-%d %H:%M:%S")
+    old_ts = (datetime.now(timezone.utc) - timedelta(days=100)).strftime("%Y-%m-%d %H:%M:%S")
     for i in range(5):
         conn.execute(
             """INSERT INTO message_log (timestamp, node, direction, message, message_type)
@@ -373,7 +373,7 @@ def test_prune_returns_count():
 def test_prune_with_custom_retention():
     conn = make_test_db()
     # Insert entry from 10 days ago
-    ts = (datetime.utcnow() - timedelta(days=10)).strftime("%Y-%m-%d %H:%M:%S")
+    ts = (datetime.now(timezone.utc) - timedelta(days=10)).strftime("%Y-%m-%d %H:%M:%S")
     conn.execute(
         """INSERT INTO message_log (timestamp, node, direction, message, message_type)
            VALUES (?, 'EMBR', 'inbound', 'semi-old', 'command')""",
