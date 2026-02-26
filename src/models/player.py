@@ -189,6 +189,7 @@ def apply_death(conn: sqlite3.Connection, player_id: int) -> dict:
            floor = 0,
            room_id = NULL,
            combat_monster_id = NULL,
+           town_location = NULL,
            dungeon_actions_remaining = ?
            WHERE id = ?""",
         (gold_lost, xp_lost, new_hp, new_actions, player_id),

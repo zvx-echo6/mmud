@@ -25,7 +25,8 @@ def enter_dungeon(conn: sqlite3.Connection, player: dict) -> Optional[dict]:
 
     conn.execute(
         """UPDATE players SET
-           state = 'dungeon', floor = 1, room_id = ?
+           state = 'dungeon', floor = 1, room_id = ?,
+           town_location = NULL
            WHERE id = ?""",
         (hub["id"], player["id"]),
     )
@@ -76,7 +77,8 @@ def return_to_town(conn: sqlite3.Connection, player_id: int) -> None:
     """Return a player to town."""
     conn.execute(
         """UPDATE players SET
-           state = 'town', floor = 0, room_id = NULL, combat_monster_id = NULL
+           state = 'town', floor = 0, room_id = NULL,
+           combat_monster_id = NULL, town_location = NULL
            WHERE id = ?""",
         (player_id,),
     )

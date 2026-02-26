@@ -33,6 +33,13 @@ class GameEngine:
         # Per-player per-NPC cooldown timestamps {(mesh_id, npc): monotonic_time}
         self._npc_dm_cooldowns: dict[tuple[str, str], float] = {}
 
+        # Schema migration: add town_location column (idempotent)
+        try:
+            conn.execute("ALTER TABLE players ADD COLUMN town_location TEXT")
+            conn.commit()
+        except Exception:
+            pass  # Column already exists
+
     def process_message(self, sender_id: str, sender_name: str, text: str) -> Optional[str]:
         """Process an inbound message and return a response.
 
@@ -130,12 +137,23 @@ class GameEngine:
     def _maybe_queue_npc_dm(
         self, sender_id: str, player: dict, command: str
     ) -> None:
-        """Queue an NPC greeting DM if the command triggers one and cooldown allows."""
+        """Queue an NPC greeting DM if the command triggers one and cooldown allows.
+
+        Note: `player` was fetched BEFORE handle_action, so player["town_location"]
+        reflects the state before the action. If the player was already at the NPC's
+        location, no transition occurred → no greeting.
+        """
         if player["state"] != "town":
             return
 
         npc = COMMAND_NPC_DM_MAP.get(command)
         if not npc:
+            return
+
+        # Don't re-greet if player was already at this NPC's location
+        npc_locations = {"grist": "bar", "maren": "maren", "torval": "torval", "whisper": "whisper"}
+        expected_loc = npc_locations.get(npc)
+        if expected_loc and player.get("town_location") == expected_loc:
             return
 
         # Check cooldown

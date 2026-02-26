@@ -27,7 +27,7 @@ from src.core.actions import (
     action_healer_desc,
     action_look,
     action_merchant_desc,
-    action_sage_desc,
+    action_rumor_desc,
     action_shop,
     handle_action,
 )
@@ -77,6 +77,7 @@ def _create_test_db() -> sqlite3.Connection:
             floor INTEGER DEFAULT 0,
             room_id INTEGER,
             combat_monster_id INTEGER,
+            town_location TEXT,
             hardcore INTEGER DEFAULT 0,
             dungeon_actions_remaining INTEGER DEFAULT 12,
             social_actions_remaining INTEGER DEFAULT 2,
@@ -374,22 +375,38 @@ class TestTownKeywords(unittest.TestCase):
         self.assertIn("Whisper", response)
 
     def test_healer_returns_maren_acknowledgment(self):
-        """'healer' returns Maren's short acknowledgment."""
+        """'healer' returns Maren's short acknowledgment (must be at bar)."""
+        # Enter bar first
+        action_barkeep(self.conn, self.player, [])
+        self.player = _get_player(self.conn)
         response = action_healer_desc(self.conn, self.player, [])
         self.assertIn("Maren", response)
         self.assertIn("needle", response)
 
     def test_merchant_returns_torval_description(self):
-        """'merchant' returns Torval's description."""
+        """'merchant' returns Torval's description (must be at bar)."""
+        action_barkeep(self.conn, self.player, [])
+        self.player = _get_player(self.conn)
         response = action_merchant_desc(self.conn, self.player, [])
         self.assertIn("Torval", response)
         self.assertIn("coin pouch", response)
 
     def test_sage_returns_whisper_acknowledgment(self):
-        """'sage' returns Whisper's short acknowledgment."""
-        response = action_sage_desc(self.conn, self.player, [])
+        """'sage' returns Whisper's short acknowledgment (must be at bar)."""
+        action_barkeep(self.conn, self.player, [])
+        self.player = _get_player(self.conn)
+        response = action_rumor_desc(self.conn, self.player, [])
         self.assertIn("Whisper", response)
         self.assertIn("muttering", response)
+
+    def test_npc_from_exterior_rejected(self):
+        """NPC approach from exterior says go to bar first."""
+        response = action_healer_desc(self.conn, self.player, [])
+        self.assertIn("BAR", response)
+        response = action_merchant_desc(self.conn, self.player, [])
+        self.assertIn("BAR", response)
+        response = action_rumor_desc(self.conn, self.player, [])
+        self.assertIn("BAR", response)
 
     def test_parser_aliases(self):
         """Verify all town keyword aliases parse correctly."""
@@ -403,10 +420,9 @@ class TestTownKeywords(unittest.TestCase):
             "infirmary": "healer",
             "torval": "merchant",
             "trader": "merchant",
-            "sage": "sage",
-            "whisper": "sage",
-            "oracle": "sage",
-            "corner": "sage",
+            "whisper": "rumor",
+            "rumor": "rumor",
+            "hint": "rumor",
         }
         for keyword, expected_cmd in alias_map.items():
             parsed = parse(keyword)
@@ -423,7 +439,107 @@ class TestTownKeywords(unittest.TestCase):
         player = _get_player(self.conn)
         self.assertIn("town", action_healer_desc(self.conn, player, []).lower())
         self.assertIn("town", action_merchant_desc(self.conn, player, []).lower())
-        self.assertIn("town", action_sage_desc(self.conn, player, []).lower())
+        self.assertIn("town", action_rumor_desc(self.conn, player, []).lower())
+
+
+class TestTownLocationTracking(unittest.TestCase):
+    """Test town sub-location tracking."""
+
+    def setUp(self):
+        self.conn = _create_test_db()
+        self.engine = GameEngine(self.conn)
+
+    def test_bar_already_there(self):
+        """Typing BAR when already at bar returns 'already' message."""
+        self.engine.process_message("!abc123", "TestPlayer", "bar")
+        resp = self.engine.process_message("!abc123", "TestPlayer", "bar")
+        self.assertIn("already", resp.lower())
+
+    def test_healer_already_there(self):
+        """Typing HEALER when already at maren returns 'right here' message."""
+        self.engine.process_message("!abc123", "TestPlayer", "bar")
+        self.engine.process_message("!abc123", "TestPlayer", "healer")
+        resp = self.engine.process_message("!abc123", "TestPlayer", "healer")
+        self.assertIn("right here", resp.lower())
+
+    def test_merchant_already_there(self):
+        """Typing MERCHANT when already at torval returns 'right here' message."""
+        self.engine.process_message("!abc123", "TestPlayer", "bar")
+        self.engine.process_message("!abc123", "TestPlayer", "merchant")
+        resp = self.engine.process_message("!abc123", "TestPlayer", "merchant")
+        self.assertIn("right here", resp.lower())
+
+    def test_sage_already_there(self):
+        """Typing SAGE when already at whisper returns 'right here' message."""
+        self.engine.process_message("!abc123", "TestPlayer", "bar")
+        self.engine.process_message("!abc123", "TestPlayer", "rumor")
+        resp = self.engine.process_message("!abc123", "TestPlayer", "rumor")
+        self.assertIn("right here", resp.lower())
+
+    def test_leave_from_npc_to_bar(self):
+        """LEAVE from NPC goes back to bar."""
+        self.engine.process_message("!abc123", "TestPlayer", "bar")
+        self.engine.process_message("!abc123", "TestPlayer", "healer")
+        resp = self.engine.process_message("!abc123", "TestPlayer", "leave")
+        self.assertIn("Grist", resp)
+
+    def test_npc_from_exterior_rejected(self):
+        """NPC approach from exterior requires bar first."""
+        resp = self.engine.process_message("!abc123", "TestPlayer", "healer")
+        self.assertIn("BAR", resp)
+        resp = self.engine.process_message("!abc123", "TestPlayer", "merchant")
+        self.assertIn("BAR", resp)
+        resp = self.engine.process_message("!abc123", "TestPlayer", "rumor")
+        self.assertIn("BAR", resp)
+
+    def test_leave_from_bar_to_exterior(self):
+        """LEAVE from bar goes back to tavern exterior."""
+        self.engine.process_message("!abc123", "TestPlayer", "bar")
+        resp = self.engine.process_message("!abc123", "TestPlayer", "leave")
+        self.assertIn("Last Ember", resp)
+
+    def test_leave_from_exterior(self):
+        """LEAVE from exterior says 'already outside'."""
+        resp = self.engine.process_message("!abc123", "TestPlayer", "leave")
+        self.assertIn("outside", resp.lower())
+
+    def test_look_shows_bar(self):
+        """LOOK at bar shows bar description."""
+        self.engine.process_message("!abc123", "TestPlayer", "bar")
+        resp = self.engine.process_message("!abc123", "TestPlayer", "look")
+        self.assertIn("Grist", resp)
+
+    def test_look_shows_npc(self):
+        """LOOK at NPC shows NPC description."""
+        self.engine.process_message("!abc123", "TestPlayer", "bar")
+        self.engine.process_message("!abc123", "TestPlayer", "healer")
+        resp = self.engine.process_message("!abc123", "TestPlayer", "look")
+        self.assertIn("Maren", resp)
+
+    def test_enter_dungeon_clears_town_location(self):
+        """Entering dungeon clears town_location."""
+        self.engine.process_message("!abc123", "TestPlayer", "bar")
+        self.engine.process_message("!abc123", "TestPlayer", "enter")
+        self.engine.process_message("!abc123", "TestPlayer", "town")
+        # Back in town — should be at exterior (NULL)
+        resp = self.engine.process_message("!abc123", "TestPlayer", "look")
+        self.assertIn("Last Ember", resp)
+
+    def test_no_duplicate_npc_greeting(self):
+        """Second NPC command doesn't re-fire greeting DM."""
+        self.engine.process_message("!abc123", "TestPlayer", "bar")
+        self.engine.process_message("!abc123", "TestPlayer", "rumor")
+        self.assertEqual(len(self.engine.npc_dm_queue), 1)
+        # Second call — player already at whisper
+        self.engine.process_message("!abc123", "TestPlayer", "rumor")
+        self.assertEqual(len(self.engine.npc_dm_queue), 0)
+
+    def test_direct_npc_navigation(self):
+        """Can go directly from one NPC to another (both in bar)."""
+        self.engine.process_message("!abc123", "TestPlayer", "bar")
+        self.engine.process_message("!abc123", "TestPlayer", "healer")
+        resp = self.engine.process_message("!abc123", "TestPlayer", "rumor")
+        self.assertIn("Whisper", resp)
 
 
 class TestLookCommand(unittest.TestCase):
@@ -495,8 +611,9 @@ class TestHealAndShopAdditive(unittest.TestCase):
         self.assertEqual(npc, "grist")
 
     def test_sage_queues_whisper_dm(self):
-        """'sage' command queues a Whisper greeting DM."""
-        self.engine.process_message("!abc123", "TestPlayer", "sage")
+        """'sage' command queues a Whisper greeting DM (must enter bar first)."""
+        self.engine.process_message("!abc123", "TestPlayer", "bar")
+        self.engine.process_message("!abc123", "TestPlayer", "rumor")
         self.assertEqual(len(self.engine.npc_dm_queue), 1)
         npc, recipient = self.engine.npc_dm_queue[0]
         self.assertEqual(npc, "whisper")
@@ -511,35 +628,48 @@ class TestNPCDMCooldown(unittest.TestCase):
 
     def test_first_interaction_queues_dm(self):
         """First interaction with an NPC queues a DM."""
-        self.engine.process_message("!abc123", "TestPlayer", "sage")
+        self.engine.process_message("!abc123", "TestPlayer", "bar")
+        self.engine.process_message("!abc123", "TestPlayer", "rumor")
         self.assertEqual(len(self.engine.npc_dm_queue), 1)
 
     def test_repeat_within_cooldown_no_dm(self):
         """Repeat interaction within cooldown does NOT queue a DM."""
-        self.engine.process_message("!abc123", "TestPlayer", "sage")
+        self.engine.process_message("!abc123", "TestPlayer", "bar")
+        self.engine.process_message("!abc123", "TestPlayer", "rumor")
         self.assertEqual(len(self.engine.npc_dm_queue), 1)
 
         # Second call within cooldown
-        self.engine.process_message("!abc123", "TestPlayer", "sage")
+        self.engine.process_message("!abc123", "TestPlayer", "rumor")
         # Queue was cleared at start of process_message, but no new DM queued
         self.assertEqual(len(self.engine.npc_dm_queue), 0)
 
     def test_cooldown_expires_dm_fires_again(self):
         """After cooldown expires, NPC DM fires again."""
-        self.engine.process_message("!abc123", "TestPlayer", "sage")
+        self.engine.process_message("!abc123", "TestPlayer", "bar")
+        self.engine.process_message("!abc123", "TestPlayer", "rumor")
         self.assertEqual(len(self.engine.npc_dm_queue), 1)
 
         # Manually expire the cooldown
         for key in self.engine._npc_dm_cooldowns:
             self.engine._npc_dm_cooldowns[key] -= NPC_GREETING_COOLDOWN + 1
 
-        # Now should fire again
-        self.engine.process_message("!abc123", "TestPlayer", "sage")
+        # Navigate away so player is no longer at whisper
+        self.engine.process_message("!abc123", "TestPlayer", "leave")  # whisper → bar
+        self.engine.process_message("!abc123", "TestPlayer", "leave")  # bar → exterior
+
+        # Expire cooldown again (leave calls consumed it)
+        for key in list(self.engine._npc_dm_cooldowns):
+            self.engine._npc_dm_cooldowns[key] -= NPC_GREETING_COOLDOWN + 1
+
+        # Re-enter bar and approach sage
+        self.engine.process_message("!abc123", "TestPlayer", "bar")
+        self.engine.process_message("!abc123", "TestPlayer", "rumor")
         self.assertEqual(len(self.engine.npc_dm_queue), 1)
 
     def test_different_npcs_independent_cooldowns(self):
         """Different NPCs have independent cooldowns."""
-        self.engine.process_message("!abc123", "TestPlayer", "sage")
+        self.engine.process_message("!abc123", "TestPlayer", "bar")
+        self.engine.process_message("!abc123", "TestPlayer", "rumor")
         self.assertEqual(len(self.engine.npc_dm_queue), 1)
 
         self.engine.process_message("!abc123", "TestPlayer", "heal")
@@ -596,8 +726,12 @@ class TestRouterNPCDMSend(unittest.TestCase):
         return msg
 
     def test_sage_sends_embr_ack_and_wspr_dm(self):
-        """'sage' → EMBR sends acknowledgment + WSPR sends greeting."""
-        msg = self._make_msg("sage")
+        """'sage' → EMBR sends acknowledgment + WSPR sends greeting (bar first)."""
+        # Enter bar first
+        self.router.route_message("EMBR", self._make_msg("bar"))
+        self.embr_transport.sent_dms.clear()
+
+        msg = self._make_msg("rumor")
         self.router.route_message("EMBR", msg)
 
         # EMBR should have sent the acknowledgment
@@ -634,23 +768,27 @@ class TestRouterNPCDMSend(unittest.TestCase):
         # Reset engine cooldowns so DM would trigger
         self.engine._npc_dm_cooldowns.clear()
 
-        msg = self._make_msg("sage")
+        # Enter bar first, then try sage
+        router.route_message("EMBR", self._make_msg("bar"))
+        self.embr_transport.sent_dms.clear()
+
+        msg = self._make_msg("rumor")
         # Should not raise
         router.route_message("EMBR", msg)
 
         # EMBR should have sent acknowledgment
-        # (previous test may have added to sent_dms, check last one)
         self.assertTrue(len(self.embr_transport.sent_dms) > 0)
 
     def test_greeting_logged(self):
         """NPC greeting DMs are logged to message_log."""
-        msg = self._make_msg("sage")
+        self.router.route_message("EMBR", self._make_msg("bar"))
+        msg = self._make_msg("rumor")
         self.router.route_message("EMBR", msg)
 
         row = self.conn.execute(
-            "SELECT * FROM message_log WHERE message_type = 'npc_greeting'"
+            "SELECT * FROM message_log WHERE message_type = 'npc_greeting' AND node = 'WSPR'"
         ).fetchone()
-        self.assertIsNotNone(row, "No npc_greeting log entry found")
+        self.assertIsNotNone(row, "No npc_greeting log entry found for WSPR")
         self.assertEqual(row["node"], "WSPR")
         self.assertEqual(row["direction"], "outbound")
 

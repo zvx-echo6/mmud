@@ -56,8 +56,7 @@ ALIASES = {
     "tavern": "barkeep", "grist": "barkeep", "drink": "barkeep",
     "maren": "healer", "clinic": "healer", "infirmary": "healer",
     "torval": "merchant", "trader": "merchant",
-    "sage": "sage", "whisper": "sage", "oracle": "sage", "corner": "sage",
-    "rumor": "sage", "hint": "sage",
+    "whisper": "rumor", "rumor": "rumor", "hint": "rumor",
 }
 
 # Direction letters that are also movement commands

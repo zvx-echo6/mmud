@@ -47,7 +47,7 @@ def ban_player(admin, player_id, reason=""):
     )
     # Reset to town, clear combat
     db.execute(
-        "UPDATE players SET state = 'town', floor = 0, room_id = NULL, combat_monster_id = NULL WHERE id = ?",
+        "UPDATE players SET state = 'town', floor = 0, room_id = NULL, combat_monster_id = NULL, town_location = NULL WHERE id = ?",
         (player_id,),
     )
     _log_action(db, admin, "ban", player["name"], reason)
@@ -62,7 +62,7 @@ def kick_player(admin, player_id):
     if not player:
         return False
     db.execute(
-        "UPDATE players SET state = 'town', floor = 0, room_id = NULL, combat_monster_id = NULL WHERE id = ?",
+        "UPDATE players SET state = 'town', floor = 0, room_id = NULL, combat_monster_id = NULL, town_location = NULL WHERE id = ?",
         (player_id,),
     )
     _log_action(db, admin, "kick", player["name"])
@@ -79,7 +79,7 @@ def reset_player(admin, player_id):
     db.execute(
         """UPDATE players SET level = 1, xp = 0, gold_carried = 0, gold_banked = 0,
            state = 'town', floor = 0, room_id = NULL, combat_monster_id = NULL,
-           stat_points = 0, secrets_found = 0
+           town_location = NULL, stat_points = 0, secrets_found = 0
            WHERE id = ?""",
         (player_id,),
     )

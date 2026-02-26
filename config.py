@@ -520,5 +520,5 @@ COMMAND_NPC_DM_MAP = {
     "merchant": "torval",
     "shop": "torval",
     "buy": "torval",
-    "sage": "whisper",
+    "rumor": "whisper",
 }
