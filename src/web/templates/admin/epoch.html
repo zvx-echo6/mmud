@@ -43,7 +43,7 @@
   {# ═══ BACKEND STATUS ═══ #}
   <div class="backend-indicator">
     <span class="backend-dot {% if backend_ready %}ready{% else %}dummy{% endif %}"></span>
-    <span class="backend-label">{{ backend_name }}</span>
+    <span class="backend-label">{{ backend_display }}</span>
     {% if not backend_ready %}
       <span class="backend-warning">Placeholder content — configure a real backend on the LLM page</span>
     {% endif %}

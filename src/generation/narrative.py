@@ -105,6 +105,63 @@ class BackendInterface(ABC):
             logger.warning(f"Spell name generation failed: {e}. Falling back to static pool.")
             return random.sample(DUMMY_SPELL_NAMES, 3)
 
+    def generate_floor_themes(self) -> dict[int, dict]:
+        """Generate per-epoch floor sub-themes for narrative descent.
+
+        Returns dict keyed by floor number, each value has:
+        floor_name, atmosphere, narrative_beat, floor_transition.
+        All text fields <=150 chars.
+
+        Default implementation calls self.complete() with a narrative arc prompt.
+        Falls back to DummyBackend static pool on failure.
+        """
+        from config import NUM_FLOORS, FLOOR_THEMES
+
+        floor_list = ", ".join(
+            f"Floor {f}: {FLOOR_THEMES.get(f, 'Unknown')}" for f in range(1, NUM_FLOORS + 1)
+        )
+        prompt = (
+            f"Generate sub-themes for an 8-floor dungeon descent. "
+            f"Base themes: {floor_list}. "
+            f"For each floor, provide a unique floor_name (evocative 2-3 word name), "
+            f"atmosphere (sensory description), narrative_beat (what the player learns), "
+            f"and floor_transition (what the player sees when entering this floor). "
+            f"Act structure: Floor 1 = setup, Floors 2-4 = escalation, "
+            f"Floors 5-7 = deepening tension, Floor 8 = climax. "
+            f"Each field must be under 150 characters. "
+            f"Return exactly {NUM_FLOORS} entries, one per line, format: "
+            f"floor_name|atmosphere|narrative_beat|floor_transition"
+        )
+        try:
+            raw = self.complete(prompt, max_tokens=600)
+            lines = [l.strip() for l in raw.strip().splitlines() if l.strip()]
+            # Strip leading markers
+            cleaned = []
+            for line in lines:
+                line = line.lstrip("0123456789.-)*# ").strip()
+                if "|" in line:
+                    cleaned.append(line)
+            if len(cleaned) < NUM_FLOORS:
+                logger.warning(f"LLM returned {len(cleaned)} floor themes, need {NUM_FLOORS}. Falling back.")
+                return DummyBackend().generate_floor_themes()
+
+            result = {}
+            for i, line in enumerate(cleaned[:NUM_FLOORS]):
+                parts = [p.strip() for p in line.split("|")]
+                if len(parts) < 4:
+                    logger.warning(f"Floor theme line has {len(parts)} parts, need 4. Falling back.")
+                    return DummyBackend().generate_floor_themes()
+                result[i + 1] = {
+                    "floor_name": parts[0][:150],
+                    "atmosphere": parts[1][:150],
+                    "narrative_beat": parts[2][:150],
+                    "floor_transition": parts[3][:150],
+                }
+            return result
+        except Exception as e:
+            logger.warning(f"Floor theme generation failed: {e}. Falling back to static pool.")
+            return DummyBackend().generate_floor_themes()
+
     def generate_town_room_name(self, row: int, col: int, npc_name: str = None) -> str:
         """Generate a town room name for Floor 0."""
         if npc_name == "grist":
@@ -152,6 +209,280 @@ class BackendInterface(ABC):
             logger.warning(f"Lore fragment generation failed: {e}. Falling back to static pool.")
             return random.choice(DUMMY_LORE_FRAGMENTS)[:REVEAL_LORE_MAX_CHARS]
 
+    def generate_room_name(self, floor: int) -> str:
+        """Generate a unique room name for a floor.
+
+        Default implementation calls self.complete() with a themed prompt.
+        DummyBackend overrides with template-based names (zero LLM calls).
+        Falls back to DummyBackend on failure.
+        """
+        from config import FLOOR_THEMES
+        theme = FLOOR_THEMES.get(floor, "The Depths")
+        prompt = (
+            f"Generate one short dungeon room name (2-4 words) for floor {floor} "
+            f"themed around '{theme}'. Return ONLY the name, nothing else."
+        )
+        try:
+            raw = self.complete(prompt, max_tokens=30)
+            name = raw.strip().strip('"\'').split('\n')[0].strip()
+            if name and len(name) <= 40:
+                return name
+        except Exception as e:
+            logger.warning(f"Room name generation failed: {e}")
+        return DummyBackend().generate_room_name(floor)
+
+    def generate_room_description(self, floor: int, name: str, is_vault: bool = False,
+                                  vault_type: str = "", floor_theme: dict = None) -> str:
+        """Generate a full room description under 150 chars.
+
+        Default implementation calls self.complete() with a themed prompt.
+        DummyBackend overrides with template-based descriptions.
+        Falls back to DummyBackend on failure.
+        """
+        from config import FLOOR_THEMES
+        theme = FLOOR_THEMES.get(floor, "The Depths")
+        vault_ctx = f" This is a {vault_type} vault." if is_vault and vault_type else ""
+        prompt = (
+            f"Write a one-sentence dungeon room description for '{name}' on floor {floor} "
+            f"themed around '{theme}'.{vault_ctx} Use sensory details (sound, smell, temperature). "
+            f"Under 150 characters. Return ONLY the description."
+        )
+        try:
+            raw = self.complete(prompt, max_tokens=80)
+            text = raw.strip().strip('"\'').split('\n')[0].strip()
+            if text:
+                return text[:LLM_OUTPUT_CHAR_LIMIT]
+        except Exception as e:
+            logger.warning(f"Room description generation failed: {e}")
+        return DummyBackend().generate_room_description(floor, name, is_vault, vault_type, floor_theme)
+
+    def generate_room_description_short(self, floor: int, name: str,
+                                        floor_theme: dict = None) -> str:
+        """Generate abbreviated room description for revisits.
+
+        Default implementation calls self.complete() with a themed prompt.
+        DummyBackend overrides with template-based sensory lines.
+        Falls back to DummyBackend on failure.
+        """
+        from config import FLOOR_THEMES
+        theme = FLOOR_THEMES.get(floor, "The Depths")
+        prompt = (
+            f"Write a very brief sensory impression of '{name}' (floor {floor}, '{theme}'). "
+            f"One short sentence, under 100 characters. Return ONLY the text."
+        )
+        try:
+            raw = self.complete(prompt, max_tokens=50)
+            text = raw.strip().strip('"\'').split('\n')[0].strip()
+            if text:
+                return text[:LLM_OUTPUT_CHAR_LIMIT]
+        except Exception as e:
+            logger.warning(f"Short description generation failed: {e}")
+        return DummyBackend().generate_room_description_short(floor, name, floor_theme)
+
+    def generate_monster_name(self, tier: int, floor_theme: dict = None) -> str:
+        """Generate a monster name for a tier.
+
+        Default implementation calls self.complete() with a tier prompt.
+        DummyBackend overrides with template-based names.
+        Falls back to DummyBackend on failure.
+        """
+        prompt = (
+            f"Generate one short monster name (2-3 words) for a tier {tier} dungeon creature. "
+            f"Tier 1=weak, 5=legendary. Return ONLY the name."
+        )
+        try:
+            raw = self.complete(prompt, max_tokens=20)
+            name = raw.strip().strip('"\'').split('\n')[0].strip()
+            if name and len(name) <= 30:
+                return name
+        except Exception as e:
+            logger.warning(f"Monster name generation failed: {e}")
+        return DummyBackend().generate_monster_name(tier, floor_theme)
+
+    def generate_bounty_description(self, monster_name: str, floor: int, theme: str) -> str:
+        """Generate a bounty briefing.
+
+        Default implementation calls self.complete() with a themed prompt.
+        DummyBackend overrides with template-based descriptions.
+        Falls back to DummyBackend on failure.
+        """
+        prompt = (
+            f"Write a one-sentence bounty briefing for hunting '{monster_name}' "
+            f"on floor {floor} ({theme}). Under 150 characters. Return ONLY the text."
+        )
+        try:
+            raw = self.complete(prompt, max_tokens=80)
+            text = raw.strip().strip('"\'').split('\n')[0].strip()
+            if text:
+                return text[:LLM_OUTPUT_CHAR_LIMIT]
+        except Exception as e:
+            logger.warning(f"Bounty description generation failed: {e}")
+        return DummyBackend().generate_bounty_description(monster_name, floor, theme)
+
+    def generate_boss_name(self, floor: int, floor_theme: dict = None) -> str:
+        """Generate a boss monster name for a floor.
+
+        Default implementation calls self.complete() with a themed prompt.
+        DummyBackend overrides with template-based names.
+        Falls back to DummyBackend on failure.
+        """
+        from config import FLOOR_THEMES
+        theme = FLOOR_THEMES.get(floor, "The Depths")
+        prompt = (
+            f"Generate one boss monster name (2-3 words) for the floor {floor} boss "
+            f"of a dungeon themed around '{theme}'. Return ONLY the name."
+        )
+        try:
+            raw = self.complete(prompt, max_tokens=20)
+            name = raw.strip().strip('"\'').split('\n')[0].strip()
+            if name and len(name) <= 30:
+                return name
+        except Exception as e:
+            logger.warning(f"Boss name generation failed: {e}")
+        return DummyBackend().generate_boss_name(floor, floor_theme)
+
+    def generate_hint(self, tier: int, floor: int, room_name: str = "",
+                      direction: str = "", theme: str = "") -> str:
+        """Generate a secret hint at the specified tier.
+
+        Default implementation calls self.complete() with a tier-appropriate prompt.
+        DummyBackend overrides with template-based hints.
+        Falls back to DummyBackend on failure.
+        """
+        if tier == 1:
+            prompt = f"Write a vague hint about a secret on floor {floor} ({theme}). Under 150 characters."
+        elif tier == 2:
+            prompt = (
+                f"Write a directional hint: something is hidden {direction} on floor {floor} "
+                f"({theme}). Under 150 characters."
+            )
+        else:
+            prompt = f"Write a specific hint pointing to {room_name} on floor {floor}. Under 150 characters."
+        prompt += " Do NOT use action verbs like 'go', 'move', 'take', 'fight'. Return ONLY the hint."
+        try:
+            raw = self.complete(prompt, max_tokens=80)
+            text = raw.strip().strip('"\'').split('\n')[0].strip()
+            if text:
+                return text[:LLM_OUTPUT_CHAR_LIMIT]
+        except Exception as e:
+            logger.warning(f"Hint generation failed: {e}")
+        return DummyBackend().generate_hint(tier, floor, room_name, direction, theme)
+
+    def generate_riddle(self) -> tuple[str, str]:
+        """Generate a riddle and its one-word answer.
+
+        Default implementation calls self.complete() with a prompt.
+        DummyBackend overrides with template-based riddles.
+        Falls back to DummyBackend on failure.
+        """
+        prompt = (
+            "Generate a short riddle and its one-word answer for a dungeon gate. "
+            "Format: RIDDLE|ANSWER. Riddle under 150 characters."
+        )
+        try:
+            raw = self.complete(prompt, max_tokens=80)
+            line = raw.strip().split('\n')[0].strip()
+            if '|' in line:
+                parts = line.split('|', 1)
+                riddle = parts[0].strip().strip('"\'')
+                answer = parts[1].strip().strip('"\'').lower()
+                if riddle and answer:
+                    return riddle[:LLM_OUTPUT_CHAR_LIMIT], answer
+        except Exception as e:
+            logger.warning(f"Riddle generation failed: {e}")
+        return DummyBackend().generate_riddle()
+
+    def generate_npc_dialogue(self, npc: str, context: str, **kwargs) -> str:
+        """Generate NPC dialogue.
+
+        Default implementation calls self.complete() with a character prompt.
+        DummyBackend overrides with template-based dialogue.
+        Falls back to DummyBackend on failure.
+        """
+        prompt = (
+            f"Write one short line of dialogue for {npc.title()}, a dungeon NPC. "
+            f"Context: {context}. Under 150 characters. Return ONLY the dialogue."
+        )
+        try:
+            raw = self.complete(prompt, max_tokens=80)
+            text = raw.strip().strip('"\'').split('\n')[0].strip()
+            if text:
+                return text[:LLM_OUTPUT_CHAR_LIMIT]
+        except Exception as e:
+            logger.warning(f"NPC dialogue generation failed: {e}")
+        return DummyBackend().generate_npc_dialogue(npc, context, **kwargs)
+
+    def generate_breach_name(self) -> str:
+        """Generate a breach zone name.
+
+        Default implementation calls self.complete() with a prompt.
+        DummyBackend overrides with template-based names.
+        Falls back to DummyBackend on failure.
+        """
+        prompt = (
+            "Generate a short name (2-3 words, starting with 'The') for a "
+            "dimensional breach zone in a dungeon. Return ONLY the name."
+        )
+        try:
+            raw = self.complete(prompt, max_tokens=20)
+            name = raw.strip().strip('"\'').split('\n')[0].strip()
+            if name and len(name) <= 30:
+                return name
+        except Exception as e:
+            logger.warning(f"Breach name generation failed: {e}")
+        return DummyBackend().generate_breach_name()
+
+    def generate_narrative_skin(self, mode: str, theme: str) -> dict:
+        """Generate narrative skin for an endgame mode.
+
+        Default implementation calls self.complete() with a structured prompt.
+        DummyBackend overrides with template-based skins.
+        Falls back to DummyBackend on failure.
+        """
+        prompt = (
+            f"Generate narrative text for a dungeon {mode} event themed '{theme}'. "
+            f"Provide 3 pipe-separated values: title (under 30 chars) | "
+            f"description (under 150 chars) | broadcast message (under 150 chars). "
+            f"Return one line: TITLE|DESCRIPTION|BROADCAST"
+        )
+        try:
+            raw = self.complete(prompt, max_tokens=150)
+            line = raw.strip().split('\n')[0].strip()
+            if '|' in line:
+                parts = [p.strip() for p in line.split('|')]
+                if len(parts) >= 3:
+                    return {
+                        "title": parts[0][:30],
+                        "description": parts[1][:LLM_OUTPUT_CHAR_LIMIT],
+                        "broadcasts": [
+                            parts[2][:LLM_OUTPUT_CHAR_LIMIT],
+                            parts[2][:LLM_OUTPUT_CHAR_LIMIT],
+                        ],
+                    }
+        except Exception as e:
+            logger.warning(f"Narrative skin generation failed: {e}")
+        return DummyBackend().generate_narrative_skin(mode, theme)
+
+    def generate_atmospheric_broadcast(self, theme: str) -> str:
+        """Generate an atmospheric broadcast message.
+
+        Default implementation calls self.complete() with a themed prompt.
+        DummyBackend overrides with template-based messages.
+        Falls back to DummyBackend on failure.
+        """
+        prompt = (
+            f"Write one short atmospheric dungeon broadcast message about '{theme}'. "
+            f"Ominous tone. Under 150 characters. Return ONLY the message."
+        )
+        try:
+            raw = self.complete(prompt, max_tokens=80)
+            text = raw.strip().strip('"\'').split('\n')[0].strip()
+            if text:
+                return text[:LLM_OUTPUT_CHAR_LIMIT]
+        except Exception as e:
+            logger.warning(f"Atmospheric broadcast generation failed: {e}")
+        return DummyBackend().generate_atmospheric_broadcast(theme)
+
 
 # ── Dummy Backend ──────────────────────────────────────────────────────────
 
@@ -196,14 +527,62 @@ _FLOOR_NAMES = {
     },
     4: {
         "prefix": [
-            "Void", "Crystal", "Lightless", "Frozen", "Silent",
-            "Shattered", "Hollow", "Pale", "Resonant", "Null",
-            "Abyssal", "Prismatic", "Fractured", "Ethereal", "Dark",
+            "Iron", "Riveted", "Bolted", "Geared", "Grinding",
+            "Mechanical", "Armored", "Plated", "Rusted", "Forged",
+            "Hammered", "Welded", "Tempered", "Clockwork", "Brazen",
         ],
         "suffix": [
-            "Reach", "Spire", "Sanctum", "Throne", "Nexus",
-            "Apex", "Core", "Dome", "Pinnacle", "Gate",
-            "Abyss", "Vault", "Shard", "Lattice", "Terminus",
+            "Labyrinth", "Works", "Foundry", "Mill", "Corridor",
+            "Junction", "Conduit", "Press", "Chamber", "Valve",
+            "Hub", "Shaft", "Gantry", "Bulkhead", "Cage",
+        ],
+    },
+    5: {
+        "prefix": [
+            "Toxic", "Corroded", "Withered", "Blighted", "Rotting",
+            "Caustic", "Scorched", "Barren", "Diseased", "Putrid",
+            "Blackened", "Festering", "Drained", "Wasted", "Decayed",
+        ],
+        "suffix": [
+            "Waste", "Mire", "Drain", "Hollow", "Bog",
+            "Marsh", "Sinkhole", "Expanse", "Flats", "Basin",
+            "Trench", "Slough", "Pit", "Stretch", "Barrens",
+        ],
+    },
+    6: {
+        "prefix": [
+            "Crystalline", "Frozen", "Prismatic", "Glacial", "Refracting",
+            "Mineral", "Faceted", "Glinting", "Vitreous", "Lucent",
+            "Fissured", "Geode", "Quartzite", "Opaline", "Jagged",
+        ],
+        "suffix": [
+            "Cavern", "Gallery", "Prism", "Grotto", "Vault",
+            "Spire", "Crevasse", "Formation", "Hollow", "Shelf",
+            "Cathedral", "Chamber", "Lattice", "Gorge", "Rift",
+        ],
+    },
+    7: {
+        "prefix": [
+            "Shadow", "Dark", "Umbral", "Dim", "Murky",
+            "Tenebrous", "Cloaked", "Veiled", "Obscured", "Twilight",
+            "Shrouded", "Lightless", "Penumbral", "Dusky", "Eclipsed",
+        ],
+        "suffix": [
+            "Gauntlet", "Passage", "Narrows", "Corridor", "Run",
+            "Defile", "Bottleneck", "Strait", "Lane", "Choke",
+            "Tunnel", "Approach", "Gallery", "Crawl", "Channel",
+        ],
+    },
+    8: {
+        "prefix": [
+            "Void", "Null", "Abyssal", "Terminal", "Final",
+            "Shattered", "Hollow", "Resonant", "Ethereal", "Absolute",
+            "Entropic", "Ruined", "Silent", "Forgotten", "Last",
+        ],
+        "suffix": [
+            "Sanctum", "Throne", "Terminus", "Core", "Apex",
+            "Abyss", "Pinnacle", "Nexus", "Gate", "End",
+            "Maw", "Seat", "Vault", "Crucible", "Heart",
         ],
     },
 }
@@ -262,21 +641,301 @@ _FLOOR_SENSORY = {
         "Smoke curls from gaps between stones.",
     ],
     4: [
-        "Absolute silence fills the dark.",
+        "Gears grind somewhere behind the walls.",
+        "Iron plates shift and lock into place.",
+        "Oil drips from overhead mechanisms.",
+        "Riveted panels line every surface.",
+        "The floor vibrates with hidden machinery.",
+        "Pistons hiss in distant corridors.",
+        "Rust flakes fall from turning gears.",
+        "A metallic tang coats every breath.",
+        "Chains rattle in unseen shafts.",
+        "The walls are warm from friction.",
+        "Clockwork ticks in steady rhythm.",
+        "Steam vents whistle at intervals.",
+        "Bolts strain against warped metal plates.",
+        "Iron dust hangs in the stale air.",
+        "A low mechanical drone never stops.",
+    ],
+    5: [
+        "Toxic vapor seeps from cracked earth.",
+        "Dead roots claw from blackened soil.",
+        "The air burns faintly in the throat.",
+        "Puddles of dark liquid reflect nothing.",
+        "Corrosion eats through old stone.",
+        "A sour chemical tang stings the eyes.",
+        "Withered growths crumble at a touch.",
+        "The ground is spongy and unstable.",
+        "Discolored streaks mark every surface.",
+        "Nothing living grows here anymore.",
+        "A thin green haze clings to the floor.",
+        "Bones dissolve slowly in acid pools.",
+        "The stench of decay is overpowering.",
+        "Blistered stone peels in dry sheets.",
+        "Stagnant water bubbles faintly.",
+    ],
+    6: [
         "Crystals hum at frequencies felt, not heard.",
+        "Light refracts into impossible colors.",
+        "Fractured prisms scatter pale rainbows.",
+        "Crystal formations vibrate faintly.",
+        "Ice-cold surfaces gleam in all directions.",
+        "A faint chime rings from the walls.",
+        "Mineral growths jut from every surface.",
+        "The air crackles with static charge.",
+        "Geode formations split open underfoot.",
+        "Pale light pulses through crystal veins.",
+        "Sound echoes strangely off faceted walls.",
+        "Frozen condensation coats the crystals.",
+        "The temperature drops sharply near the walls.",
+        "Prismatic light dances without a source.",
+        "Sharp formations force careful steps.",
+    ],
+    7: [
+        "Darkness thickens like smoke ahead.",
+        "Shadows move without a source.",
+        "The passage narrows to a squeeze.",
+        "Sound dies within a few paces.",
+        "The dark seems to press inward.",
+        "A cold draft pushes from unseen gaps.",
+        "Walls close in from both sides.",
+        "The ceiling drops lower with each step.",
+        "Absolute stillness fills the narrows.",
+        "Your torch barely reaches the next wall.",
+        "Something scrapes in the dark behind you.",
+        "The air grows thin and stale.",
+        "Echoes return wrong, distorted.",
+        "The floor tilts at unsettling angles.",
+        "Every shadow could hide a threat.",
+    ],
+    8: [
+        "Absolute silence fills the dark.",
         "A cold beyond temperature seeps inward.",
         "Light bends strangely near the walls.",
-        "Fractured prisms scatter pale rainbows.",
-        "The dark seems to press inward.",
-        "Crystal formations vibrate faintly.",
-        "Sound dies within a few paces.",
         "The air feels thin and brittle.",
-        "Shadows move without a source.",
-        "A faint chime rings from nowhere.",
-        "Ice crystals hang motionless in air.",
-        "The walls absorb all warmth.",
         "Reality thins at the edges.",
-        "Starlight leaks through crystal veins.",
+        "Starlight leaks through cracks in nothing.",
+        "The walls absorb all warmth and sound.",
+        "Space folds wrong at the periphery.",
+        "Nothing reflects. Nothing echoes.",
+        "The ground feels uncertain underfoot.",
+        "A hum below hearing vibrates the bones.",
+        "Gravity shifts subtly, pulling sideways.",
+        "The void breathes. Slowly.",
+        "Distance has no meaning here.",
+        "The end of everything waits ahead.",
+    ],
+}
+
+# Per-epoch floor sub-themes — 4 variants per floor for DummyBackend
+_FLOOR_SUB_THEMES = {
+    1: [
+        {
+            "floor_name": "Drowned Corridors",
+            "atmosphere": "Black water pools in every doorway. The walls weep.",
+            "narrative_beat": "The descent begins — something drove these halls underwater.",
+            "floor_transition": "Water rises around your ankles. The air turns cold and damp.",
+        },
+        {
+            "floor_name": "Collapsed Undercroft",
+            "atmosphere": "Broken stone and dust. Every step echoes twice.",
+            "narrative_beat": "Old foundations crumble — this place was buried on purpose.",
+            "floor_transition": "Stone groans overhead. Dust sifts down as you descend.",
+        },
+        {
+            "floor_name": "Rusted Waterworks",
+            "atmosphere": "Iron pipes line the walls, weeping rust-red water.",
+            "narrative_beat": "Ancient machinery failed here — the flood was no accident.",
+            "floor_transition": "Rusted gears creak. Water drips from corroded pipes above.",
+        },
+        {
+            "floor_name": "Silted Crypts",
+            "atmosphere": "Sand and silt fill the lower passages. Bones jut from the mud.",
+            "narrative_beat": "The dead were never meant to be found again.",
+            "floor_transition": "The floor turns to wet silt. Old bones shift underfoot.",
+        },
+    ],
+    2: [
+        {
+            "floor_name": "Luminous Rot",
+            "atmosphere": "Everything glows. The light comes from decay.",
+            "narrative_beat": "Life thrives here, twisted — the fungus feeds on something below.",
+            "floor_transition": "Pale light blooms from the walls. The air thickens with spores.",
+        },
+        {
+            "floor_name": "Mycelial Sprawl",
+            "atmosphere": "White threads web every surface. The floor breathes.",
+            "narrative_beat": "The network is alive and aware — it's been growing for centuries.",
+            "floor_transition": "Tendrils of fungus reach across the threshold. Warmth radiates.",
+        },
+        {
+            "floor_name": "Spore Hollows",
+            "atmosphere": "Clouds of spores drift in slow currents. Colors shift.",
+            "narrative_beat": "The spores carry memories — breathe too deep and see the past.",
+            "floor_transition": "A curtain of spores parts as you enter. Colors swirl.",
+        },
+        {
+            "floor_name": "Bioluminescent Maze",
+            "atmosphere": "Pulsing caps light branching paths. The glow follows movement.",
+            "narrative_beat": "The maze reshapes itself — the fungus learns from those who enter.",
+            "floor_transition": "Mushroom caps flare bright, then dim. The path ahead glows.",
+        },
+    ],
+    3: [
+        {
+            "floor_name": "Slag Furnaces",
+            "atmosphere": "Heat hammers down. Molten channels cut the floor.",
+            "narrative_beat": "Someone built forges here — the fires never stopped.",
+            "floor_transition": "Heat hits like a wall. The stone beneath glows dull orange.",
+        },
+        {
+            "floor_name": "Obsidian Crucible",
+            "atmosphere": "Glass-black stone reflects firelight in every direction.",
+            "narrative_beat": "The crucible was meant to contain something — it's cracking.",
+            "floor_transition": "Obsidian crunches underfoot. Embers drift upward from below.",
+        },
+        {
+            "floor_name": "Cinder Tunnels",
+            "atmosphere": "Ash coats everything. Small fires burn in the walls.",
+            "narrative_beat": "The tunnels are scars — something burned through solid rock.",
+            "floor_transition": "Ash swirls around your feet. The temperature spikes.",
+        },
+        {
+            "floor_name": "Magma Veins",
+            "atmosphere": "Lava pulses through cracks like a heartbeat. The air shimmers.",
+            "narrative_beat": "The veins lead deeper — the source of heat is alive.",
+            "floor_transition": "Orange light seeps from every crack. The ground pulses with heat.",
+        },
+    ],
+    4: [
+        {
+            "floor_name": "Grinding Works",
+            "atmosphere": "Gears turn endlessly. The whole floor is a machine.",
+            "narrative_beat": "Someone built this to keep running forever — but why?",
+            "floor_transition": "Metal clangs underfoot. The walls vibrate with hidden machinery.",
+        },
+        {
+            "floor_name": "Iron Maze",
+            "atmosphere": "Riveted corridors shift and reconfigure. The path changes.",
+            "narrative_beat": "The labyrinth was designed to trap, not to be solved.",
+            "floor_transition": "Iron panels slam into place behind you. The maze reconfigures.",
+        },
+        {
+            "floor_name": "Clockwork Depths",
+            "atmosphere": "Ticking fills the air. Every surface moves on hidden tracks.",
+            "narrative_beat": "The clockwork counts down to something. It always has been.",
+            "floor_transition": "Gears mesh and separate overhead. The ticking grows louder.",
+        },
+        {
+            "floor_name": "The Foundry",
+            "atmosphere": "Molten metal flows through channels. Hammers fall on nothing.",
+            "narrative_beat": "The foundry still forges — but the smiths are long dead.",
+            "floor_transition": "Heat rises from below. The clang of phantom hammers echoes.",
+        },
+    ],
+    5: [
+        {
+            "floor_name": "Acid Flats",
+            "atmosphere": "Chemical burns mark every surface. The air itself corrodes.",
+            "narrative_beat": "Something was dissolved here — deliberately, completely.",
+            "floor_transition": "The air turns acrid. Your eyes water. Nothing grows here.",
+        },
+        {
+            "floor_name": "Withered Expanse",
+            "atmosphere": "Dead roots and bleached bone. Life tried here and lost.",
+            "narrative_beat": "The blight spread from below — it's still spreading.",
+            "floor_transition": "Color drains from everything. The ground crumbles underfoot.",
+        },
+        {
+            "floor_name": "Toxic Sinkhole",
+            "atmosphere": "Pools of dark liquid bubble. The fumes burn.",
+            "narrative_beat": "The poison seeps upward — the source is deeper still.",
+            "floor_transition": "A chemical stench hits like a wall. Visibility drops.",
+        },
+        {
+            "floor_name": "Corroded Hollow",
+            "atmosphere": "Metal and stone dissolve alike. Nothing lasts here.",
+            "narrative_beat": "Corrosion is the point — something here unmakes things.",
+            "floor_transition": "Rust and decay coat every surface. The walls weep acid.",
+        },
+    ],
+    6: [
+        {
+            "floor_name": "Crystalline Void",
+            "atmosphere": "Silence. Light fractures through impossible geometry.",
+            "narrative_beat": "The crystals remember — touch one and see the past.",
+            "floor_transition": "Sound dies. Crystal formations hum at the edge of hearing.",
+        },
+        {
+            "floor_name": "Frozen Gallery",
+            "atmosphere": "Ice coats every crystal. The cold is absolute.",
+            "narrative_beat": "The gallery preserves what should have been forgotten.",
+            "floor_transition": "Temperature plummets. Your breath crystallizes instantly.",
+        },
+        {
+            "floor_name": "Prismatic Depths",
+            "atmosphere": "Light splits into colors that shouldn't exist.",
+            "narrative_beat": "The prisms show other places — or other times.",
+            "floor_transition": "Rainbow light floods from below. The crystals sing.",
+        },
+        {
+            "floor_name": "Geode Cathedral",
+            "atmosphere": "Massive crystal formations arch overhead like ribs.",
+            "narrative_beat": "The cathedral was grown, not built. It's still growing.",
+            "floor_transition": "Crystal spires tower above. The air hums with resonance.",
+        },
+    ],
+    7: [
+        {
+            "floor_name": "The Narrows",
+            "atmosphere": "Walls press close. Every shadow hides something.",
+            "narrative_beat": "The gauntlet is a test — only the worthy pass through.",
+            "floor_transition": "The passage tightens. Darkness presses from all sides.",
+        },
+        {
+            "floor_name": "Umbral Passage",
+            "atmosphere": "Light cannot hold here. The dark is hungry.",
+            "narrative_beat": "Shadows are alive here — and they remember who passes.",
+            "floor_transition": "Your light dims to a flicker. The shadows lean closer.",
+        },
+        {
+            "floor_name": "Shadow Run",
+            "atmosphere": "The ceiling drops. The walls close. Forward is the only option.",
+            "narrative_beat": "This was built as a gauntlet — something guards what lies below.",
+            "floor_transition": "The corridor narrows sharply. No room to turn back.",
+        },
+        {
+            "floor_name": "Twilight Choke",
+            "atmosphere": "Dim light from no source. The air is thick and still.",
+            "narrative_beat": "The choke filters the weak from the strong. Always has.",
+            "floor_transition": "Half-light and silence. The space compresses around you.",
+        },
+    ],
+    8: [
+        {
+            "floor_name": "Null Sanctum",
+            "atmosphere": "Space folds wrong. Distances lie. The dark watches back.",
+            "narrative_beat": "The sanctum exists outside the rules — reality is optional here.",
+            "floor_transition": "The air grows thin and brittle. Shadows move without sources.",
+        },
+        {
+            "floor_name": "Fracture Point",
+            "atmosphere": "Reality splinters. Light and dark trade places without warning.",
+            "narrative_beat": "This is where it broke — the fracture goes all the way down.",
+            "floor_transition": "Light bends. Your shadow stretches in the wrong direction.",
+        },
+        {
+            "floor_name": "Abyssal Threshold",
+            "atmosphere": "Cold beyond temperature. The walls are not stone.",
+            "narrative_beat": "The threshold leads nowhere and everywhere — the final test.",
+            "floor_transition": "A cold beyond temperature seeps into your bones. The end waits.",
+        },
+        {
+            "floor_name": "The Terminus",
+            "atmosphere": "Nothing. Then everything. The bottom of all things.",
+            "narrative_beat": "The Warden waits where the world ends.",
+            "floor_transition": "Reality thins to nothing. You stand at the edge of the void.",
+        },
     ],
 }
 
@@ -426,7 +1085,11 @@ _BOSS_NAMES = {
     1: ["Stone Warden", "Rat King", "Flood Guardian", "Crypt Sentinel"],
     2: ["Spore Tyrant", "Mycelial Overmind", "Fungal Colossus", "Rot Monarch"],
     3: ["Forge Master", "Magma Lord", "Ember Titan", "Obsidian Wyrm"],
-    4: ["The Warden", "Void Wyrm", "Crystal Archon", "Null Emperor"],
+    4: ["Iron Juggernaut", "Gear Tyrant", "Clockwork Abom.", "Steel Sentinel"],
+    5: ["Blight Lord", "Acid Hydra", "Toxic Colossus", "Corrosion King"],
+    6: ["Crystal Archon", "Frost Monarch", "Prismatic Wyrm", "Geode Titan"],
+    7: ["Shadow Overlord", "Umbral Stalker", "Dark Watcher", "Night Tyrant"],
+    8: ["The Warden", "Void Wyrm", "Null Emperor", "The End"],
 }
 
 # Breach zone names
@@ -513,7 +1176,7 @@ class DummyBackend(BackendInterface):
         return name
 
     def generate_room_description(self, floor: int, name: str, is_vault: bool = False,
-                                  vault_type: str = "") -> str:
+                                  vault_type: str = "", floor_theme: dict = None) -> str:
         """Generate a full room description under 150 chars."""
         sensory = random.choice(_FLOOR_SENSORY.get(floor, _FLOOR_SENSORY[1]))
         if is_vault and vault_type:
@@ -525,7 +1188,8 @@ class DummyBackend(BackendInterface):
         desc = f"{sensory} {obj}"
         return desc[:LLM_OUTPUT_CHAR_LIMIT]
 
-    def generate_room_description_short(self, floor: int, name: str) -> str:
+    def generate_room_description_short(self, floor: int, name: str,
+                                       floor_theme: dict = None) -> str:
         """Generate abbreviated room description for revisits."""
         sensory = random.choice(_FLOOR_SENSORY.get(floor, _FLOOR_SENSORY[1]))
         return sensory[:LLM_OUTPUT_CHAR_LIMIT]
@@ -558,7 +1222,7 @@ class DummyBackend(BackendInterface):
         generic = _TOWN_DESCRIPTIONS[None]
         return random.choice(generic)[:LLM_OUTPUT_CHAR_LIMIT]
 
-    def generate_monster_name(self, tier: int) -> str:
+    def generate_monster_name(self, tier: int, floor_theme: dict = None) -> str:
         """Pick a monster name for a tier."""
         names = _MONSTER_NAMES.get(tier, _MONSTER_NAMES[1])
         return random.choice(names)
@@ -569,7 +1233,7 @@ class DummyBackend(BackendInterface):
         desc = template.format(monster=monster_name, floor=floor, theme=theme)
         return desc[:LLM_OUTPUT_CHAR_LIMIT]
 
-    def generate_boss_name(self, floor: int) -> str:
+    def generate_boss_name(self, floor: int, floor_theme: dict = None) -> str:
         """Pick a boss name for a floor."""
         names = _BOSS_NAMES.get(floor, _BOSS_NAMES[1])
         return random.choice(names)
@@ -633,6 +1297,15 @@ class DummyBackend(BackendInterface):
         from config import DUMMY_SPELL_NAMES
         return random.sample(DUMMY_SPELL_NAMES, 3)
 
+    def generate_floor_themes(self) -> dict[int, dict]:
+        """Pick one random sub-theme variant per floor from static pool."""
+        from config import NUM_FLOORS
+        result = {}
+        for floor in range(1, NUM_FLOORS + 1):
+            variants = _FLOOR_SUB_THEMES.get(floor, _FLOOR_SUB_THEMES[1])
+            result[floor] = dict(random.choice(variants))
+        return result
+
     def generate_lore_fragment(self, floor: int) -> str:
         """Generate a lore fragment for a room (≤80 chars)."""
         from config import DUMMY_LORE_FRAGMENTS
@@ -665,6 +1338,10 @@ class AnthropicBackend(BackendInterface):
     """Claude API backend."""
 
     def __init__(self, api_key=None, model=None):
+        try:
+            import anthropic  # noqa: F401
+        except ImportError:
+            raise ImportError("Install 'anthropic' package: pip install anthropic")
         self.api_key = api_key or os.environ.get("MMUD_ANTHROPIC_API_KEY", "")
         self.model = model or os.environ.get("MMUD_LLM_MODEL", "claude-sonnet-4-5-20250929")
         if not self.api_key:
@@ -696,6 +1373,10 @@ class OpenAIBackend(BackendInterface):
     """OpenAI-compatible API backend."""
 
     def __init__(self, api_key=None, model=None, base_url=None):
+        try:
+            import openai  # noqa: F401
+        except ImportError:
+            raise ImportError("Install 'openai' package: pip install openai")
         self.api_key = api_key or os.environ.get("MMUD_OPENAI_API_KEY", "")
         self.model = model or os.environ.get("MMUD_LLM_MODEL", "gpt-4o-mini")
         self.base_url = base_url or os.environ.get("MMUD_OPENAI_BASE_URL")

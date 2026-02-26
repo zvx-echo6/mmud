@@ -61,6 +61,16 @@ CREATE TABLE IF NOT EXISTS epoch (
     spell_names TEXT DEFAULT ''        -- Comma-separated spell names (3 per epoch, ≤20 chars each)
 );
 
+CREATE TABLE IF NOT EXISTS floor_themes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    floor INTEGER NOT NULL,
+    floor_name TEXT NOT NULL,
+    atmosphere TEXT NOT NULL,
+    narrative_beat TEXT NOT NULL,
+    floor_transition TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_floor_themes_floor ON floor_themes(floor);
+
 -- =============================================================================
 -- PLAYERS (Reset Each Wipe)
 -- =============================================================================
@@ -93,9 +103,20 @@ CREATE TABLE IF NOT EXISTS players (
     stat_points INTEGER DEFAULT 0,
     bard_tokens INTEGER DEFAULT 0,
     secrets_found INTEGER DEFAULT 0,
+    deepest_floor_reached INTEGER DEFAULT 1,
     last_login DATETIME,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
+
+CREATE TABLE IF NOT EXISTS floor_progress (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    player_id INTEGER NOT NULL REFERENCES players(id),
+    floor INTEGER NOT NULL,
+    boss_killed INTEGER DEFAULT 0,
+    boss_killed_at DATETIME,
+    UNIQUE(player_id, floor)
+);
+CREATE INDEX IF NOT EXISTS idx_floor_progress_player ON floor_progress(player_id);
 
 CREATE TABLE IF NOT EXISTS inventory (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

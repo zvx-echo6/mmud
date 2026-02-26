@@ -1,13 +1,13 @@
 """
 Dungeon world generation for MMUD.
-Generates 4 floors of hub-spoke layout rooms with monsters, items, and traps.
+Generates 8 floors of hub-spoke layout rooms with monsters, items, and traps.
 
 Layout per floor:
 - 1 central hub room (checkpoint)
-- 3-4 branches of 3-5 rooms each radiating from hub
+- Variable branches per floor (tuned to hit ROOMS_PER_FLOOR targets)
 - 1-2 loops connecting branches (prevent dead-end-only layouts)
 - One branch ends at a stairway connecting to next floor
-- 3-5 vault rooms injected into layout
+- Vault rooms scaled to floor size
 - 1-2 traps guarding vault rooms
 """
 
@@ -30,6 +30,7 @@ from config import (
     REVEAL_LORE_CHANCE,
     ROOMS_PER_BRANCH_MAX,
     ROOMS_PER_BRANCH_MIN,
+    ROOMS_PER_FLOOR,
     ROOMS_PER_FLOOR_MAX,
     ROOMS_PER_FLOOR_MIN,
     TOWN_CENTER,
@@ -111,12 +112,14 @@ def generate_town(conn: sqlite3.Connection, backend: Optional[DummyBackend] = No
     return stats
 
 
-def generate_world(conn: sqlite3.Connection, backend: Optional[DummyBackend] = None) -> dict:
+def generate_world(conn: sqlite3.Connection, backend: Optional[DummyBackend] = None,
+                   floor_themes: dict = None) -> dict:
     """Generate the full dungeon world.
 
     Args:
         conn: Database connection (schema must already be initialized).
         backend: Narrative backend for text generation.
+        floor_themes: Per-epoch floor sub-themes dict (optional).
 
     Returns:
         Stats dict with room_count, monster_count, item_count.
@@ -127,7 +130,8 @@ def generate_world(conn: sqlite3.Connection, backend: Optional[DummyBackend] = N
     stats = {"rooms": 0, "monsters": 0, "items": 0, "exits": 0}
 
     for floor_num in range(1, NUM_FLOORS + 1):
-        floor_stats = _generate_floor(conn, floor_num, backend)
+        floor_theme = floor_themes.get(floor_num) if floor_themes else None
+        floor_stats = _generate_floor(conn, floor_num, backend, floor_theme=floor_theme)
         for k in stats:
             stats[k] += floor_stats.get(k, 0)
 
@@ -140,21 +144,41 @@ def generate_world(conn: sqlite3.Connection, backend: Optional[DummyBackend] = N
 
 
 def _generate_floor(
-    conn: sqlite3.Connection, floor: int, backend: DummyBackend
+    conn: sqlite3.Connection, floor: int, backend: DummyBackend,
+    floor_theme: dict = None,
 ) -> dict:
     """Generate a single floor with hub-spoke layout.
 
     Returns stats dict.
     """
-    theme = FLOOR_THEMES.get(floor, "Unknown Depths")
+    if floor_theme:
+        theme = floor_theme.get("floor_name", FLOOR_THEMES.get(floor, "Unknown Depths"))
+    else:
+        theme = FLOOR_THEMES.get(floor, "Unknown Depths")
     stats = {"rooms": 0, "monsters": 0, "exits": 0}
 
-    # Determine layout params
-    num_branches = random.randint(BRANCHES_PER_FLOOR, BRANCHES_PER_FLOOR + 1)
+    # Determine layout params based on per-floor room targets
+    floor_min, floor_max = ROOMS_PER_FLOOR.get(floor, (ROOMS_PER_FLOOR_MIN, ROOMS_PER_FLOOR_MAX))
+    target_rooms = random.randint(floor_min, floor_max)
+
+    # Scale branches to hit target (hub + branches*rooms_per_branch ≈ target)
+    if target_rooms <= 10:
+        num_branches = random.randint(2, 3)
+        rooms_per_branch_lo = ROOMS_PER_BRANCH_MIN
+        rooms_per_branch_hi = ROOMS_PER_BRANCH_MIN + 1
+    elif target_rooms <= 14:
+        num_branches = random.randint(3, 3)
+        rooms_per_branch_lo = ROOMS_PER_BRANCH_MIN
+        rooms_per_branch_hi = ROOMS_PER_BRANCH_MAX
+    else:
+        num_branches = random.randint(BRANCHES_PER_FLOOR, BRANCHES_PER_FLOOR + 1)
+        rooms_per_branch_lo = ROOMS_PER_BRANCH_MIN
+        rooms_per_branch_hi = ROOMS_PER_BRANCH_MAX
+
     stairway_branch = random.randint(0, num_branches - 1) if floor < NUM_FLOORS else -1
 
-    # How many vault rooms to inject
-    num_vaults = random.randint(VAULT_ROOMS_PER_FLOOR_MIN, VAULT_ROOMS_PER_FLOOR_MAX)
+    # Scale vault count proportionally to floor size
+    num_vaults = max(1, min(target_rooms // 5, VAULT_ROOMS_PER_FLOOR_MAX))
     num_traps = random.randint(TRAPS_PER_FLOOR, TRAPS_PER_FLOOR + 1)
 
     # ── Create hub room ──
@@ -173,7 +197,7 @@ def _generate_floor(
 
     # ── Create branches ──
     for b in range(num_branches):
-        branch_len = random.randint(ROOMS_PER_BRANCH_MIN, ROOMS_PER_BRANCH_MAX)
+        branch_len = random.randint(rooms_per_branch_lo, rooms_per_branch_hi)
         is_stairway_branch = (b == stairway_branch)
 
         prev_room_id = hub_id
@@ -473,12 +497,16 @@ def _opposite_dir(d: str) -> str:
 
 
 def _floor_to_tier(floor: int) -> int:
-    """Map floor number to primary monster tier."""
-    # Floor 1: tier 1-2, Floor 2: tier 2-3, Floor 3: tier 3-4, Floor 4: tier 4-5
-    base = floor
+    """Map floor number to primary monster tier.
+
+    8 floors compressed to 5 tiers:
+    F1→T1, F2→T1, F3→T2, F4→T2, F5→T3, F6→T3, F7→T4, F8→T4
+    With 40% chance to bump up one tier (capped at 5).
+    """
+    base = min((floor + 1) // 2, 4)
     if random.random() < 0.4:
         base = min(base + 1, 5)
-    return base
+    return max(1, base)
 
 
 def _monster_hp(tier: int) -> int:

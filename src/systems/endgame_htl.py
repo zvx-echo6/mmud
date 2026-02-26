@@ -4,7 +4,7 @@ Hold the Line — Endgame mode runtime logic.
 Territory control: clear rooms, establish checkpoints, kill floor bosses.
 Dungeon regen pushes back. Checkpoints lock progress permanently.
 
-Floor 4 Warden kill = epoch win.
+Final floor Warden kill = epoch win.
 """
 
 import json
@@ -254,7 +254,11 @@ def _respawn_monster(conn: sqlite3.Connection, room_id: int, floor: int) -> None
         1: ["Shambling Corpse", "Cave Rat", "Feral Goblin"],
         2: ["Spore Walker", "Fungal Horror", "Mushroom Lurker"],
         3: ["Ember Drake", "Obsidian Golem", "Fire Imp"],
-        4: ["Void Shade", "Crystal Lich", "Shadow Stalker"],
+        4: ["Iron Sentinel", "Gear Golem", "Rust Crawler"],
+        5: ["Blight Husk", "Rot Stalker", "Plague Wraith"],
+        6: ["Crystal Revenant", "Prism Horror", "Frost Shade"],
+        7: ["Shadow Fang", "Umbral Watcher", "Dark Specter"],
+        8: ["Void Thrall", "Null Phantom", "Abyss Walker"],
     }
     name = random.choice(names.get(floor, ["Dark Creature"]))
 
@@ -559,7 +563,7 @@ def spawn_boss_add(conn: sqlite3.Connection, boss: dict) -> Optional[int]:
 
 
 def check_warden_kill(conn: sqlite3.Connection) -> tuple[bool, str]:
-    """Check if the Warden (floor 4 boss) has been killed.
+    """Check if the Warden (final floor boss) has been killed.
 
     Returns:
         (killed, message)

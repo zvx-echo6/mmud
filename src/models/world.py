@@ -124,3 +124,15 @@ def record_player_reveal(
         (player_id, room_id),
     )
     conn.commit()
+
+
+def is_floor_boss_dead(conn: sqlite3.Connection, floor: int) -> bool:
+    """Check if the floor boss on a given floor has been killed (hp <= 0)."""
+    row = conn.execute(
+        "SELECT hp FROM monsters WHERE is_floor_boss = 1 AND room_id IN "
+        "(SELECT id FROM rooms WHERE floor = ?) LIMIT 1",
+        (floor,),
+    ).fetchone()
+    if not row:
+        return False
+    return row["hp"] <= 0

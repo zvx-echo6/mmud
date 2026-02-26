@@ -39,6 +39,7 @@ from src.generation.bountygen import generate_bounties
 from src.generation.breachgen import generate_breach
 from src.generation.narrative import DummyBackend, get_backend
 from src.generation.secretgen import generate_secrets
+from src.generation.themegen import generate_floor_themes, get_floor_themes
 from src.generation.validation import validate_epoch
 from src.generation.worldgen import generate_town, generate_world
 from src.models.epoch import create_epoch
@@ -88,6 +89,14 @@ def generate_epoch(
     print("[2/9] Creating epoch record...")
     create_epoch(conn, epoch_number, endgame_mode, breach_type, theme)
 
+    # 2a. Floor sub-themes
+    print("[2a/9] Generating floor sub-themes...")
+    theme_stats = generate_floor_themes(conn, backend)
+    floor_themes = get_floor_themes(conn)
+    stats["floor_themes"] = theme_stats
+    for f in sorted(floor_themes):
+        print(f"  Floor {f}: {floor_themes[f]['floor_name']}")
+
     # 2b. Town generation (Floor 0)
     print("[2b/9] Generating town (Floor 0)...")
     town_stats = generate_town(conn, backend)
@@ -96,7 +105,7 @@ def generate_epoch(
 
     # 3. World generation
     print("[3/9] Generating dungeon world...")
-    world_stats = generate_world(conn, backend)
+    world_stats = generate_world(conn, backend, floor_themes=floor_themes)
     stats["world"] = world_stats
     print(f"  Rooms: {world_stats['rooms']}, Monsters: {world_stats['monsters']}, "
           f"Items: {world_stats['items']}, Exits: {world_stats['exits']}")
@@ -111,7 +120,8 @@ def generate_epoch(
     # 5. Secrets
     print("[5/9] Placing secrets...")
     secret_stats = generate_secrets(
-        conn, backend, breach_room_ids=breach_stats["breach_room_ids"]
+        conn, backend, breach_room_ids=breach_stats["breach_room_ids"],
+        floor_themes=floor_themes,
     )
     stats["secrets"] = secret_stats
     print(f"  Total: {secret_stats['total']} — "
@@ -121,7 +131,7 @@ def generate_epoch(
 
     # 6. Bounties
     print("[6/9] Generating bounty pool...")
-    bounty_stats = generate_bounties(conn, backend)
+    bounty_stats = generate_bounties(conn, backend, floor_themes=floor_themes)
     stats["bounties"] = bounty_stats
     print(f"  Total: {bounty_stats['total']} — "
           f"early:{bounty_stats['early']} mid:{bounty_stats['mid']} "
@@ -129,14 +139,14 @@ def generate_epoch(
 
     # 7. Bosses
     print("[7/9] Generating bosses...")
-    boss_stats = generate_bosses(conn, backend)
+    boss_stats = generate_bosses(conn, backend, floor_themes=floor_themes)
     stats["bosses"] = boss_stats
     print(f"  Floor bosses: {boss_stats['floor_bosses']}, "
           f"Raid mechanics: {boss_stats['raid_boss_mechanics']}")
 
     # 8. Narrative content
     print("[8/9] Generating narrative content...")
-    narrative_count = _generate_narrative_content(conn, backend, endgame_mode, breach_type)
+    narrative_count = _generate_narrative_content(conn, backend, endgame_mode, breach_type, floor_themes)
     stats["narrative"] = narrative_count
     print(f"  NPC dialogue: {narrative_count['dialogue']}, "
           f"Skins: {narrative_count['skins']}, "
@@ -182,6 +192,7 @@ def generate_epoch(
 
 def _generate_narrative_content(
     conn: sqlite3.Connection, backend, endgame_mode: str, breach_type: str,
+    floor_themes: dict = None,
 ) -> dict:
     """Generate NPC dialogue, narrative skins, and atmospheric broadcasts."""
     counts = {"dialogue": 0, "skins": 0, "broadcasts": 0}
@@ -198,11 +209,16 @@ def _generate_narrative_content(
     for npc in npcs:
         for context in contexts.get(npc, ["greeting"]):
             for _ in range(3):  # 3 variations each
+                f = random.randint(1, NUM_FLOORS)
+                if floor_themes and f in floor_themes:
+                    theme_name = floor_themes[f]["floor_name"]
+                else:
+                    theme_name = FLOOR_THEMES.get(f, "")
                 dialogue = backend.generate_npc_dialogue(
                     npc, context,
-                    floor=random.randint(1, NUM_FLOORS),
+                    floor=f,
                     direction=random.choice(["north", "south", "east", "west"]),
-                    theme=FLOOR_THEMES.get(random.randint(1, NUM_FLOORS), ""),
+                    theme=theme_name,
                     summary="things happened",
                 )
                 conn.execute(
@@ -213,7 +229,10 @@ def _generate_narrative_content(
 
     # Narrative skins for endgame mode
     for floor in range(1, NUM_FLOORS + 1):
-        theme = FLOOR_THEMES.get(floor, "Unknown")
+        if floor_themes and floor in floor_themes:
+            theme = floor_themes[floor]["floor_name"]
+        else:
+            theme = FLOOR_THEMES.get(floor, "Unknown")
         skin = backend.generate_narrative_skin(endgame_mode, theme)
 
         conn.execute(
@@ -242,7 +261,10 @@ def _generate_narrative_content(
 
     # Atmospheric broadcasts
     for floor in range(1, NUM_FLOORS + 1):
-        theme = FLOOR_THEMES.get(floor, "")
+        if floor_themes and floor in floor_themes:
+            theme = floor_themes[floor]["floor_name"]
+        else:
+            theme = FLOOR_THEMES.get(floor, "")
         for _ in range(2):
             msg = backend.generate_atmospheric_broadcast(theme)
             conn.execute(

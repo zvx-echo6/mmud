@@ -57,6 +57,7 @@ ALIASES = {
     "exit": "leave", "go back": "leave", "back": "leave",
     # Floor transition aliases
     "descend": "enter", "ascend": "town",
+    "warp": "enter", "ft": "enter",
     # Town location keywords
     "tavern": "barkeep", "barkeep": "grist", "grist": "grist", "drink": "grist",
     "maren": "healer", "clinic": "healer", "infirmary": "healer",

@@ -337,13 +337,21 @@ def epoch():
 
     # Detect backend
     db_path = web_config.DB_PATH
+    BACKEND_DISPLAY = {
+        "DummyBackend": "DummyBackend (template)",
+        "GoogleBackend": "Google Gemini",
+        "AnthropicBackend": "Anthropic Claude",
+        "OpenAIBackend": "OpenAI-Compatible",
+    }
     try:
         from src.generation.narrative import get_backend
         backend = get_backend(db_path=db_path)
         backend_name = type(backend).__name__
+        backend_display = BACKEND_DISPLAY.get(backend_name, backend_name)
         backend_ready = "Dummy" not in backend_name
     except Exception as e:
         backend_name = f"Error: {e}"
+        backend_display = backend_name
         backend_ready = False
 
     # Check if generation is in progress
@@ -355,6 +363,7 @@ def epoch():
         epoch=epoch_data,
         breach=breach,
         backend_name=backend_name,
+        backend_display=backend_display,
         backend_ready=backend_ready,
         gen_running=gen_running,
         gen_result=gen_result,

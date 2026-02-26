@@ -200,11 +200,11 @@ def test_observation_floors():
         "SELECT floor FROM secrets WHERE type = 'observation'"
     ).fetchall()
     floors = [o["floor"] for o in obs]
-    # 4 on floors 1-2, 2 on floors 3-4
-    low = sum(1 for f in floors if f <= 2)
-    high = sum(1 for f in floors if f >= 3)
-    assert low == 4, f"Expected 4 observation on floors 1-2, got {low}"
-    assert high == 2, f"Expected 2 observation on floors 3-4, got {high}"
+    # 4 on floors 1-3, 2 on floors 4-8
+    low = sum(1 for f in floors if f <= 3)
+    high = sum(1 for f in floors if f >= 4)
+    assert low == 4, f"Expected 4 observation on floors 1-3, got {low}"
+    assert high == 2, f"Expected 2 observation on floors 4-8, got {high}"
 
 
 # ── No breach secrets without breach rooms ──

@@ -3,10 +3,10 @@ Secret placement for MMUD.
 Places 20 secrets per epoch across 5 types with 3 hint tiers each.
 
 Distribution:
-  - Observation (6): 4 on floors 1-2, 2 on floors 3-4
-  - Puzzle (4): 1-2 single-room, 2-3 multi-room
-  - Lore (4): Tied to NPC dialogue / barkeep hints
-  - Stat-gated (3): One each POW/SPD/DEF, floors 3-4
+  - Observation (6): 4 on floors 1-3, 2 on floors 4-8
+  - Puzzle (4): 1-2 single-room, 2-3 multi-room across floors 2-6
+  - Lore (4): Spread across all floors
+  - Stat-gated (3): One each POW/SPD/DEF, floors 5-8
   - Breach (3): Inside Breach zone, not available until day 15
 """
 
@@ -73,6 +73,7 @@ _STAT_GATED = {
 def generate_secrets(
     conn: sqlite3.Connection, backend: Optional[DummyBackend] = None,
     breach_room_ids: Optional[list[int]] = None,
+    floor_themes: dict = None,
 ) -> dict:
     """Place all 20 secrets for the epoch.
 
@@ -80,6 +81,7 @@ def generate_secrets(
         conn: Database connection.
         backend: Narrative backend.
         breach_room_ids: Room IDs in the Breach zone for Breach secrets.
+        floor_themes: Per-epoch floor sub-themes dict (optional).
 
     Returns:
         Stats dict with counts per type.
@@ -97,11 +99,11 @@ def generate_secrets(
     # Get available rooms by floor
     rooms_by_floor = _get_rooms_by_floor(conn)
 
-    # ── Observation (6) — 4 on floors 1-2, 2 on floors 3-4 ──
-    obs_rooms_low = _pick_rooms(rooms_by_floor, [1, 2], 4)
-    obs_rooms_high = _pick_rooms(rooms_by_floor, [3, 4], 2)
+    # ── Observation (6) — 4 on floors 1-3, 2 on floors 4-8 ──
+    obs_rooms_low = _pick_rooms(rooms_by_floor, [1, 2, 3], 4)
+    obs_rooms_high = _pick_rooms(rooms_by_floor, [4, 5, 6, 7, 8], 2)
     for room in obs_rooms_low + obs_rooms_high:
-        _place_observation_secret(conn, room, backend)
+        _place_observation_secret(conn, room, backend, floor_themes=floor_themes)
         stats["observation"] += 1
 
     # ── Puzzle (4) — 1-2 single, 2-3 multi-room ──
@@ -109,33 +111,33 @@ def generate_secrets(
     num_single = 4 - num_multi
 
     for _ in range(num_single):
-        room = _pick_rooms(rooms_by_floor, [1, 2, 3], 1)
+        room = _pick_rooms(rooms_by_floor, [2, 3, 4, 5, 6], 1)
         if room:
-            _place_single_puzzle(conn, room[0], backend)
+            _place_single_puzzle(conn, room[0], backend, floor_themes=floor_themes)
             stats["puzzle"] += 1
 
     for i in range(num_multi):
         archetype = _PUZZLE_ARCHETYPES[i % len(_PUZZLE_ARCHETYPES)]
         symbol = random.choice(_PUZZLE_SYMBOLS)
         # Pick 2 rooms on same floor for multi-room puzzles
-        floor = random.choice([1, 2, 3])
+        floor = random.choice([2, 3, 4, 5, 6])
         pair = _pick_rooms(rooms_by_floor, [floor], 2)
         if len(pair) >= 2:
-            _place_multi_puzzle(conn, pair, archetype, symbol, backend)
+            _place_multi_puzzle(conn, pair, archetype, symbol, backend, floor_themes=floor_themes)
             stats["puzzle"] += 1
 
     # ── Lore (4) ──
     for _ in range(4):
-        room = _pick_rooms(rooms_by_floor, [1, 2, 3, 4], 1)
+        room = _pick_rooms(rooms_by_floor, list(range(1, NUM_FLOORS + 1)), 1)
         if room:
-            _place_lore_secret(conn, room[0], backend)
+            _place_lore_secret(conn, room[0], backend, floor_themes=floor_themes)
             stats["lore"] += 1
 
     # ── Stat-gated (3) — one POW, one SPD, one DEF ──
     for stat in ["pow", "spd", "def"]:
-        room = _pick_rooms(rooms_by_floor, [3, 4], 1)
+        room = _pick_rooms(rooms_by_floor, [5, 6, 7, 8], 1)
         if room:
-            _place_stat_gated_secret(conn, room[0], stat, backend)
+            _place_stat_gated_secret(conn, room[0], stat, backend, floor_themes=floor_themes)
             stats["stat_gated"] += 1
 
     # ── Breach (3) — inside Breach zone ──
@@ -167,12 +169,12 @@ def generate_secrets(
 
 
 def _place_observation_secret(conn: sqlite3.Connection, room: dict,
-                              backend: DummyBackend) -> None:
+                              backend: DummyBackend, floor_themes: dict = None) -> None:
     """Place an observation secret — tied to a room feature."""
     feature = random.choice(_OBSERVATION_FEATURES)
     floor = room["floor"]
     name = f"Hidden Detail in {room['name']}"
-    theme = _floor_theme(floor)
+    theme = _floor_theme(floor, floor_themes)
     direction = random.choice(["eastern", "western", "northern", "southern"])
 
     hint1 = backend.generate_hint(1, floor, theme=theme)
@@ -199,10 +201,10 @@ def _place_observation_secret(conn: sqlite3.Connection, room: dict,
 
 
 def _place_single_puzzle(conn: sqlite3.Connection, room: dict,
-                         backend: DummyBackend) -> None:
+                         backend: DummyBackend, floor_themes: dict = None) -> None:
     """Place a single-room puzzle secret."""
     floor = room["floor"]
-    theme = _floor_theme(floor)
+    theme = _floor_theme(floor, floor_themes)
     name = f"Puzzle in {room['name']}"
     desc = "Symbols cover the walls. A pattern emerges."
 
@@ -227,10 +229,10 @@ def _place_single_puzzle(conn: sqlite3.Connection, room: dict,
 
 def _place_multi_puzzle(conn: sqlite3.Connection, rooms: list[dict],
                         archetype: str, symbol: str,
-                        backend: DummyBackend) -> None:
+                        backend: DummyBackend, floor_themes: dict = None) -> None:
     """Place a multi-room puzzle across 2+ rooms."""
     floor = rooms[0]["floor"]
-    theme = _floor_theme(floor)
+    theme = _floor_theme(floor, floor_themes)
     group_id = f"puzzle_{floor}_{symbol}"
 
     for i, room in enumerate(rooms):
@@ -259,10 +261,10 @@ def _place_multi_puzzle(conn: sqlite3.Connection, rooms: list[dict],
 
 
 def _place_lore_secret(conn: sqlite3.Connection, room: dict,
-                       backend: DummyBackend) -> None:
+                       backend: DummyBackend, floor_themes: dict = None) -> None:
     """Place a lore secret — tied to NPC dialogue."""
     floor = room["floor"]
-    theme = _floor_theme(floor)
+    theme = _floor_theme(floor, floor_themes)
     name = f"Lore of {room['name']}"
     desc = "Ancient knowledge rewards the attentive."
 
@@ -286,10 +288,11 @@ def _place_lore_secret(conn: sqlite3.Connection, room: dict,
 
 
 def _place_stat_gated_secret(conn: sqlite3.Connection, room: dict,
-                              stat: str, backend: DummyBackend) -> None:
+                              stat: str, backend: DummyBackend,
+                              floor_themes: dict = None) -> None:
     """Place a stat-gated secret (POW/SPD/DEF)."""
     floor = room["floor"]
-    theme = _floor_theme(floor)
+    theme = _floor_theme(floor, floor_themes)
     info = _STAT_GATED[stat]
     name = f"{stat.upper()} Challenge in {room['name']}"
 
@@ -372,8 +375,10 @@ def _pick_rooms(rooms_by_floor: dict, floors: list[int], count: int) -> list[dic
     return chosen
 
 
-def _floor_theme(floor: int) -> str:
+def _floor_theme(floor: int, floor_themes: dict = None) -> str:
     """Get floor theme name."""
+    if floor_themes and floor in floor_themes:
+        return floor_themes[floor].get("floor_name", "Unknown Depths")
     from config import FLOOR_THEMES
     return FLOOR_THEMES.get(floor, "Unknown Depths")
 

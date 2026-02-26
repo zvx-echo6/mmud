@@ -24,12 +24,14 @@ from src.generation.narrative import DummyBackend
 
 def generate_bounties(
     conn: sqlite3.Connection, backend: Optional[DummyBackend] = None,
+    floor_themes: dict = None,
 ) -> dict:
     """Generate the full bounty pool for the epoch.
 
     Args:
         conn: Database connection (rooms and some monsters must exist).
         backend: Narrative backend.
+        floor_themes: Per-epoch floor sub-themes dict (optional).
 
     Returns:
         Stats dict with total and per-phase counts.
@@ -62,7 +64,7 @@ def generate_bounties(
 
             room_id = rooms["id"]
             floor = rooms["floor"]
-            theme = _floor_theme(floor)
+            theme = _floor_theme(floor, floor_themes)
 
             # Generate bounty monster
             hp_range = _hp_range_for_phase(phase_name)
@@ -140,6 +142,8 @@ def _bounty_gold(tier: int) -> tuple[int, int]:
     return base_min.get(tier, 5), base_max.get(tier, 15)
 
 
-def _floor_theme(floor: int) -> str:
+def _floor_theme(floor: int, floor_themes: dict = None) -> str:
+    if floor_themes and floor in floor_themes:
+        return floor_themes[floor].get("floor_name", "Unknown Depths")
     from config import FLOOR_THEMES
     return FLOOR_THEMES.get(floor, "Unknown Depths")

@@ -1,4 +1,4 @@
-"""Tests for floor boss mechanics (12 mechanics across 4 floor tables)."""
+"""Tests for floor boss mechanics across all floor tables."""
 
 import json
 import sqlite3

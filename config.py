@@ -116,9 +116,23 @@ TUTORIAL_MONSTER_NAMES = [
 # DUNGEON
 # =============================================================================
 
-NUM_FLOORS = 4
-ROOMS_PER_FLOOR_MIN = 15
-ROOMS_PER_FLOOR_MAX = 20
+NUM_FLOORS = 8
+
+# Target room ranges per floor — worldgen tunes branches to hit these
+ROOMS_PER_FLOOR = {
+    1: (6, 10),    # The Threshold — compact, learnable
+    2: (8, 12),    # Opening up
+    3: (10, 14),   # The sprawl
+    4: (12, 16),   # Peak complexity
+    5: (12, 16),   # Post-breach density
+    6: (10, 14),   # Tightening
+    7: (8, 12),    # The funnel
+    8: (6, 8),     # The Bottom — nowhere to hide
+}
+
+# Legacy fallbacks (used if floor not in ROOMS_PER_FLOOR)
+ROOMS_PER_FLOOR_MIN = 10
+ROOMS_PER_FLOOR_MAX = 14
 BRANCHES_PER_FLOOR = 3        # Hub-spoke layout, 3-4 branches
 ROOMS_PER_BRANCH_MIN = 3
 ROOMS_PER_BRANCH_MAX = 5
@@ -132,8 +146,18 @@ FLOOR_THEMES = {
     1: "Sunken Halls",
     2: "Fungal Depths",
     3: "Ember Caverns",
-    4: "Void Reach",
+    4: "Iron Labyrinth",
+    5: "Blighted Wastes",
+    6: "Crystalline Abyss",
+    7: "Shadow Gauntlet",
+    8: "Void Reach",
 }
+
+# Boss gate traversal
+BOSS_GATE_ENABLED = True
+FREE_TRAVERSAL_ON_CLEARED = True
+FAST_TRAVEL_ENABLED = True
+MONSTER_RETREAT_ON_CLEARED = True
 
 # =============================================================================
 # COMBAT
@@ -209,9 +233,9 @@ TEMP_BUFF_ROUNDS = 5
 
 BOUNTIES_PER_EPOCH = 40
 BOUNTY_PHASE_DISTRIBUTION = {
-    "early":  {"count": 15, "days": (1, 10),  "floors": (1, 2)},
-    "mid":    {"count": 15, "days": (11, 20), "floors": (2, 3)},
-    "late":   {"count": 10, "days": (21, 30), "floors": (3, 4)},
+    "early":  {"count": 15, "days": (1, 10),  "floors": (1, 3)},
+    "mid":    {"count": 15, "days": (11, 20), "floors": (3, 6)},
+    "late":   {"count": 10, "days": (21, 30), "floors": (6, 8)},
 }
 BOUNTY_ACTIVE_MAX = 2             # 1-2 active at a time
 BOUNTY_REGEN_RATE = 0.05          # 5% max HP per 8 hours
@@ -257,18 +281,12 @@ HINT_TIERS = {
 # =============================================================================
 
 HTL_REGEN_ROOMS_PER_DAY = {
-    1: 3,    # Solo gains 1-3/day. Manageable.
-    2: 5,    # Solo loses ground. Two players gain slowly.
-    3: 7,    # Needs 2-3 consistent players.
-    4: 9,    # Serious coordination required.
+    1: 2, 2: 3, 3: 4, 4: 5, 5: 6, 6: 7, 7: 8, 8: 10,
 }
 
 # Checkpoints per floor
 HTL_CHECKPOINTS_PER_FLOOR = {
-    1: 3,    # Hub, midpoint, stairway
-    2: 3,
-    3: 3,
-    4: 1,    # The Warden — epoch win condition
+    1: 3, 2: 3, 3: 3, 4: 3, 5: 3, 6: 2, 7: 2, 8: 1,
 }
 
 # Checkpoint establishment: clear cluster within one regen window, then kill floor boss
@@ -297,12 +315,36 @@ FLOOR_BOSS_MECHANICS = {
         "summoner",            # Spawns add each session, must kill first
         "cursed",              # Debuffs top damage dealer next login
     ],
-    4: 2,  # Roll 2 from ALL tables above combined
+    4: [  # Roll 1 — resource warfare
+        "leech",         # Heals % of damage dealt
+        "shield_swap",   # Alternates physical/magic immunity
+        "echo_strike",   # Repeats last attack pattern
+        "corrosion",     # Reduces player DEF each round
+    ],
+    5: [  # Roll 1 — spatial control
+        "mirror_stance",  # Copies player's highest stat
+        "void_pulse",     # AoE damage every 3 rounds
+        "chain_bind",     # Flee requires 2 attempts
+        "hollow_guard",   # Immune until hit 3 times in a session
+    ],
+    6: [  # Roll 1 — endurance tests
+        "soul_drain",     # Drains resource on hit
+        "frost_lock",     # Halves player SPD
+        "shadow_clone",   # 50% chance attack hits clone (no damage)
+        "blinding_aura",  # Player misses 30% of attacks
+    ],
+    7: [  # Roll 1 — final gauntlet
+        "null_field",     # Disables gear bonuses
+        "time_warp",      # Boss acts twice per round
+        "gravity_well",   # Flee always fails
+        "necrotic_surge",  # Damage increases each round
+    ],
+    8: 2,  # Warden: roll 2 from ALL tables above combined
 }
 
-# Warden (floor 4 boss)
-WARDEN_HP_MIN = 300
-WARDEN_HP_MAX = 500
+# Warden (floor 8 boss)
+WARDEN_HP_MIN = 500
+WARDEN_HP_MAX = 800
 WARDEN_REGEN_RATE = 0.03         # 3% per 8 hours (same as raid boss)
 WARDEN_REGEN_INTERVAL_HOURS = 8
 
@@ -368,7 +410,7 @@ ESCAPE_SPAWN_RATE_MULTIPLIER = 2.0  # Double monster spawns on all floors
 
 BREACH_ROOMS_MIN = 5
 BREACH_ROOMS_MAX = 8
-BREACH_CONNECTS_FLOORS = (2, 3)  # Opens between floors 2 and 3
+BREACH_CONNECTS_FLOORS_RANGE = (4, 6)  # Randomized each epoch between floors 4-6
 BREACH_SECRETS = 3               # Always 3 Breach-type secrets
 
 BREACH_MINI_EVENTS = [

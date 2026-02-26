@@ -1,10 +1,10 @@
 """
 Breach zone generation for MMUD.
-Generates 5-8 rooms connecting floors 2-3, with a mini-event and mini-boss.
+Generates 5-8 rooms connecting two adjacent floors, with a mini-event and mini-boss.
 
 Layout:
-  - 5-8 rooms forming a mini-zone bridging floors 2 and 3
-  - Entry point connected to a room on floor 2, exit to floor 3
+  - 5-8 rooms forming a mini-zone bridging two floors (randomized 4-6 range)
+  - Entry point connected to the lower floor, exit to the upper floor
   - One mini-boss placed in the deepest room
   - 3 breach secrets placed by secretgen (after breach rooms exist)
   - Random mini-event selected from 4 types
@@ -23,7 +23,7 @@ import sqlite3
 from typing import Optional
 
 from config import (
-    BREACH_CONNECTS_FLOORS,
+    BREACH_CONNECTS_FLOORS_RANGE,
     BREACH_MINI_EVENTS,
     BREACH_ROOMS_MAX,
     BREACH_ROOMS_MIN,
@@ -42,7 +42,7 @@ def generate_breach(
     """Generate the Breach zone and select a mini-event.
 
     Args:
-        conn: Database connection (floors 2-3 rooms must exist).
+        conn: Database connection (breach floor rooms must exist).
         backend: Narrative backend.
 
     Returns:
@@ -66,9 +66,11 @@ def generate_breach(
         "mini_boss_id": None,
     }
 
-    floor_entry, floor_exit = BREACH_CONNECTS_FLOORS
+    # Randomize which floors the breach connects each epoch
+    floor_entry = random.randint(BREACH_CONNECTS_FLOORS_RANGE[0], BREACH_CONNECTS_FLOORS_RANGE[1] - 1)
+    floor_exit = floor_entry + 1
 
-    # Find entry point on floor 2 (non-hub room)
+    # Find entry point on lower floor (non-hub room)
     entry_room = conn.execute(
         """SELECT id FROM rooms
            WHERE floor = ? AND is_hub = 0 AND is_vault = 0 AND is_breach = 0
@@ -76,7 +78,7 @@ def generate_breach(
         (floor_entry,),
     ).fetchone()
 
-    # Find exit point on floor 3 (non-hub room)
+    # Find exit point on upper floor (non-hub room)
     exit_room = conn.execute(
         """SELECT id FROM rooms
            WHERE floor = ? AND is_hub = 0 AND is_vault = 0 AND is_breach = 0
@@ -92,7 +94,7 @@ def generate_breach(
     prev_room_id = entry_room["id"]
 
     for i in range(num_rooms):
-        # Breach rooms sit between floors 2 and 3
+        # Breach rooms sit between the two connected floors
         floor = floor_entry if i < num_rooms // 2 else floor_exit
         name = backend.generate_breach_name()
         if i > 0:
@@ -123,7 +125,7 @@ def generate_breach(
         )
         prev_room_id = room_id
 
-    # Connect last breach room to exit on floor 3
+    # Connect last breach room to exit on upper floor
     if breach_room_ids:
         last_breach = breach_room_ids[-1]
         conn.execute(

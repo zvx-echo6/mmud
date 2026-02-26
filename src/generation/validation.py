@@ -49,6 +49,7 @@ def validate_epoch(conn: sqlite3.Connection) -> dict:
     _validate_template_variables(conn, errors, warnings)
     _validate_spell_names(conn, errors, warnings)
     _validate_lore_fragments(conn, errors, warnings)
+    _validate_floor_themes(conn, errors, warnings)
 
     return {"errors": errors, "warnings": warnings}
 
@@ -369,3 +370,38 @@ def _validate_town(conn: sqlite3.Connection,
     ).fetchall()
     if monsters:
         errors.append(f"Floor 0 has {len(monsters)} monsters (should be 0)")
+
+
+def _validate_floor_themes(conn: sqlite3.Connection,
+                            errors: list, warnings: list) -> None:
+    """Check floor themes table has correct entries."""
+    rows = conn.execute(
+        "SELECT floor, floor_name, atmosphere, narrative_beat, floor_transition FROM floor_themes"
+    ).fetchall()
+
+    if not rows:
+        warnings.append("No floor themes found in database")
+        return
+
+    if len(rows) != NUM_FLOORS:
+        errors.append(f"floor_themes has {len(rows)} rows, expected {NUM_FLOORS}")
+
+    found_floors = set()
+    for row in rows:
+        floor = row["floor"]
+        found_floors.add(floor)
+
+        for field in ("floor_name", "atmosphere", "narrative_beat", "floor_transition"):
+            val = row[field]
+            if not val:
+                errors.append(f"Floor {floor} theme missing {field}")
+            elif len(val) > LLM_OUTPUT_CHAR_LIMIT:
+                errors.append(
+                    f"Floor {floor} theme {field} exceeds {LLM_OUTPUT_CHAR_LIMIT} chars: "
+                    f"{len(val)}"
+                )
+
+    expected_floors = set(range(1, NUM_FLOORS + 1))
+    missing = expected_floors - found_floors
+    if missing:
+        errors.append(f"Floor themes missing for floors: {sorted(missing)}")

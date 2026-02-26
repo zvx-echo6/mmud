@@ -90,8 +90,9 @@ def create_player(
            (account_id, name, class, hp, hp_max, pow, def, spd,
             resource, resource_max,
             dungeon_actions_remaining, social_actions_remaining,
-            special_actions_remaining, last_login, room_id)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            special_actions_remaining, last_login, room_id,
+            deepest_floor_reached)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (
             account_id, name, cls, hp, hp,
             stats["POW"], stats["DEF"], stats["SPD"],
@@ -101,6 +102,7 @@ def create_player(
             SPECIAL_ACTIONS_PER_DAY,
             datetime.now(timezone.utc).isoformat(),
             center_id,
+            1,
         ),
     )
     conn.commit()

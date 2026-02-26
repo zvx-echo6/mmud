@@ -49,6 +49,32 @@ def reset_epoch_tables(conn: sqlite3.Connection) -> None:
     Preserves: accounts, titles, hall_of_fame, hall_of_fame_participants.
     Resets everything else.
     """
+    # Ensure floor_themes table exists (migration for pre-existing DBs)
+    conn.execute("""CREATE TABLE IF NOT EXISTS floor_themes (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        floor INTEGER NOT NULL,
+        floor_name TEXT NOT NULL,
+        atmosphere TEXT NOT NULL,
+        narrative_beat TEXT NOT NULL,
+        floor_transition TEXT NOT NULL
+    )""")
+
+    # Ensure floor_progress table exists (migration for pre-existing DBs)
+    conn.execute("""CREATE TABLE IF NOT EXISTS floor_progress (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        player_id INTEGER NOT NULL REFERENCES players(id),
+        floor INTEGER NOT NULL,
+        boss_killed INTEGER DEFAULT 0,
+        boss_killed_at DATETIME,
+        UNIQUE(player_id, floor)
+    )""")
+
+    # Ensure deepest_floor_reached column exists
+    try:
+        conn.execute("SELECT deepest_floor_reached FROM players LIMIT 0")
+    except Exception:
+        conn.execute("ALTER TABLE players ADD COLUMN deepest_floor_reached INTEGER DEFAULT 1")
+
     epoch_tables = [
         "broadcast_seen", "broadcasts", "player_messages", "mail",
         "epoch_votes", "npc_journals", "npc_dialogue", "narrative_skins",
@@ -58,6 +84,7 @@ def reset_epoch_tables(conn: sqlite3.Connection) -> None:
         "bounty_contributors", "bounties",
         "discovery_buffs", "secret_progress", "secrets",
         "inventory", "monsters", "room_exits", "rooms", "items",
+        "floor_themes", "floor_progress",
         "players", "epoch",
     ]
     for table in epoch_tables:

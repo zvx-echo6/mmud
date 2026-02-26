@@ -8,7 +8,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 import sqlite3
 
 from config import (
-    BREACH_CONNECTS_FLOORS,
+    BREACH_CONNECTS_FLOORS_RANGE,
     BREACH_MINI_EVENTS,
     BREACH_ROOMS_MAX,
     BREACH_ROOMS_MIN,
@@ -67,10 +67,14 @@ def test_breach_rooms_on_correct_floors():
     breach_rooms = conn.execute(
         "SELECT floor FROM rooms WHERE is_breach = 1"
     ).fetchall()
-    floor_entry, floor_exit = BREACH_CONNECTS_FLOORS
+    # Breach floors are randomized within BREACH_CONNECTS_FLOORS_RANGE
+    valid_floors = set()
+    for f in range(BREACH_CONNECTS_FLOORS_RANGE[0], BREACH_CONNECTS_FLOORS_RANGE[1]):
+        valid_floors.add(f)
+        valid_floors.add(f + 1)
     for r in breach_rooms:
-        assert r["floor"] in (floor_entry, floor_exit), (
-            f"Breach room on floor {r['floor']}, expected {floor_entry} or {floor_exit}"
+        assert r["floor"] in valid_floors, (
+            f"Breach room on floor {r['floor']}, expected one of {sorted(valid_floors)}"
         )
 
 
@@ -93,13 +97,13 @@ def test_breach_rooms_connected():
 
 
 def test_breach_connects_to_main_dungeon():
-    """Breach should connect to rooms on floor 2 and floor 3."""
+    """Breach should connect to main dungeon rooms on adjacent floors."""
     conn, stats = _generate()
     breach_ids = set(stats["breach_room_ids"])
     if not breach_ids:
         return
 
-    # First breach room should connect to a non-breach room on floor 2
+    # First breach room should connect to a non-breach room on the entry floor
     first_breach = stats["breach_room_ids"][0]
     incoming = conn.execute(
         """SELECT re.from_room_id FROM room_exits re
@@ -109,7 +113,7 @@ def test_breach_connects_to_main_dungeon():
     ).fetchall()
     assert len(incoming) > 0, "First breach room has no connection from main dungeon"
 
-    # Last breach room should connect to a non-breach room on floor 3
+    # Last breach room should connect to a non-breach room on the exit floor
     last_breach = stats["breach_room_ids"][-1]
     outgoing = conn.execute(
         """SELECT re.to_room_id FROM room_exits re

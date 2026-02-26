@@ -122,22 +122,24 @@ def test_bounty_monsters_in_valid_rooms():
 
 def test_early_bounties_on_correct_floors():
     conn, stats = _generate()
+    phase = BOUNTY_PHASE_DISTRIBUTION["early"]
     early = conn.execute(
         "SELECT floor_min, floor_max FROM bounties WHERE phase = 'early'"
     ).fetchall()
     for b in early:
-        assert b["floor_min"] >= 1
-        assert b["floor_max"] <= 2
+        assert b["floor_min"] >= phase["floors"][0]
+        assert b["floor_max"] <= phase["floors"][1]
 
 
 def test_late_bounties_on_correct_floors():
     conn, stats = _generate()
+    phase = BOUNTY_PHASE_DISTRIBUTION["late"]
     late = conn.execute(
         "SELECT floor_min, floor_max FROM bounties WHERE phase = 'late'"
     ).fetchall()
     for b in late:
-        assert b["floor_min"] >= 3
-        assert b["floor_max"] <= 4
+        assert b["floor_min"] >= phase["floors"][0]
+        assert b["floor_max"] <= phase["floors"][1]
 
 
 # ── Available day ordering ──

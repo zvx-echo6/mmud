@@ -16,6 +16,10 @@ from config import (
     CHARGE_RESOURCE_COST,
     CLASSES,
     DUNGEON_ACTIONS_PER_DAY,
+    FAST_TRAVEL_ENABLED,
+    FREE_TRAVERSAL_ON_CLEARED,
+    MONSTER_RETREAT_ON_CLEARED,
+    NUM_FLOORS,
     RESOURCE_NAMES,
     RESOURCE_REGEN_REST,
     SNEAK_BYPASS_CHANCE,
@@ -56,6 +60,21 @@ FREE_ACTIONS = {
     "enter", "town", "leave", "bounty", "read", "helpful", "message", "mail",
     "grist", "healer", "merchant", "rumor",
 }
+
+
+def _is_player_floor_cleared(conn: sqlite3.Connection, player: dict) -> bool:
+    """Check if the player's current floor boss is dead and they've visited it."""
+    floor = player.get("floor", 0)
+    if floor <= 0:
+        return False
+    try:
+        row = conn.execute(
+            "SELECT boss_killed FROM floor_progress WHERE player_id = ? AND floor = ?",
+            (player["id"], floor),
+        ).fetchone()
+        return row is not None and row["boss_killed"] == 1
+    except Exception:
+        return False
 
 
 def handle_action(
@@ -113,7 +132,8 @@ def handle_action(
         return _smart_error(player)
 
     # Check action budget for dungeon-cost actions
-    if command in DUNGEON_COST_ACTIONS:
+    # Skip pre-check for "move" — the handler does its own check with free traversal logic
+    if command in DUNGEON_COST_ACTIONS and command != "move":
         if player["state"] in ("dungeon", "combat"):
             if player["dungeon_actions_remaining"] <= 0:
                 return fmt("No dungeon actions left today! Return to town and rest.")
@@ -196,10 +216,11 @@ def action_move(conn: sqlite3.Connection, player: dict, args: list[str]) -> str:
 
     direction = args[0].lower()
 
-    # Only charge dungeon action in the dungeon
+    # Only charge dungeon action in the dungeon (free on cleared floors)
     if player["state"] == "dungeon":
-        if not player_model.use_dungeon_action(conn, player["id"]):
-            return fmt("No dungeon actions left today!")
+        if not (FREE_TRAVERSAL_ON_CLEARED and _is_player_floor_cleared(conn, player)):
+            if not player_model.use_dungeon_action(conn, player["id"]):
+                return fmt("No dungeon actions left today!")
 
     room, error = world_mgr.move_player(conn, player, direction)
     if error:
@@ -217,9 +238,50 @@ def action_move(conn: sqlite3.Connection, player: dict, args: list[str]) -> str:
             player_model.update_state(conn, player["id"], town_location=None)
         return fmt_room(room["name"], room["description_short"], exit_dirs)
 
+    # Auto-record floor boss visit if boss is dead in this room
+    dead_boss = conn.execute(
+        "SELECT id FROM monsters WHERE room_id = ? AND is_floor_boss = 1 AND hp <= 0",
+        (room["id"],),
+    ).fetchone()
+    if dead_boss:
+        floor = room.get("floor", 0)
+        conn.execute(
+            """INSERT OR IGNORE INTO floor_progress
+               (player_id, floor, boss_killed, boss_killed_at)
+               VALUES (?, ?, 1, CURRENT_TIMESTAMP)""",
+            (player["id"], floor),
+        )
+        new_deepest = floor + 1
+        if new_deepest <= NUM_FLOORS:
+            conn.execute(
+                "UPDATE players SET deepest_floor_reached = MAX(deepest_floor_reached, ?) WHERE id = ?",
+                (new_deepest, player["id"]),
+            )
+        conn.commit()
+
+    # Refresh cleared status after potential boss visit recording
+    # (need updated player for floor cleared check)
+    updated_player = player_model.get_player(conn, player["id"])
+    floor_cleared = FREE_TRAVERSAL_ON_CLEARED and _is_player_floor_cleared(conn, updated_player or player)
+
+    # Floor transition text overrides description for this one move
+    transition = room.get("_floor_transition")
+    if transition:
+        monster = world_data.get_room_monster(conn, room["id"])
+        if monster:
+            if MONSTER_RETREAT_ON_CLEARED and floor_cleared:
+                desc = transition + f" A {monster['name']} retreats deeper."
+                return fmt_room(room["name"], desc, exit_dirs)
+            desc = transition + f" {monster['name']} blocks your path!"
+            return fmt_room(room["name"], desc, exit_dirs)
+        return fmt_room(room["name"], transition, exit_dirs)
+
     # Dungeon: check for monster
     monster = world_data.get_room_monster(conn, room["id"])
     if monster:
+        if MONSTER_RETREAT_ON_CLEARED and floor_cleared:
+            desc = room["description_short"] + f" A {monster['name']} retreats deeper."
+            return fmt_room(room["name"], desc, exit_dirs)
         desc = room["description_short"] + f" {monster['name']} blocks your path!"
         return fmt_room(room["name"], desc, exit_dirs)
 
@@ -290,6 +352,27 @@ def action_fight(conn: sqlite3.Connection, player: dict, args: list[str]) -> str
         player_model.award_gold(conn, player["id"], gold)
 
         parts = [f"{result.narrative} +{xp}xp +{gold}g"]
+
+        # Floor boss kill tracking
+        if monster.get("is_floor_boss"):
+            floor = player.get("floor", 0)
+            conn.execute(
+                """INSERT OR REPLACE INTO floor_progress
+                   (player_id, floor, boss_killed, boss_killed_at)
+                   VALUES (?, ?, 1, CURRENT_TIMESTAMP)""",
+                (player["id"], floor),
+            )
+            new_deepest = floor + 1
+            if new_deepest <= NUM_FLOORS:
+                conn.execute(
+                    "UPDATE players SET deepest_floor_reached = MAX(deepest_floor_reached, ?) WHERE id = ?",
+                    (new_deepest, player["id"]),
+                )
+            conn.commit()
+            broadcast_sys.create_broadcast(
+                conn, 1,
+                f"{player['name']} felled {monster['name']}. Floor {floor} falls silent.",
+            )
 
         # Check bounty completion
         if bounty:
@@ -391,7 +474,7 @@ def action_stats(conn: sqlite3.Connection, player: dict, args: list[str]) -> str
 def action_enter_dungeon(
     conn: sqlite3.Connection, player: dict, args: list[str]
 ) -> str:
-    """Enter the dungeon from town."""
+    """Enter the dungeon from town. Supports fast travel: ENTER <floor>."""
     if player["state"] != "town":
         return fmt("You're already in the dungeon.")
 
@@ -400,12 +483,32 @@ def action_enter_dungeon(
     if center and player.get("room_id") and player["room_id"] != center["id"]:
         return fmt("Head to the bar first. The dungeon entrance is there.")
 
-    room = world_mgr.enter_dungeon(conn, player)
+    # Parse optional floor argument for fast travel
+    target_floor = 0
+    if args and FAST_TRAVEL_ENABLED:
+        try:
+            target_floor = int(args[0])
+        except ValueError:
+            pass
+        if target_floor > 0:
+            deepest = player.get("deepest_floor_reached", 1) or 1
+            if target_floor > deepest:
+                return fmt(f"Can't reach F{target_floor}. Deepest unlocked: F{deepest}.")
+            if target_floor > NUM_FLOORS:
+                return fmt(f"Floor {target_floor} doesn't exist.")
+
+    room = world_mgr.enter_dungeon(conn, player, target_floor=target_floor)
     if not room:
         return fmt("The dungeon entrance is sealed.")
 
     exits = world_data.get_room_exits(conn, room["id"])
     exit_dirs = [e["direction"] for e in exits]
+
+    # Show floor transition text if available
+    floor = target_floor if target_floor > 0 else 1
+    transition = world_mgr._get_floor_transition(conn, floor)
+    if transition:
+        return fmt_room(room["name"], transition, exit_dirs)
     return fmt_room(room["name"], room["description"], exit_dirs)
 
 

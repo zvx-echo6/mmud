@@ -4,9 +4,9 @@ Generates floor bosses (1 per floor) and pre-rolls raid boss mechanics.
 
 Floor bosses:
   - One per floor, rolls 1 mechanic from that floor's table
-  - Floor 4 "Warden" rolls 2 mechanics from all tables combined
-  - Warden HP 300-500, 3%/8h regen
-  - Other floor bosses scale HP/stats by floor
+  - Floor 8 "Warden" rolls 2 mechanics from all tables combined
+  - Warden HP 500-800, 3%/8h regen
+  - Other floor bosses scale HP/stats by formula
 
 Raid boss:
   - Not placed at generation time — HP scales to active player count
@@ -35,12 +35,14 @@ from src.generation.narrative import DummyBackend
 
 def generate_bosses(
     conn: sqlite3.Connection, backend: Optional[DummyBackend] = None,
+    floor_themes: dict = None,
 ) -> dict:
     """Generate floor bosses and pre-roll raid boss mechanics.
 
     Args:
         conn: Database connection (rooms must exist).
         backend: Narrative backend.
+        floor_themes: Per-epoch floor sub-themes dict (optional).
 
     Returns:
         Stats dict with floor_bosses, raid_boss_mechanics.
@@ -52,7 +54,8 @@ def generate_bosses(
 
     # ── Floor bosses ──
     for floor in range(1, NUM_FLOORS + 1):
-        boss_id = _generate_floor_boss(conn, floor, backend)
+        floor_theme = floor_themes.get(floor) if floor_themes else None
+        boss_id = _generate_floor_boss(conn, floor, backend, floor_theme=floor_theme)
         if boss_id:
             stats["floor_bosses"] += 1
 
@@ -66,6 +69,7 @@ def generate_bosses(
 
 def _generate_floor_boss(
     conn: sqlite3.Connection, floor: int, backend: DummyBackend,
+    floor_theme: dict = None,
 ) -> Optional[int]:
     """Generate a floor boss and place it in a room.
 
@@ -88,7 +92,7 @@ def _generate_floor_boss(
     room_id = room["id"]
 
     # Boss name and stats
-    name = backend.generate_boss_name(floor)
+    name = backend.generate_boss_name(floor, floor_theme=floor_theme)
     hp_max = _boss_hp(floor)
     pow_ = _boss_stat(floor, "pow")
     def_ = _boss_stat(floor, "def")
@@ -96,7 +100,7 @@ def _generate_floor_boss(
     xp = _boss_xp(floor)
     gold_min, gold_max = _boss_gold(floor)
 
-    # Floor 4 Warden gets special HP
+    # Final floor Warden gets special HP
     if floor == NUM_FLOORS:
         hp_max = random.randint(WARDEN_HP_MIN, WARDEN_HP_MAX)
 
@@ -174,17 +178,19 @@ def _pre_generate_raid_boss(
 def _roll_floor_boss_mechanics(floor: int) -> list[str]:
     """Roll mechanic(s) for a floor boss.
 
-    Floor 1-3: roll 1 from that floor's table.
-    Floor 4: roll 2 from all floor tables combined.
+    Floors 1-7: roll 1 from that floor's table.
+    Floor 8 (Warden): roll 2 from all floor tables combined.
     """
     mechanic_config = FLOOR_BOSS_MECHANICS.get(floor)
 
     if isinstance(mechanic_config, int):
-        # Floor 4: roll N from all tables combined
+        # Warden: roll N from all tables combined
         num_rolls = mechanic_config
         all_mechanics = []
-        for f in range(1, NUM_FLOORS):  # floors 1-3
-            all_mechanics.extend(FLOOR_BOSS_MECHANICS[f])
+        for f in range(1, NUM_FLOORS):  # floors 1 through NUM_FLOORS-1
+            table = FLOOR_BOSS_MECHANICS.get(f)
+            if isinstance(table, list):
+                all_mechanics.extend(table)
         return random.sample(all_mechanics, min(num_rolls, len(all_mechanics)))
     elif isinstance(mechanic_config, list):
         return [random.choice(mechanic_config)]
@@ -193,26 +199,28 @@ def _roll_floor_boss_mechanics(floor: int) -> list[str]:
 
 
 def _boss_hp(floor: int) -> int:
-    """Calculate floor boss HP. Scales significantly with floor."""
-    base = {1: 80, 2: 150, 3: 250, 4: 400}
-    hp = base.get(floor, 80)
+    """Calculate floor boss HP via formula.
+
+    F1≈105, F2≈160, F3≈225, F4≈300, F5≈385, F6≈480, F7≈585, F8=Warden.
+    """
+    if floor == NUM_FLOORS:
+        return random.randint(WARDEN_HP_MIN, WARDEN_HP_MAX)
+    hp = 60 + 40 * floor + 5 * floor * floor
     return hp + random.randint(-10, 20)
 
 
 def _boss_stat(floor: int, stat: str) -> int:
-    """Calculate floor boss stat (stronger than regular monsters)."""
-    base = {1: 6, 2: 9, 3: 13, 4: 17}
-    return base.get(floor, 6) + random.randint(0, 3)
+    """Calculate floor boss stat via formula (stronger than regular monsters)."""
+    base = min(4 + 2 * floor, 20)
+    return base + random.randint(0, 3)
 
 
 def _boss_xp(floor: int) -> int:
-    """Floor bosses give substantial XP."""
-    base = {1: 50, 2: 100, 3: 180, 4: 300}
-    return base.get(floor, 50) + random.randint(0, 20)
+    """Floor bosses give substantial XP, scaling by formula."""
+    xp = 30 + 20 * floor + 5 * floor * floor
+    return xp + random.randint(0, 20)
 
 
 def _boss_gold(floor: int) -> tuple[int, int]:
-    """Floor bosses drop more gold than regular monsters."""
-    base_min = {1: 20, 2: 40, 3: 70, 4: 120}
-    base_max = {1: 50, 2: 80, 3: 130, 4: 200}
-    return base_min.get(floor, 20), base_max.get(floor, 50)
+    """Floor bosses drop more gold than regular monsters, scaling by formula."""
+    return (10 + 15 * floor, 30 + 25 * floor)
