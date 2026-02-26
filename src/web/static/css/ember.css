@@ -435,8 +435,8 @@ body::before {
 }
 
 .class-badge.warrior { background: rgba(139,32,32,0.3); color: var(--blood-bright); border: 1px solid rgba(139,32,32,0.4); }
-.class-badge.guardian { background: rgba(90,138,74,0.2); color: var(--poison); border: 1px solid rgba(90,138,74,0.3); }
-.class-badge.scout { background: rgba(122,154,176,0.2); color: var(--frost); border: 1px solid rgba(122,154,176,0.3); }
+.class-badge.caster { background: rgba(90,138,74,0.2); color: var(--poison); border: 1px solid rgba(90,138,74,0.3); }
+.class-badge.rogue { background: rgba(122,154,176,0.2); color: var(--frost); border: 1px solid rgba(122,154,176,0.3); }
 
 /* ═══ BROADCAST LOG ═══ */
 .broadcast-log {

@@ -6,6 +6,7 @@ Handles room transitions, dungeon entry/exit, floor navigation.
 import sqlite3
 from typing import Optional
 
+from config import RESOURCE_REGEN_TOWN
 from src.models import world as world_model
 
 
@@ -74,13 +75,14 @@ def move_player(
 
 
 def return_to_town(conn: sqlite3.Connection, player_id: int) -> None:
-    """Return a player to town."""
+    """Return a player to town. Restores some resource."""
     conn.execute(
         """UPDATE players SET
            state = 'town', floor = 0, room_id = NULL,
-           combat_monster_id = NULL, town_location = NULL
+           combat_monster_id = NULL, town_location = NULL,
+           resource = MIN(resource + ?, resource_max)
            WHERE id = ?""",
-        (player_id,),
+        (RESOURCE_REGEN_TOWN, player_id),
     )
     conn.commit()
 

@@ -63,7 +63,7 @@
           <span class="lb-rank{% if loop.index == 1 %} first{% elif loop.index == 2 %} second{% elif loop.index == 3 %} third{% endif %}">{{ loop.index }}</span>
           <div>
             <span class="lb-name">{{ player.name }}</span>
-            {% set class_abbr = {'warrior': 'WAR', 'guardian': 'GRD', 'scout': 'SCT'} %}
+            {% set class_abbr = {'warrior': 'WAR', 'caster': 'CST', 'rogue': 'ROG'} %}
             <span class="class-badge {{ player.class }}">{{ class_abbr.get(player.class, player.class[:3]|upper) }}</span>
             {% if player.handle %}
             <div class="lb-title">{{ player.handle }}</div>

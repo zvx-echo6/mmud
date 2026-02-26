@@ -36,13 +36,27 @@ GEAR_SLOTS = ["weapon", "armor", "trinket"]
 ITEM_TIERS = 6                # Tier 6 = endgame loot drops only
 BACKPACK_SIZE = 8
 
-# Classes — three pure, three hybrid, one generalist
+# Classes
 CLASSES = {
     "warrior":  {"POW": 3, "DEF": 2, "SPD": 1},
-    "guardian":  {"POW": 1, "DEF": 3, "SPD": 2},
-    "scout":    {"POW": 2, "DEF": 1, "SPD": 3},
-    # Hybrids and generalist TBD during implementation
+    "rogue":    {"POW": 2, "DEF": 1, "SPD": 3},
+    "caster":   {"POW": 1, "DEF": 1, "SPD": 2},
 }
+
+# Class resource system
+RESOURCE_MAX = 5
+RESOURCE_NAMES = {"warrior": "Focus", "rogue": "Tricks", "caster": "Mana"}
+RESOURCE_REGEN_DAYTICK = 2
+RESOURCE_REGEN_TOWN = 1
+RESOURCE_REGEN_REST = 1
+
+# Special ability constants
+CHARGE_RESOURCE_COST = 2
+CHARGE_DAMAGE_MULT = 1.5
+SNEAK_RESOURCE_COST = 1
+SNEAK_BYPASS_CHANCE = 0.85
+CAST_RESOURCE_COST = 1
+CAST_DAMAGE_MULT = 2.0
 
 # =============================================================================
 # DUNGEON

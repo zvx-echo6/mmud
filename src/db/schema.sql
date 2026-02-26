@@ -76,6 +76,8 @@ CREATE TABLE IF NOT EXISTS players (
     pow INTEGER NOT NULL,
     def INTEGER NOT NULL,
     spd INTEGER NOT NULL,
+    resource INTEGER DEFAULT 5,
+    resource_max INTEGER DEFAULT 5,
     gold_carried INTEGER DEFAULT 0,
     gold_banked INTEGER DEFAULT 0,
     state TEXT DEFAULT 'town',         -- town, dungeon, combat, dead

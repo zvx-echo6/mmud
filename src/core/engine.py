@@ -40,6 +40,14 @@ class GameEngine:
         except Exception:
             pass  # Column already exists
 
+        # Schema migration: add resource columns (idempotent)
+        try:
+            conn.execute("ALTER TABLE players ADD COLUMN resource INTEGER DEFAULT 5")
+            conn.execute("ALTER TABLE players ADD COLUMN resource_max INTEGER DEFAULT 5")
+            conn.commit()
+        except Exception:
+            pass  # Columns already exist
+
     def process_message(self, sender_id: str, sender_name: str, text: str) -> Optional[str]:
         """Process an inbound message and return a response.
 
@@ -104,7 +112,7 @@ class GameEngine:
         2. Player sends class choice → create character
 
         Uses a two-message flow:
-        - First contact: "Welcome! Pick class: W)arrior G)uardian S)cout"
+        - First contact: "Welcome! Pick class: W)arrior C)aster R)ogue"
         - Second contact: class letter → character created
         """
         # Check if they're picking a class
@@ -112,8 +120,8 @@ class GameEngine:
 
         class_map = {
             "w": "warrior", "warrior": "warrior",
-            "g": "guardian", "guardian": "guardian",
-            "s": "scout", "scout": "scout",
+            "c": "caster", "caster": "caster",
+            "r": "rogue", "rogue": "rogue",
         }
 
         if choice in class_map:
@@ -132,7 +140,7 @@ class GameEngine:
             )
 
         # First contact — show class picker
-        return fmt("Welcome to meshMUD! Pick class: W)arrior G)uardian S)cout")
+        return fmt("Welcome to meshMUD! Pick class: W)arrior C)aster R)ogue")
 
     def _maybe_queue_npc_dm(
         self, sender_id: str, player: dict, command: str

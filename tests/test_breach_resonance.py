@@ -34,7 +34,7 @@ def conn():
 def player(conn):
     """Player in a breach room with a secret."""
     acc = get_or_create_account(conn, "mesh_res", "PuzzlePlayer")
-    p = create_player(conn, acc, "PuzzlePlayer", "scout")
+    p = create_player(conn, acc, "PuzzlePlayer", "rogue")
 
     # Find a breach room with a secret
     secret_room = conn.execute(

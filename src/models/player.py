@@ -14,6 +14,7 @@ from config import (
     DEATH_GOLD_LOSS_PERCENT,
     DUNGEON_ACTIONS_PER_DAY,
     MAX_LEVEL,
+    RESOURCE_MAX,
     SOCIAL_ACTIONS_PER_DAY,
     SPECIAL_ACTIONS_PER_DAY,
     STAT_POINTS_PER_LEVEL,
@@ -24,8 +25,8 @@ from config import (
 # Base HP by class at level 1
 BASE_HP = {
     "warrior": 50,
-    "guardian": 45,
-    "scout": 40,
+    "rogue": 40,
+    "caster": 35,
 }
 
 
@@ -66,7 +67,7 @@ def create_player(
         conn: Database connection.
         account_id: Account ID from accounts table.
         name: Character name.
-        cls: Class name (warrior, guardian, scout).
+        cls: Class name (warrior, rogue, caster).
 
     Returns:
         Player dict from the database.
@@ -81,12 +82,14 @@ def create_player(
     cursor = conn.execute(
         """INSERT INTO players
            (account_id, name, class, hp, hp_max, pow, def, spd,
+            resource, resource_max,
             dungeon_actions_remaining, social_actions_remaining,
             special_actions_remaining, last_login)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (
             account_id, name, cls, hp, hp,
             stats["POW"], stats["DEF"], stats["SPD"],
+            RESOURCE_MAX, RESOURCE_MAX,
             DUNGEON_ACTIONS_PER_DAY,
             SOCIAL_ACTIONS_PER_DAY,
             SPECIAL_ACTIONS_PER_DAY,
@@ -158,6 +161,30 @@ def use_dungeon_action(conn: sqlite3.Connection, player_id: int) -> bool:
     return True
 
 
+def use_resource(conn: sqlite3.Connection, player_id: int, cost: int = 1) -> bool:
+    """Decrement resource. Returns False if insufficient."""
+    row = conn.execute(
+        "SELECT resource FROM players WHERE id = ?", (player_id,)
+    ).fetchone()
+    if not row or row["resource"] < cost:
+        return False
+    conn.execute(
+        "UPDATE players SET resource = resource - ? WHERE id = ?",
+        (cost, player_id),
+    )
+    conn.commit()
+    return True
+
+
+def restore_resource(conn: sqlite3.Connection, player_id: int, amount: int) -> None:
+    """Restore resource up to resource_max."""
+    conn.execute(
+        "UPDATE players SET resource = MIN(resource + ?, resource_max) WHERE id = ?",
+        (amount, player_id),
+    )
+    conn.commit()
+
+
 def apply_death(conn: sqlite3.Connection, player_id: int) -> dict:
     """Apply death penalties and return loss details.
 
@@ -180,11 +207,14 @@ def apply_death(conn: sqlite3.Connection, player_id: int) -> dict:
     new_hp = max(1, player["hp_max"] // 2)
     new_actions = max(0, player["dungeon_actions_remaining"] - 1)
 
+    new_resource = max(1, player.get("resource_max", RESOURCE_MAX) // 2)
+
     conn.execute(
         """UPDATE players SET
            gold_carried = gold_carried - ?,
            xp = xp - ?,
            hp = ?,
+           resource = ?,
            state = 'town',
            floor = 0,
            room_id = NULL,
@@ -192,7 +222,7 @@ def apply_death(conn: sqlite3.Connection, player_id: int) -> dict:
            town_location = NULL,
            dungeon_actions_remaining = ?
            WHERE id = ?""",
-        (gold_lost, xp_lost, new_hp, new_actions, player_id),
+        (gold_lost, xp_lost, new_hp, new_resource, new_actions, player_id),
     )
     conn.commit()
     return {"gold_lost": gold_lost, "xp_lost": xp_lost}

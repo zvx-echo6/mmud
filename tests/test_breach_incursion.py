@@ -36,7 +36,7 @@ def conn():
 def player(conn):
     """Player in a breach room."""
     acc = get_or_create_account(conn, "mesh_inc", "IncursionPlayer")
-    p = create_player(conn, acc, "IncursionPlayer", "guardian")
+    p = create_player(conn, acc, "IncursionPlayer", "caster")
     room = conn.execute(
         "SELECT id FROM rooms WHERE is_breach = 1 AND htl_cleared = 0 ORDER BY id LIMIT 1"
     ).fetchone()

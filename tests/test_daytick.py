@@ -43,13 +43,13 @@ def _make_db(day: int = 1) -> sqlite3.Connection:
            VALUES (1, 1, 'Hero', 'warrior', 20, 20, 3, 2, 1, 'dungeon', 1, 3, 0, 0, 2)"""
     )
     conn.execute(
-        """INSERT INTO accounts (id, mesh_id, handle) VALUES (2, '!def', 'Scout')"""
+        """INSERT INTO accounts (id, mesh_id, handle) VALUES (2, '!def', 'Rogue')"""
     )
     conn.execute(
         """INSERT INTO players (id, account_id, name, class, hp, hp_max, pow, def, spd,
            state, floor, dungeon_actions_remaining, social_actions_remaining,
            special_actions_remaining, bard_tokens)
-           VALUES (2, 2, 'Scout', 'scout', 18, 20, 2, 1, 3, 'town', 0, 8, 1, 1, 4)"""
+           VALUES (2, 2, 'Rogue', 'rogue', 18, 20, 2, 1, 3, 'town', 0, 8, 1, 1, 4)"""
     )
     conn.commit()
     return conn

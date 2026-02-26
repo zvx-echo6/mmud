@@ -61,7 +61,7 @@ def player(conn):
 def relay_player(conn):
     """Create a second player for relay tests."""
     acc = get_or_create_account(conn, "mesh_relay", "RelayPlayer")
-    p = create_player(conn, acc, "RelayPlayer", "scout")
+    p = create_player(conn, acc, "RelayPlayer", "rogue")
     room = conn.execute(
         "SELECT id FROM rooms WHERE floor = 2 AND is_hub = 0 LIMIT 1",
     ).fetchone()
@@ -328,7 +328,7 @@ def test_lure_diverts_pursuer(conn, player):
     ).fetchone()["floor"]
 
     acc = get_or_create_account(conn, "mesh_lurer", "Lurer")
-    lurer = create_player(conn, acc, "Lurer", "scout")
+    lurer = create_player(conn, acc, "Lurer", "rogue")
     room = conn.execute(
         "SELECT id FROM rooms WHERE floor = ? AND is_hub = 0 LIMIT 1",
         (pursuer_floor,),
@@ -351,7 +351,7 @@ def test_lure_wrong_floor_fails(conn, player):
     claim_objective(conn, player["id"], player["room_id"])
 
     acc = get_or_create_account(conn, "mesh_lurer2", "Lurer2")
-    lurer = create_player(conn, acc, "Lurer2", "scout")
+    lurer = create_player(conn, acc, "Lurer2", "rogue")
     conn.execute(
         "UPDATE players SET state = 'dungeon', floor = 1, room_id = 1 WHERE id = ?",
         (lurer["id"],),

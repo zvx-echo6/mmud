@@ -122,6 +122,8 @@ def fmt_stats(
     pow_: int, def_: int, spd: int,
     gold: int, xp: int, actions: int,
     banked: int = 0, stat_points: int = 0,
+    resource: int = None, resource_max: int = None,
+    resource_name: str = None,
 ) -> str:
     """Format player stats display."""
     base = (
@@ -133,6 +135,8 @@ def fmt_stats(
     if banked > 0:
         base += f"({banked}bank)"
     base += f" XP:{xp} Acts:{actions}"
+    if resource is not None and resource_name:
+        base += f" {resource_name}:{resource}/{resource_max}"
     if stat_points > 0:
         base += f" SP:{stat_points}"
     return fmt(base)

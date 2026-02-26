@@ -50,7 +50,7 @@ def carrier(conn):
 def relay(conn):
     """Relay player on floor 2."""
     acc = get_or_create_account(conn, "mesh_relay", "RelayName")
-    p = create_player(conn, acc, "RelayName", "scout")
+    p = create_player(conn, acc, "RelayName", "rogue")
     room = conn.execute(
         "SELECT id FROM rooms WHERE floor = 2 AND is_hub = 0 LIMIT 1",
     ).fetchone()
@@ -200,7 +200,7 @@ def test_lure_broadcast_content(conn, carrier):
     ).fetchone()["floor"]
 
     acc = get_or_create_account(conn, "mesh_lurer", "LurerName")
-    lurer = create_player(conn, acc, "LurerName", "scout")
+    lurer = create_player(conn, acc, "LurerName", "rogue")
     room = conn.execute(
         "SELECT id FROM rooms WHERE floor = ? AND is_hub = 0 LIMIT 1",
         (pursuer_floor,),
@@ -240,7 +240,7 @@ def test_blocker_broadcast(conn, carrier):
 
     next_room = next_rooms[0]["to_room_id"]
     acc = get_or_create_account(conn, "mesh_blocker", "BlockerName")
-    blocker = create_player(conn, acc, "BlockerName", "guardian")
+    blocker = create_player(conn, acc, "BlockerName", "caster")
     conn.execute(
         "UPDATE players SET state = 'dungeon', floor = ?, room_id = ? WHERE id = ?",
         (NUM_FLOORS, next_room, blocker["id"]),

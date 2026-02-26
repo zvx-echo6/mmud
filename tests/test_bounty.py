@@ -70,7 +70,7 @@ def _seed(conn: sqlite3.Connection) -> None:
     conn.execute(
         """INSERT INTO players (id, account_id, name, class, hp, hp_max, pow, def, spd,
            state, gold_carried, xp)
-           VALUES (2, 2, 'Sidekick', 'scout', 20, 20, 3, 1, 4, 'dungeon', 50, 0)"""
+           VALUES (2, 2, 'Sidekick', 'rogue', 20, 20, 3, 1, 4, 'dungeon', 50, 0)"""
     )
     conn.commit()
 

@@ -50,6 +50,9 @@ ALIASES = {
     "tok": "token",
     "bounties": "bounty",
     "msg": "message",
+    # Class abilities
+    "charge": "charge", "sneak": "sneak", "cast": "cast",
+    "rest": "rest",
     # Leave / Exit
     "exit": "leave", "go back": "leave", "back": "leave",
     # Town location keywords

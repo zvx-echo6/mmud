@@ -27,6 +27,7 @@ from config import (
     EPOCH_DAYS,
     LLM_OUTPUT_CHAR_LIMIT,
     MSG_CHAR_LIMIT,
+    RESOURCE_REGEN_DAYTICK,
     SOCIAL_ACTIONS_PER_DAY,
     SPECIAL_ACTIONS_PER_DAY,
 )
@@ -91,13 +92,15 @@ def run_day_tick(conn: sqlite3.Connection) -> dict:
 
 
 def _reset_action_budgets(conn: sqlite3.Connection) -> int:
-    """Reset all player daily action budgets. Returns count of players reset."""
+    """Reset all player daily action budgets and regen resource. Returns count of players reset."""
     cursor = conn.execute(
         """UPDATE players SET
            dungeon_actions_remaining = ?,
            social_actions_remaining = ?,
-           special_actions_remaining = ?""",
-        (DUNGEON_ACTIONS_PER_DAY, SOCIAL_ACTIONS_PER_DAY, SPECIAL_ACTIONS_PER_DAY),
+           special_actions_remaining = ?,
+           resource = MIN(resource + ?, resource_max)""",
+        (DUNGEON_ACTIONS_PER_DAY, SOCIAL_ACTIONS_PER_DAY, SPECIAL_ACTIONS_PER_DAY,
+         RESOURCE_REGEN_DAYTICK),
     )
     return cursor.rowcount
 

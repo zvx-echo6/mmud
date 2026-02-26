@@ -38,7 +38,7 @@ def conn():
 def player(conn):
     """Player in the artifact room with mini-boss dead."""
     acc = get_or_create_account(conn, "mesh_heist", "HeistPlayer")
-    p = create_player(conn, acc, "HeistPlayer", "scout")
+    p = create_player(conn, acc, "HeistPlayer", "rogue")
 
     # Get artifact room
     state = conn.execute("SELECT heist_artifact_room_id FROM breach WHERE id = 1").fetchone()

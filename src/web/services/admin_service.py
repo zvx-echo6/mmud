@@ -79,7 +79,8 @@ def reset_player(admin, player_id):
     db.execute(
         """UPDATE players SET level = 1, xp = 0, gold_carried = 0, gold_banked = 0,
            state = 'town', floor = 0, room_id = NULL, combat_monster_id = NULL,
-           town_location = NULL, stat_points = 0, secrets_found = 0
+           town_location = NULL, stat_points = 0, secrets_found = 0,
+           resource = 5, resource_max = 5
            WHERE id = ?""",
         (player_id,),
     )

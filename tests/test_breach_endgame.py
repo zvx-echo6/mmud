@@ -68,7 +68,7 @@ def player_raid(conn_raid):
 def player_htl(conn_htl):
     """Player in HtL epoch."""
     acc = get_or_create_account(conn_htl, "mesh_htl", "HtlPlayer")
-    p = create_player(conn_htl, acc, "HtlPlayer", "guardian")
+    p = create_player(conn_htl, acc, "HtlPlayer", "caster")
     conn_htl.execute(
         "UPDATE players SET state = 'dungeon', floor = 2 WHERE id = ?", (p["id"],)
     )

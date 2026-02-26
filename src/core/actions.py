@@ -9,8 +9,16 @@ import sqlite3
 from typing import Optional
 
 from config import (
+    CAST_DAMAGE_MULT,
+    CAST_RESOURCE_COST,
+    CHARGE_DAMAGE_MULT,
+    CHARGE_RESOURCE_COST,
     CLASSES,
     DUNGEON_ACTIONS_PER_DAY,
+    RESOURCE_NAMES,
+    RESOURCE_REGEN_REST,
+    SNEAK_BYPASS_CHANCE,
+    SNEAK_RESOURCE_COST,
     SOCIAL_ACTIONS_PER_DAY,
     STAT_POINTS_PER_LEVEL,
     TOWN_DESCRIPTIONS,
@@ -36,11 +44,11 @@ from src.transport.formatter import (
 
 
 # Actions that cost a dungeon action
-DUNGEON_COST_ACTIONS = {"move", "fight", "flee", "examine"}
+DUNGEON_COST_ACTIONS = {"move", "fight", "flee", "examine", "charge", "sneak", "cast"}
 
 # Actions that are always free
 FREE_ACTIONS = {
-    "look", "stats", "inventory", "help", "who",
+    "look", "stats", "inventory", "help", "who", "rest",
     "shop", "buy", "sell", "heal", "bank", "deposit", "withdraw",
     "barkeep", "token", "spend", "train", "equip", "unequip", "drop",
     "enter", "town", "leave", "bounty", "read", "helpful", "message", "mail",
@@ -89,6 +97,11 @@ def handle_action(
         "message": action_message,
         "mail": action_mail,
         "who": action_who,
+        # Class abilities + rest
+        "rest": action_rest,
+        "charge": action_charge,
+        "sneak": action_sneak,
+        "cast": action_cast,
     }
 
     handler = handlers.get(command)
@@ -330,6 +343,7 @@ def action_flee(conn: sqlite3.Connection, player: dict, args: list[str]) -> str:
 def action_stats(conn: sqlite3.Connection, player: dict, args: list[str]) -> str:
     """Show player stats with effective stats (base + gear)."""
     eff = economy.get_effective_stats(conn, player)
+    res_name = RESOURCE_NAMES.get(player["class"])
     return fmt_stats(
         name=player["name"],
         cls=player["class"],
@@ -344,6 +358,9 @@ def action_stats(conn: sqlite3.Connection, player: dict, args: list[str]) -> str
         actions=player["dungeon_actions_remaining"],
         banked=player["gold_banked"],
         stat_points=player["stat_points"],
+        resource=player.get("resource"),
+        resource_max=player.get("resource_max"),
+        resource_name=res_name,
     )
 
 
@@ -404,12 +421,14 @@ def action_leave(
 
 def action_help(conn: sqlite3.Connection, player: dict, args: list[str]) -> str:
     """Show available commands."""
+    ability_hints = {"warrior": " CHARGE", "rogue": " SNEAK", "caster": " CAST"}
+    hint = ability_hints.get(player["class"], "")
     if player["state"] == "town":
-        return fmt("BAR ENTER SHOP BUY SELL HEAL BANK TOK BOUNTY MAIL WHO TRAIN INV LEAVE HELP")
+        return fmt("BAR ENTER SHOP BUY SELL HEAL BANK TOK BOUNTY MAIL WHO TRAIN REST INV LEAVE HELP")
     if player["state"] == "combat":
-        return fmt("FIGHT(F) FLEE STATS LOOK HELP")
+        return fmt(f"FIGHT(F) FLEE{hint} STATS LOOK HELP")
     if player["state"] == "dungeon":
-        return fmt("N/S/E/W LOOK(L) FIGHT(F) FLEE MSG HELPFUL STATS(ST) INV(I) TOWN HELP")
+        return fmt(f"N/S/E/W LOOK(L) FIGHT(F) FLEE{hint} MSG HELPFUL STATS(ST) INV(I) TOWN HELP")
     return fmt("LOOK STATS HELP")
 
 
@@ -759,3 +778,192 @@ def action_who(conn: sqlite3.Connection, player: dict, args: list[str]) -> str:
     """Show who is online."""
     players = social_sys.get_who_list(conn)
     return fmt(social_sys.format_who_list(players))
+
+
+# ── Class Abilities & Resource Actions ─────────────────────────────────────
+
+
+def action_rest(conn: sqlite3.Connection, player: dict, args: list[str]) -> str:
+    """Rest to recover 1 resource point. Town only, uses special action."""
+    if player["state"] != "town":
+        return fmt("You can only rest in town.")
+    if player.get("resource", 0) >= player.get("resource_max", 5):
+        res_name = RESOURCE_NAMES.get(player["class"], "resource")
+        return fmt(f"{res_name} is full.")
+    if player["special_actions_remaining"] <= 0:
+        return fmt("Already rested today.")
+    player_model.restore_resource(conn, player["id"], RESOURCE_REGEN_REST)
+    conn.execute(
+        "UPDATE players SET special_actions_remaining = special_actions_remaining - 1 WHERE id = ?",
+        (player["id"],),
+    )
+    conn.commit()
+    res_name = RESOURCE_NAMES.get(player["class"], "resource")
+    updated = player_model.get_player(conn, player["id"])
+    return fmt(f"You rest. {res_name}: {updated['resource']}/{updated['resource_max']}")
+
+
+def action_charge(conn: sqlite3.Connection, player: dict, args: list[str]) -> str:
+    """Warrior only. Costs 2 Focus. Heavy strike or charge into room."""
+    if player["class"] != "warrior":
+        return fmt("Only Warriors can charge.")
+    if player["state"] == "town":
+        return fmt("Nothing to charge at in town.")
+    if not player_model.use_resource(conn, player["id"], CHARGE_RESOURCE_COST):
+        return fmt(f"Not enough Focus. Need {CHARGE_RESOURCE_COST}.")
+    if not player_model.use_dungeon_action(conn, player["id"]):
+        player_model.restore_resource(conn, player["id"], CHARGE_RESOURCE_COST)
+        return fmt("No dungeon actions left today!")
+
+    if player["state"] == "combat":
+        eff = economy.get_effective_stats(conn, player)
+        monster = world_data.get_monster(conn, player["combat_monster_id"])
+        if not monster:
+            world_mgr.exit_combat(conn, player["id"])
+            return fmt("No target. Combat ended.")
+        boosted_pow = int(eff["pow"] * CHARGE_DAMAGE_MULT)
+        dmg = combat_engine.calc_damage(boosted_pow, monster["def"])
+        world_data.damage_monster(conn, monster["id"], dmg)
+        new_mhp = max(0, monster["hp"] - dmg)
+        if new_mhp <= 0:
+            world_mgr.exit_combat(conn, player["id"])
+            xp = monster["xp_reward"]
+            gold = random.randint(monster["gold_reward_min"], monster["gold_reward_max"])
+            player_model.award_xp(conn, player["id"], xp)
+            player_model.award_gold(conn, player["id"], gold)
+            return fmt(f"CHARGE! {monster['name']} falls! {dmg}dmg +{xp}xp +{gold}g")
+        return fmt(f"CHARGE! {dmg}dmg to {monster['name']}! {monster['name']}:{new_mhp}/{monster['hp_max']}")
+
+    # Dungeon (not combat): charge into adjacent room
+    if not args:
+        return fmt("Charge where? CHARGE N/S/E/W")
+    direction = args[0].lower()
+    room, error = world_mgr.move_player(conn, player, direction)
+    if error:
+        return fmt(error)
+    monster = world_data.get_room_monster(conn, room["id"])
+    if monster:
+        world_mgr.enter_combat(conn, player["id"], monster["id"])
+        eff = economy.get_effective_stats(conn, player)
+        boosted_pow = int(eff["pow"] * CHARGE_DAMAGE_MULT)
+        dmg = combat_engine.calc_damage(boosted_pow, monster["def"])
+        world_data.damage_monster(conn, monster["id"], dmg)
+        new_mhp = max(0, monster["hp"] - dmg)
+        if new_mhp <= 0:
+            world_mgr.exit_combat(conn, player["id"])
+            xp = monster["xp_reward"]
+            gold = random.randint(monster["gold_reward_min"], monster["gold_reward_max"])
+            player_model.award_xp(conn, player["id"], xp)
+            player_model.award_gold(conn, player["id"], gold)
+            return fmt(f"CHARGE into {room['name']}! {monster['name']} crushed! {dmg}dmg +{xp}xp +{gold}g")
+        return fmt(f"CHARGE into {room['name']}! {dmg}dmg to {monster['name']}! {new_mhp}hp left")
+    return fmt(f"CHARGE into {room['name']}! No enemy here.")
+
+
+def action_sneak(conn: sqlite3.Connection, player: dict, args: list[str]) -> str:
+    """Rogue only. Costs 1 Trick. Backstab or sneak past monsters."""
+    if player["class"] != "rogue":
+        return fmt("Only Rogues can sneak.")
+    if player["state"] == "town":
+        return fmt("Nothing to sneak past in town.")
+    if not player_model.use_resource(conn, player["id"], SNEAK_RESOURCE_COST):
+        return fmt("Not enough Tricks. Need 1.")
+    if not player_model.use_dungeon_action(conn, player["id"]):
+        player_model.restore_resource(conn, player["id"], SNEAK_RESOURCE_COST)
+        return fmt("No dungeon actions left today!")
+
+    if player["state"] == "combat":
+        eff = economy.get_effective_stats(conn, player)
+        monster = world_data.get_monster(conn, player["combat_monster_id"])
+        if not monster:
+            world_mgr.exit_combat(conn, player["id"])
+            return fmt("No target.")
+        if random.random() < SNEAK_BYPASS_CHANCE:
+            dmg = combat_engine.calc_damage(eff["pow"] * 2, monster["def"])
+            world_data.damage_monster(conn, monster["id"], dmg)
+            new_mhp = max(0, monster["hp"] - dmg)
+            if new_mhp <= 0:
+                world_mgr.exit_combat(conn, player["id"])
+                xp = monster["xp_reward"]
+                gold = random.randint(monster["gold_reward_min"], monster["gold_reward_max"])
+                player_model.award_xp(conn, player["id"], xp)
+                player_model.award_gold(conn, player["id"], gold)
+                return fmt(f"Backstab! {monster['name']} falls! {dmg}dmg +{xp}xp +{gold}g")
+            world_mgr.exit_combat(conn, player["id"])
+            return fmt(f"Backstab {dmg}dmg! You slip away. {monster['name']}:{new_mhp}/{monster['hp_max']}")
+        else:
+            result = combat_engine.resolve_round(
+                eff["pow"], eff["def"], eff["spd"], player["hp"],
+                monster["pow"], monster["def"], monster["spd"], monster["hp"],
+                monster["name"],
+            )
+            player_model.update_state(conn, player["id"], hp=result.player_hp)
+            if result.player_damage_dealt > 0:
+                world_data.damage_monster(conn, monster["id"], result.player_damage_dealt)
+            if result.player_dead:
+                losses = player_model.apply_death(conn, player["id"])
+                return fmt_death(losses["gold_lost"], losses["xp_lost"])
+            return fmt(f"Sneak failed! {result.narrative}")
+
+    # Dungeon: sneak through room
+    if not args:
+        return fmt("Sneak where? SNEAK N/S/E/W")
+    direction = args[0].lower()
+    room, error = world_mgr.move_player(conn, player, direction)
+    if error:
+        return fmt(error)
+    monster = world_data.get_room_monster(conn, room["id"])
+    if monster:
+        if random.random() < SNEAK_BYPASS_CHANCE:
+            exits = world_data.get_room_exits(conn, room["id"])
+            exit_dirs = [e["direction"] for e in exits]
+            return fmt_room(room["name"], f"You slip past {monster['name']} unseen.", exit_dirs)
+        else:
+            world_mgr.enter_combat(conn, player["id"], monster["id"])
+            return fmt(f"Spotted! {monster['name']} blocks your path in {room['name']}!")
+    exits = world_data.get_room_exits(conn, room["id"])
+    exit_dirs = [e["direction"] for e in exits]
+    return fmt_room(room["name"], room["description_short"], exit_dirs)
+
+
+def action_cast(conn: sqlite3.Connection, player: dict, args: list[str]) -> str:
+    """Caster only. Costs 1 Mana. Pure magic damage or room sensing."""
+    if player["class"] != "caster":
+        return fmt("Only Casters can cast.")
+    if player["state"] == "town":
+        return fmt("Nothing to cast at in town.")
+    if not player_model.use_resource(conn, player["id"], CAST_RESOURCE_COST):
+        return fmt("Not enough Mana. Need 1.")
+    if not player_model.use_dungeon_action(conn, player["id"]):
+        player_model.restore_resource(conn, player["id"], CAST_RESOURCE_COST)
+        return fmt("No dungeon actions left today!")
+
+    if player["state"] == "combat":
+        eff = economy.get_effective_stats(conn, player)
+        monster = world_data.get_monster(conn, player["combat_monster_id"])
+        if not monster:
+            world_mgr.exit_combat(conn, player["id"])
+            return fmt("No target.")
+        dmg = max(1, int(eff["pow"] * CAST_DAMAGE_MULT * random.uniform(0.8, 1.2)))
+        world_data.damage_monster(conn, monster["id"], dmg)
+        new_mhp = max(0, monster["hp"] - dmg)
+        if new_mhp <= 0:
+            world_mgr.exit_combat(conn, player["id"])
+            xp = monster["xp_reward"]
+            gold = random.randint(monster["gold_reward_min"], monster["gold_reward_max"])
+            player_model.award_xp(conn, player["id"], xp)
+            player_model.award_gold(conn, player["id"], gold)
+            return fmt(f"Arcane bolt! {monster['name']} crumbles. {dmg}dmg +{xp}xp +{gold}g")
+        return fmt(f"Arcane bolt hits {monster['name']} for {dmg}! {monster['name']}:{new_mhp}/{monster['hp_max']}")
+
+    # Dungeon: reveal room info
+    room = world_data.get_room(conn, player["room_id"])
+    if not room:
+        return fmt("Nothing to sense here.")
+    monster = world_data.get_room_monster(conn, player["room_id"])
+    exits = world_data.get_room_exits(conn, player["room_id"])
+    parts = []
+    if monster:
+        parts.append(f"{monster['name']} T{monster['tier']} HP:{monster['hp']}/{monster['hp_max']}")
+    parts.append(f"{len(exits)} exits")
+    return fmt(f"You sense: {' '.join(parts)}")
