@@ -95,6 +95,51 @@ def reset_player(admin, player_id):
     return True
 
 
+def reset_character_password(admin, player_id, new_password):
+    """Reset a character's password."""
+    from src.models.player import hash_password
+    db = get_rw_db()
+    player = db.execute(
+        "SELECT p.name, p.account_id FROM players p WHERE p.id = ?",
+        (player_id,),
+    ).fetchone()
+    if not player:
+        return False
+    pw_hash = hash_password(new_password)
+    db.execute(
+        "UPDATE accounts SET password_hash = ? WHERE id = ?",
+        (pw_hash, player["account_id"]),
+    )
+    _log_action(db, admin, "reset_password", player["name"])
+    db.commit()
+    return True
+
+
+def delete_character(admin, player_id):
+    """Delete a character and clear their sessions."""
+    db = get_rw_db()
+    player = db.execute("SELECT name FROM players WHERE id = ?", (player_id,)).fetchone()
+    if not player:
+        return False
+    db.execute("DELETE FROM node_sessions WHERE player_id = ?", (player_id,))
+    db.execute("DELETE FROM players WHERE id = ?", (player_id,))
+    _log_action(db, admin, "delete_character", player["name"])
+    db.commit()
+    return True
+
+
+def force_logout(admin, player_id):
+    """Clear all node sessions for a player."""
+    db = get_rw_db()
+    player = db.execute("SELECT name FROM players WHERE id = ?", (player_id,)).fetchone()
+    if not player:
+        return False
+    db.execute("DELETE FROM node_sessions WHERE player_id = ?", (player_id,))
+    _log_action(db, admin, "force_logout", player["name"])
+    db.commit()
+    return True
+
+
 def advance_day(admin):
     """Advance epoch day by 1."""
     db = get_rw_db()

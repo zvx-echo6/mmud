@@ -1069,7 +1069,7 @@ class NPCConversationHandler:
             return DCRG_REJECTION[:LLM_OUTPUT_CHAR_LIMIT]
 
         # Rule 1: Unknown player — static rejection
-        player = player_model.get_player_by_mesh_id(self.conn, sender_id)
+        player = player_model.get_player_by_session(self.conn, sender_id)
         if not player:
             self.last_result_type = "npc_rule1"
             msg = NPC_UNKNOWN_PLAYER.get(npc, NPC_UNKNOWN_PLAYER["grist"])

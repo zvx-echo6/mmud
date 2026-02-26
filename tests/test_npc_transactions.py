@@ -261,6 +261,14 @@ def _create_test_db() -> sqlite3.Connection:
             htl_cleared_at DATETIME,
             ward_active INTEGER DEFAULT 0
         );
+
+        CREATE TABLE IF NOT EXISTS node_sessions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            mesh_id TEXT UNIQUE NOT NULL,
+            player_id INTEGER NOT NULL REFERENCES players(id),
+            logged_in_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            last_active DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
     """)
 
     # Seed a test player
@@ -273,6 +281,9 @@ def _create_test_db() -> sqlite3.Connection:
             gold_carried, gold_banked, state, bard_tokens)
            VALUES (1, 'TestPlayer', 'warrior', 3, 30, 50, 5, 4, 3,
                    200, 100, 'town', 3)"""
+    )
+    conn.execute(
+        "INSERT INTO node_sessions (mesh_id, player_id) VALUES ('!abc123', 1)"
     )
     conn.commit()
 

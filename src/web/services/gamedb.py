@@ -257,9 +257,11 @@ def get_player_list():
     """All players with stats for admin panel."""
     db = get_db()
     rows = db.execute(
-        """SELECT p.*, a.mesh_id, a.handle,
+        """SELECT p.*, a.mesh_id, a.handle, a.character_name,
                   (SELECT COUNT(*) FROM banned_players bp
-                   WHERE bp.mesh_node_id = a.mesh_id) as is_banned
+                   WHERE bp.mesh_node_id = a.mesh_id) as is_banned,
+                  (SELECT GROUP_CONCAT(ns.mesh_id) FROM node_sessions ns
+                   WHERE ns.player_id = p.id) as active_nodes
            FROM players p
            JOIN accounts a ON p.account_id = a.id
            ORDER BY p.level DESC, p.xp DESC""",

@@ -57,6 +57,13 @@ def _seed(conn: sqlite3.Connection) -> None:
            VALUES (2, 2, 'Rex', 'rogue', 10, 20, 2, 1, 3, 'dungeon', 5, 50,
                    '2026-01-05T00:00:00')"""
     )
+    # Node sessions for NPC lookups
+    conn.execute(
+        "INSERT INTO node_sessions (mesh_id, player_id) VALUES ('!town01', 1)"
+    )
+    conn.execute(
+        "INSERT INTO node_sessions (mesh_id, player_id) VALUES ('!dung01', 2)"
+    )
     # An active bounty
     conn.execute(
         """INSERT INTO rooms (id, floor, name, description, description_short)

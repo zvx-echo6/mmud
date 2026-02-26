@@ -39,6 +39,9 @@ def _seed(conn: sqlite3.Connection) -> None:
            VALUES (1, 1, 'Tester', 'warrior', 20, 20, 3, 2, 1, 'town',
                    '2026-01-01T00:00:00')"""
     )
+    conn.execute(
+        "INSERT INTO node_sessions (mesh_id, player_id) VALUES ('!abc', 1)"
+    )
     conn.commit()
 
 

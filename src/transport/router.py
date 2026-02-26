@@ -123,8 +123,8 @@ class NodeRouter:
 
     def _handle_embr(self, msg: MeshMessage) -> None:
         """Handle a message on the EMBR (game) node."""
-        # Detect register vs command by checking if player exists
-        player = player_model.get_player_by_mesh_id(self.conn, msg.sender_id)
+        # Detect register vs command by checking if player has a session
+        player = player_model.get_player_by_session(self.conn, msg.sender_id)
         is_register = player is None
         player_id = player["id"] if player else None
 
@@ -144,7 +144,7 @@ class NodeRouter:
             outbound_type = "register_response" if is_register else "response"
             # Re-resolve player_id for newly registered players
             if is_register and player_id is None:
-                new_player = player_model.get_player_by_mesh_id(self.conn, msg.sender_id)
+                new_player = player_model.get_player_by_session(self.conn, msg.sender_id)
                 if new_player:
                     player_id = new_player["id"]
 
@@ -221,7 +221,7 @@ class NodeRouter:
         # Try LLM generation for real backends
         if not isinstance(backend, DummyBackend):
             try:
-                player = player_model.get_player_by_mesh_id(self.conn, sender_id)
+                player = player_model.get_player_by_session(self.conn, sender_id)
                 ctx = ""
                 if player:
                     ctx = f" The player is {player['name']}, Lv{player['level']}."

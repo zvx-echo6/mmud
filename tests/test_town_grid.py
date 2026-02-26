@@ -52,14 +52,16 @@ def register_player(
     engine: GameEngine, node_id: str = "!test1234", name: str = "Tester", cls: str = "w"
 ) -> str:
     """Register a new player via the engine."""
-    engine.process_message(node_id, name, "hello")
+    engine.process_message(node_id, name, "join")
+    engine.process_message(node_id, name, name)
+    engine.process_message(node_id, name, "testpass")
     resp = engine.process_message(node_id, name, cls)
     return resp
 
 
 def get_player(conn, node_id="!test1234"):
-    """Get a player by mesh_id."""
-    return player_model.get_player_by_mesh_id(conn, node_id)
+    """Get a player by session."""
+    return player_model.get_player_by_session(conn, node_id)
 
 
 # ── Town Generation Tests ───────────────────────────────────────────────
@@ -263,7 +265,7 @@ def test_town_enter_from_center():
 
 
 def test_town_enter_from_non_center():
-    """ENTER is rejected when not at center room."""
+    """ENTER works from any town position (no bar gate)."""
     conn = make_town_db()
     engine = GameEngine(conn)
     register_player(engine)
@@ -271,10 +273,9 @@ def test_town_enter_from_non_center():
     # Move away from center first
     engine.process_message("!test1234", "Tester", "n")
     resp = engine.process_message("!test1234", "Tester", "enter")
-    assert "bar" in resp.lower() or "entrance" in resp.lower()
 
     player = get_player(conn)
-    assert player["state"] == "town"
+    assert player["state"] == "dungeon"
 
 
 def test_town_descend_alias():

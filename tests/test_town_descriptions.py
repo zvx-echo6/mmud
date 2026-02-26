@@ -295,6 +295,14 @@ def _create_test_db() -> sqlite3.Connection:
             damage_dealt INTEGER DEFAULT 0,
             UNIQUE(bounty_id, player_id)
         );
+
+        CREATE TABLE node_sessions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            mesh_id TEXT UNIQUE NOT NULL,
+            player_id INTEGER NOT NULL REFERENCES players(id),
+            logged_in_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            last_active DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
     """)
 
     # Seed a test player
@@ -307,6 +315,9 @@ def _create_test_db() -> sqlite3.Connection:
             gold_carried, gold_banked, state, bard_tokens)
            VALUES (1, 'TestPlayer', 'warrior', 3, 30, 50, 5, 4, 3,
                    200, 100, 'town', 3)"""
+    )
+    conn.execute(
+        "INSERT INTO node_sessions (mesh_id, player_id) VALUES ('!abc123', 1)"
     )
     conn.commit()
 
@@ -376,38 +387,31 @@ class TestTownKeywords(unittest.TestCase):
         self.assertIn("Whisper", response)
 
     def test_healer_returns_maren_acknowledgment(self):
-        """'healer' returns Maren's short acknowledgment (must be at bar)."""
-        # Enter bar first
-        action_barkeep(self.conn, self.player, [])
-        self.player = _get_player(self.conn)
+        """'healer' returns Maren's short acknowledgment."""
         response = action_healer_desc(self.conn, self.player, [])
         self.assertIn("Maren", response)
         self.assertIn("needle", response)
 
     def test_merchant_returns_torval_description(self):
-        """'merchant' returns Torval's description (must be at bar)."""
-        action_barkeep(self.conn, self.player, [])
-        self.player = _get_player(self.conn)
+        """'merchant' returns Torval's description."""
         response = action_merchant_desc(self.conn, self.player, [])
         self.assertIn("Torval", response)
         self.assertIn("coin pouch", response)
 
     def test_sage_returns_whisper_acknowledgment(self):
-        """'sage' returns Whisper's short acknowledgment (must be at bar)."""
-        action_barkeep(self.conn, self.player, [])
-        self.player = _get_player(self.conn)
+        """'sage' returns Whisper's short acknowledgment."""
         response = action_rumor_desc(self.conn, self.player, [])
         self.assertIn("Whisper", response)
         self.assertIn("muttering", response)
 
-    def test_npc_from_exterior_rejected(self):
-        """NPC approach from exterior says go to bar first."""
+    def test_npc_from_exterior_works(self):
+        """NPC approach works from any town position (no bar gate)."""
         response = action_healer_desc(self.conn, self.player, [])
-        self.assertIn("BAR", response)
+        self.assertIn("Maren", response)
         response = action_merchant_desc(self.conn, self.player, [])
-        self.assertIn("BAR", response)
+        self.assertIn("Torval", response)
         response = action_rumor_desc(self.conn, self.player, [])
-        self.assertIn("BAR", response)
+        self.assertIn("Whisper", response)
 
     def test_parser_aliases(self):
         """Verify all town keyword aliases parse correctly."""
@@ -451,35 +455,29 @@ class TestTownLocationTracking(unittest.TestCase):
         self.conn = _create_test_db()
         self.engine = GameEngine(self.conn)
 
-    def test_bar_already_there(self):
-        """Typing BAR when already at bar returns 'already' message."""
+    def test_bar_repeat_shows_description(self):
+        """Typing BAR when already at bar returns bar description."""
         self.engine.process_message("!abc123", "TestPlayer", "bar")
         resp = self.engine.process_message("!abc123", "TestPlayer", "bar")
-        self.assertIn("already", resp.lower())
+        self.assertIn("Grist", resp)
 
-    def test_healer_already_there(self):
-        """Typing HEALER when already at maren returns atmospheric stay message."""
-        self.engine.process_message("!abc123", "TestPlayer", "bar")
+    def test_healer_repeat_shows_description(self):
+        """Typing HEALER when already at maren returns normal description."""
         self.engine.process_message("!abc123", "TestPlayer", "healer")
         resp = self.engine.process_message("!abc123", "TestPlayer", "healer")
         self.assertIn("Maren", resp)
-        self.assertIn("LEAVE", resp)
 
-    def test_merchant_already_there(self):
-        """Typing MERCHANT when already at torval returns atmospheric stay message."""
-        self.engine.process_message("!abc123", "TestPlayer", "bar")
+    def test_merchant_repeat_shows_description(self):
+        """Typing MERCHANT when already at torval returns normal description."""
         self.engine.process_message("!abc123", "TestPlayer", "merchant")
         resp = self.engine.process_message("!abc123", "TestPlayer", "merchant")
         self.assertIn("Torval", resp)
-        self.assertIn("LEAVE", resp)
 
-    def test_sage_already_there(self):
-        """Typing HINT when already at whisper returns atmospheric stay message."""
-        self.engine.process_message("!abc123", "TestPlayer", "bar")
+    def test_sage_repeat_shows_description(self):
+        """Typing HINT when already at whisper returns normal description."""
         self.engine.process_message("!abc123", "TestPlayer", "rumor")
         resp = self.engine.process_message("!abc123", "TestPlayer", "rumor")
         self.assertIn("Whisper", resp)
-        self.assertIn("LEAVE", resp)
 
     def test_leave_from_npc_to_bar(self):
         """LEAVE from NPC goes back to bar."""
@@ -488,25 +486,25 @@ class TestTownLocationTracking(unittest.TestCase):
         resp = self.engine.process_message("!abc123", "TestPlayer", "leave")
         self.assertIn("Grist", resp)
 
-    def test_npc_from_exterior_rejected(self):
-        """NPC approach from exterior requires bar first."""
+    def test_npc_from_exterior_works(self):
+        """NPC approach works from any town position (no bar gate)."""
         resp = self.engine.process_message("!abc123", "TestPlayer", "healer")
-        self.assertIn("BAR", resp)
+        self.assertIn("Maren", resp)
         resp = self.engine.process_message("!abc123", "TestPlayer", "merchant")
-        self.assertIn("BAR", resp)
+        self.assertIn("Torval", resp)
         resp = self.engine.process_message("!abc123", "TestPlayer", "rumor")
-        self.assertIn("BAR", resp)
+        self.assertIn("Whisper", resp)
 
-    def test_leave_from_bar_to_exterior(self):
-        """LEAVE from bar goes back to tavern exterior."""
+    def test_leave_from_bar_returns_bar(self):
+        """LEAVE from bar stays at bar."""
         self.engine.process_message("!abc123", "TestPlayer", "bar")
         resp = self.engine.process_message("!abc123", "TestPlayer", "leave")
-        self.assertIn("Last Ember", resp)
+        self.assertIn("Grist", resp)
 
-    def test_leave_from_exterior(self):
-        """LEAVE from exterior says 'already outside'."""
+    def test_leave_from_exterior_goes_to_bar(self):
+        """LEAVE from exterior goes to bar."""
         resp = self.engine.process_message("!abc123", "TestPlayer", "leave")
-        self.assertIn("outside", resp.lower())
+        self.assertIn("Grist", resp)
 
     def test_look_shows_bar(self):
         """LOOK at bar shows bar description."""
@@ -539,25 +537,23 @@ class TestTownLocationTracking(unittest.TestCase):
         self.engine.process_message("!abc123", "TestPlayer", "rumor")
         self.assertEqual(len(self.engine.npc_dm_queue), 0)
 
-    def test_grist_already_there(self):
-        """Typing BARKEEP when already at grist returns atmospheric stay message."""
-        self.engine.process_message("!abc123", "TestPlayer", "bar")
+    def test_grist_repeat_shows_description(self):
+        """Typing BARKEEP when already at grist returns normal description."""
         self.engine.process_message("!abc123", "TestPlayer", "barkeep")
         resp = self.engine.process_message("!abc123", "TestPlayer", "barkeep")
         self.assertIn("Grist", resp)
-        self.assertIn("LEAVE", resp)
 
-    def test_grist_from_exterior_rejected(self):
-        """Approaching Grist from exterior requires bar first."""
+    def test_grist_from_exterior_works(self):
+        """Approaching Grist works from exterior (no bar gate)."""
         resp = self.engine.process_message("!abc123", "TestPlayer", "barkeep")
-        self.assertIn("BAR", resp)
+        self.assertIn("Grist", resp)
 
-    def test_bar_when_at_grist_already_here(self):
-        """Typing BAR when at grist says already here."""
-        self.engine.process_message("!abc123", "TestPlayer", "bar")
+    def test_bar_when_at_grist_shows_bar(self):
+        """Typing BAR when at grist shows bar description."""
         self.engine.process_message("!abc123", "TestPlayer", "grist")
         resp = self.engine.process_message("!abc123", "TestPlayer", "bar")
-        self.assertIn("already", resp.lower())
+        self.assertIn("Grist", resp)
+        self.assertIn("Maren", resp)
 
     def test_direct_npc_navigation(self):
         """Can go directly from one NPC to another (both in bar)."""

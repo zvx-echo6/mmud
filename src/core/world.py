@@ -39,7 +39,6 @@ def _check_boss_gate(conn: sqlite3.Connection, player_id: int, floor: int) -> bo
 def enter_dungeon(conn: sqlite3.Connection, player: dict, target_floor: int = 0) -> Optional[dict]:
     """Enter the dungeon from town. Places player in target floor hub.
 
-    Requires the player to be at the town center room (bar).
     If target_floor > 1, validates against deepest_floor_reached for fast travel.
 
     Args:
@@ -48,13 +47,8 @@ def enter_dungeon(conn: sqlite3.Connection, player: dict, target_floor: int = 0)
         target_floor: Floor to enter (0 = default floor 1).
 
     Returns:
-        Hub room dict, or None if no hub exists, not at center, or floor locked.
+        Hub room dict, or None if no hub exists or floor locked.
     """
-    # Check player is at the dungeon entrance (town center)
-    center = world_model.get_hub_room(conn, floor=0)
-    if center and player.get("room_id") and player["room_id"] != center["id"]:
-        return None
-
     # Determine which floor to enter
     floor = target_floor if target_floor > 0 else 1
 

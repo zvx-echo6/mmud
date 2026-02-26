@@ -8,7 +8,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 import sqlite3
 from datetime import datetime, timezone
 
-from config import MSG_CHAR_LIMIT
+from config import BROADCAST_CHAR_LIMIT, MSG_CHAR_LIMIT
 from src.db.database import init_schema
 from src.systems import broadcast as broadcast_sys
 
@@ -65,12 +65,12 @@ def test_create_broadcast_stores_tier():
     assert row["tier"] == 2
 
 
-def test_create_broadcast_truncates_to_150():
+def test_create_broadcast_truncates_to_200():
     conn = make_test_db()
-    long_msg = "x" * 200
+    long_msg = "x" * 300
     bid = broadcast_sys.create_broadcast(conn, 1, long_msg)
     row = conn.execute("SELECT message FROM broadcasts WHERE id = ?", (bid,)).fetchone()
-    assert len(row["message"]) <= MSG_CHAR_LIMIT
+    assert len(row["message"]) <= BROADCAST_CHAR_LIMIT
 
 
 # ── get_unseen_broadcasts ──

@@ -10,6 +10,12 @@ def get_dashboard_data():
     breach = gamedb.get_breach_status()
     mode = epoch["endgame_mode"] if epoch else None
 
+    # Extract preamble from epoch data (split into paragraphs for template)
+    preamble_raw = epoch.get("preamble", "") if epoch else ""
+    preamble_paragraphs = [
+        p.strip() for p in preamble_raw.split("\n\n") if p.strip()
+    ] if preamble_raw else []
+
     data = {
         "epoch": epoch,
         "breach": breach,
@@ -21,6 +27,7 @@ def get_dashboard_data():
         "floor_themes": gamedb.get_floor_themes_public(),
         "mode": mode,
         "mode_status": None,
+        "preamble": preamble_paragraphs,
     }
 
     # Mode-specific status

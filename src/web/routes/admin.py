@@ -305,6 +305,34 @@ def reset_player(player_id):
     return redirect(url_for("admin.players"))
 
 
+@bp.route("/players/<int:player_id>/reset-password", methods=["POST"])
+@login_required
+def reset_password(player_id):
+    new_pw = request.form.get("new_password", "")
+    if len(new_pw) < 4:
+        flash("Password must be 4+ characters.", "error")
+        return redirect(url_for("admin.players"))
+    admin_svc.reset_character_password(session["admin_user"], player_id, new_pw)
+    flash("Password reset.", "success")
+    return redirect(url_for("admin.players"))
+
+
+@bp.route("/players/<int:player_id>/force-logout", methods=["POST"])
+@login_required
+def force_logout(player_id):
+    admin_svc.force_logout(session["admin_user"], player_id)
+    flash("Player sessions cleared.", "success")
+    return redirect(url_for("admin.players"))
+
+
+@bp.route("/players/<int:player_id>/delete-character", methods=["POST"])
+@login_required
+def delete_character(player_id):
+    admin_svc.delete_character(session["admin_user"], player_id)
+    flash("Character deleted.", "success")
+    return redirect(url_for("admin.players"))
+
+
 @bp.route("/join")
 @login_required
 def join_config():

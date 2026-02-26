@@ -169,6 +169,27 @@ body::before {
   text-transform: uppercase;
 }
 
+/* ═══ EPOCH PREAMBLE ═══ */
+.epoch-preamble {
+  max-width: 720px;
+  margin: 0 auto 8px;
+  padding: 0 8px;
+  font-family: 'Crimson Text', Georgia, serif;
+  font-size: 16px;
+  line-height: 1.85;
+  color: #c4a882;
+  text-align: left;
+}
+
+.epoch-preamble p {
+  margin-bottom: 16px;
+  text-indent: 0;
+}
+
+.epoch-preamble p:last-child {
+  margin-bottom: 0;
+}
+
 .page-header {
   text-align: center;
   padding: 40px 0 12px;

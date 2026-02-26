@@ -14,7 +14,7 @@ Verifies that:
 
 import sqlite3
 
-from config import LLM_OUTPUT_CHAR_LIMIT
+from config import BROADCAST_CHAR_LIMIT, LLM_OUTPUT_CHAR_LIMIT
 from src.db.database import init_schema
 from src.generation.narrative import (
     BackendInterface,
@@ -46,6 +46,7 @@ PIPELINE_METHODS = [
     "generate_narrative_skin",
     "generate_atmospheric_broadcast",
     "generate_epoch_announcements",
+    "generate_epoch_preamble",
 ]
 
 
@@ -109,6 +110,8 @@ def test_minimal_backend_inherits_all_methods():
     assert "title" in skin and "description" in skin
     announcements = b.generate_epoch_announcements("hold_the_line", "heist")
     assert len(announcements) == 3
+    preamble = b.generate_epoch_preamble("hold_the_line", "heist")
+    assert preamble
 
 
 def test_dummy_backend_all_methods():
@@ -132,6 +135,9 @@ def test_dummy_backend_all_methods():
     assert len(announcements) == 3
     for msg in announcements:
         assert len(msg) <= LLM_OUTPUT_CHAR_LIMIT
+    preamble = b.generate_epoch_preamble("hold_the_line", "heist")
+    assert preamble
+    assert len(preamble) > 100
 
 
 def test_base_class_fallback_on_error():
@@ -254,7 +260,7 @@ def test_dummy_backend_announcements_returns_three_strings():
     for msg in msgs:
         assert isinstance(msg, str)
         assert len(msg) > 0
-        assert len(msg) <= LLM_OUTPUT_CHAR_LIMIT
+        assert len(msg) <= BROADCAST_CHAR_LIMIT
 
 
 def test_base_class_announcements_returns_three_strings():
@@ -276,7 +282,7 @@ def test_announcements_fallback_on_error():
     assert len(msgs) == 3
     for msg in msgs:
         assert len(msg) > 0
-        assert len(msg) <= LLM_OUTPUT_CHAR_LIMIT
+        assert len(msg) <= BROADCAST_CHAR_LIMIT
 
 
 def test_announcements_pads_if_fewer_than_three():
@@ -288,13 +294,13 @@ def test_announcements_pads_if_fewer_than_three():
 
 
 def test_announcements_truncates_long_messages():
-    """Each announcement is truncated to LLM_OUTPUT_CHAR_LIMIT."""
-    long_line = "X" * 200
+    """Each announcement is truncated to BROADCAST_CHAR_LIMIT (200)."""
+    long_line = "X" * 300
     b = EchoBackend(f"{long_line}\n{long_line}\n{long_line}")
     msgs = b.generate_epoch_announcements("hold_the_line", "heist")
     assert len(msgs) == 3
     for msg in msgs:
-        assert len(msg) <= LLM_OUTPUT_CHAR_LIMIT
+        assert len(msg) <= BROADCAST_CHAR_LIMIT
 
 
 def test_announcements_strips_numbering():
@@ -312,3 +318,137 @@ def test_minimal_backend_inherits_announcements():
     msgs = b.generate_epoch_announcements("hold_the_line", "heist")
     assert isinstance(msgs, list)
     assert len(msgs) == 3
+
+
+def test_announcements_accept_epoch_name():
+    """generate_epoch_announcements accepts epoch_name kwarg."""
+    b = DummyBackend()
+    msgs = b.generate_epoch_announcements(
+        "hold_the_line", "heist", epoch_name="The Withering"
+    )
+    assert len(msgs) == 3
+
+
+def test_announcements_allow_up_to_200_chars():
+    """Announcements with 151-200 chars should NOT be truncated."""
+    # 180 chars — fits within 200 limit
+    line_180 = "A" * 180
+    b = EchoBackend(f"{line_180}\n{line_180}\n{line_180}")
+    msgs = b.generate_epoch_announcements("hold_the_line", "heist")
+    assert len(msgs) == 3
+    for msg in msgs:
+        assert len(msg) == 180  # No truncation
+
+
+# ── Epoch Preamble Tests ────────────────────────────────────────────────
+
+
+def test_dummy_preamble_returns_nonempty():
+    """DummyBackend.generate_epoch_preamble returns non-empty prose."""
+    b = DummyBackend()
+    preamble = b.generate_epoch_preamble("hold_the_line", "heist")
+    assert isinstance(preamble, str)
+    assert len(preamble) > 100
+    # Should contain multiple paragraphs (double newline separated)
+    paragraphs = [p.strip() for p in preamble.split("\n\n") if p.strip()]
+    assert len(paragraphs) >= 5
+
+
+def test_dummy_preamble_mentions_npcs():
+    """DummyBackend preamble references all four NPCs."""
+    b = DummyBackend()
+    preamble = b.generate_epoch_preamble("hold_the_line", "heist")
+    for npc in ("Grist", "Maren", "Torval", "Whisper"):
+        assert npc in preamble, f"Preamble should mention {npc}"
+
+
+def test_preamble_fallback_on_error():
+    """Preamble falls back to DummyBackend when complete() fails."""
+    b = BrokenBackend()
+    preamble = b.generate_epoch_preamble("hold_the_line", "heist")
+    assert isinstance(preamble, str)
+    assert len(preamble) > 100
+    # Should be the DummyBackend static text
+    assert "Grist" in preamble
+
+
+def test_preamble_from_llm_output():
+    """Base class parses multi-paragraph LLM output correctly."""
+    text = (
+        "The ground shuddered at dawn. Dust fell from the rafters.\n\n"
+        "Below, the dungeon had changed. New corridors where walls used to be.\n\n"
+        "Grist poured without being asked. Maren checked her supplies.\n\n"
+        "Torval laid out fresh stock. Whisper traced a pattern on the table.\n\n"
+        "The stairs are open. They always are."
+    )
+    b = EchoBackend(text)
+    preamble = b.generate_epoch_preamble("hold_the_line", "heist")
+    assert preamble == text
+
+
+def test_preamble_strips_markdown_headers():
+    """Preamble generation strips markdown headers from LLM output."""
+    text = (
+        "# The Shiver\n"
+        "The ground shuddered at dawn. Dust fell from the rafters and the bottles behind "
+        "the bar rattled against each other. The lanterns dimmed for a moment.\n\n"
+        "**The Town**\n"
+        "Grist poured without being asked, his hand steady, his eyes on the door. The "
+        "ledger is open to a fresh page.\n\n"
+        "The stairs are open. Cold air drifts up from below, carrying the smell of wet stone."
+    )
+    b = EchoBackend(text)
+    preamble = b.generate_epoch_preamble("hold_the_line", "heist")
+    assert "# The Shiver" not in preamble
+    assert "**The Town**" not in preamble
+    assert "The ground shuddered" in preamble
+    assert "Grist poured" in preamble
+
+
+def test_minimal_backend_inherits_preamble():
+    """A minimal complete()-only backend can call generate_epoch_preamble."""
+    b = MinimalBackend()
+    # MinimalBackend returns "test output" which is <100 chars, so fallback
+    preamble = b.generate_epoch_preamble("hold_the_line", "heist")
+    assert isinstance(preamble, str)
+    assert len(preamble) > 100
+
+
+def test_preamble_accepts_all_kwargs():
+    """generate_epoch_preamble accepts floor_themes and spell_names."""
+    b = DummyBackend()
+    themes = {1: {"floor_name": "Drowned Corridors"}, 2: {"floor_name": "Luminous Rot"}}
+    spells = ["Glacial Shatter", "Void Spike", "Ember Bolt"]
+    preamble = b.generate_epoch_preamble(
+        "raid_boss", "emergence",
+        narrative_theme="The Withering",
+        floor_themes=themes,
+        spell_names=spells,
+    )
+    assert isinstance(preamble, str)
+    assert len(preamble) > 100
+
+
+def test_preamble_stored_in_epoch():
+    """Preamble column is accessible in the epoch table."""
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA foreign_keys=ON")
+    init_schema(conn)
+    create_epoch(conn, 1, "hold_the_line", "heist")
+
+    # Verify column exists and is empty by default
+    row = conn.execute("SELECT preamble FROM epoch WHERE id = 1").fetchone()
+    assert row is not None
+    assert row["preamble"] == ""
+
+    # Store a preamble
+    b = DummyBackend()
+    preamble = b.generate_epoch_preamble("hold_the_line", "heist")
+    conn.execute("UPDATE epoch SET preamble = ? WHERE id = 1", (preamble,))
+    conn.commit()
+
+    row = conn.execute("SELECT preamble FROM epoch WHERE id = 1").fetchone()
+    assert row["preamble"] == preamble
+    assert len(row["preamble"]) > 100
+    conn.close()

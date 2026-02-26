@@ -59,6 +59,7 @@ FREE_ACTIONS = {
     "barkeep", "token", "spend", "train", "equip", "unequip", "drop",
     "enter", "town", "leave", "bounty", "read", "helpful", "message", "mail",
     "grist", "healer", "merchant", "rumor",
+    "logout",
 }
 
 
@@ -141,6 +142,41 @@ def handle_action(
     return handler(conn, player, args)
 
 
+def _sync_town_position(
+    conn: sqlite3.Connection, player_id: int, location: str
+) -> None:
+    """Sync both room_id and town_location for a town position.
+
+    Every command that changes town_location must call this to keep room_id
+    in sync with the symbolic location.
+
+    Args:
+        location: 'grist', 'maren', 'torval', 'whisper', or 'bar'.
+    """
+    if location in ("grist", "maren", "torval", "whisper"):
+        try:
+            row = conn.execute(
+                "SELECT id FROM rooms WHERE floor = 0 AND npc_name = ? LIMIT 1",
+                (location,),
+            ).fetchone()
+        except Exception:
+            row = None
+        if row:
+            player_model.update_state(
+                conn, player_id, room_id=row["id"], town_location=location
+            )
+            return
+    else:
+        center = world_data.get_hub_room(conn, floor=0)
+        if center:
+            player_model.update_state(
+                conn, player_id, room_id=center["id"], town_location=location
+            )
+            return
+    # No floor 0 rooms (test/legacy): update town_location only
+    player_model.update_state(conn, player_id, town_location=location)
+
+
 def _smart_error(player: dict) -> str:
     """State-specific error with valid command suggestions."""
     state = player.get("state", "town")
@@ -162,10 +198,13 @@ def action_look(conn: sqlite3.Connection, player: dict, args: list[str]) -> str:
         if room:
             exits = world_data.get_room_exits(conn, room["id"])
             exit_dirs = [e["direction"] for e in exits]
-            desc = room["description"]
-            npc = room.get("npc_name")
-            if npc and npc in TOWN_DESCRIPTIONS:
-                desc = TOWN_DESCRIPTIONS[npc]
+            # Use town_location (not room npc_name) to pick description —
+            # bar and grist share the same room but need different text
+            loc = player.get("town_location")
+            if loc and loc in TOWN_DESCRIPTIONS:
+                desc = TOWN_DESCRIPTIONS[loc]
+            else:
+                desc = room["description"]
             return fmt_room(room["name"], desc, exit_dirs)
         # Fallback for pre-migration players without room_id
         loc = player.get("town_location")
@@ -373,6 +412,9 @@ def action_fight(conn: sqlite3.Connection, player: dict, args: list[str]) -> str
                 conn, 1,
                 f"{player['name']} felled {monster['name']}. Floor {floor} falls silent.",
             )
+            # Floor unlock broadcast (skip floor 8 — that's endgame)
+            if floor < NUM_FLOORS:
+                broadcast_sys.broadcast_floor_unlock(conn, floor)
 
         # Check bounty completion
         if bounty:
@@ -478,11 +520,6 @@ def action_enter_dungeon(
     if player["state"] != "town":
         return fmt("You're already in the dungeon.")
 
-    # Check if at town center (bar)
-    center = world_data.get_hub_room(conn, floor=0)
-    if center and player.get("room_id") and player["room_id"] != center["id"]:
-        return fmt("Head to the bar first. The dungeon entrance is there.")
-
     # Parse optional floor argument for fast travel
     target_floor = 0
     if args and FAST_TRAVEL_ENABLED:
@@ -531,18 +568,8 @@ def action_leave(
 ) -> str:
     """Leave current location. In town: navigate back. In dungeon: return to town."""
     if player["state"] == "town":
-        loc = player.get("town_location")
-        if loc in ("grist", "maren", "torval", "whisper"):
-            # NPC → bar
-            player_model.update_state(conn, player["id"], town_location="bar")
-            return fmt(TOWN_DESCRIPTIONS["bar"])
-        elif loc == "bar":
-            # Bar → exterior
-            player_model.update_state(conn, player["id"], town_location=None)
-            return fmt(TOWN_DESCRIPTIONS["tavern"])
-        else:
-            # Already at exterior
-            return fmt("You're outside the Last Ember. BAR to enter, ENTER for dungeon.")
+        _sync_town_position(conn, player["id"], "bar")
+        return fmt(TOWN_DESCRIPTIONS["bar"])
 
     if player["state"] == "combat":
         return fmt("You're in combat! FLEE first.")
@@ -744,70 +771,43 @@ def action_barkeep(conn: sqlite3.Connection, player: dict, args: list[str]) -> s
     if player["state"] != "town":
         return fmt("The bar is in town. Head back first.")
 
-    if player.get("town_location") in ("bar", "grist"):
-        return fmt("Smoke and noise. You're already here. GRIST MAREN TORVAL WHISPER or LEAVE.")
-
-    player_model.update_state(conn, player["id"], town_location="bar")
+    _sync_town_position(conn, player["id"], "bar")
     return fmt(TOWN_DESCRIPTIONS["bar"])
 
 
 def action_grist_desc(conn: sqlite3.Connection, player: dict, args: list[str]) -> str:
-    """Approach Grist. Short acknowledgment, NPC DM follows. Town only, bar required."""
+    """Approach Grist. Short acknowledgment, NPC DM follows. Town only."""
     if player["state"] != "town":
         return fmt("Grist is in town. Head back first.")
 
-    if player.get("town_location") == "grist":
-        return fmt("Grist is already watching you. DM him or LEAVE.")
-
-    if not player.get("town_location"):
-        return fmt("You're outside. BAR to enter the tavern first.")
-
-    player_model.update_state(conn, player["id"], town_location="grist")
+    _sync_town_position(conn, player["id"], "grist")
     return fmt(TOWN_DESCRIPTIONS["grist"])
 
 
 def action_healer_desc(conn: sqlite3.Connection, player: dict, args: list[str]) -> str:
-    """Approach Maren. Short acknowledgment, NPC DM follows. Town only, bar required."""
+    """Approach Maren. Short acknowledgment, NPC DM follows. Town only."""
     if player["state"] != "town":
         return fmt("Maren is in town. Head back first.")
 
-    if player.get("town_location") == "maren":
-        return fmt("Maren glances up. She hasn't gone anywhere. DM her or LEAVE.")
-
-    if not player.get("town_location"):
-        return fmt("You're outside. BAR to enter the tavern first.")
-
-    player_model.update_state(conn, player["id"], town_location="maren")
+    _sync_town_position(conn, player["id"], "maren")
     return fmt(TOWN_DESCRIPTIONS["maren"])
 
 
 def action_merchant_desc(conn: sqlite3.Connection, player: dict, args: list[str]) -> str:
-    """Approach Torval. Short acknowledgment, NPC DM follows. Town only, bar required."""
+    """Approach Torval. Short acknowledgment, NPC DM follows. Town only."""
     if player["state"] != "town":
         return fmt("Torval is in town. Head back first.")
 
-    if player.get("town_location") == "torval":
-        return fmt("Torval drums his fingers on the counter. DM him or LEAVE.")
-
-    if not player.get("town_location"):
-        return fmt("You're outside. BAR to enter the tavern first.")
-
-    player_model.update_state(conn, player["id"], town_location="torval")
+    _sync_town_position(conn, player["id"], "torval")
     return fmt(TOWN_DESCRIPTIONS["torval"])
 
 
 def action_rumor_desc(conn: sqlite3.Connection, player: dict, args: list[str]) -> str:
-    """Approach Whisper. Short acknowledgment, NPC DM follows. Town only, bar required."""
+    """Approach Whisper. Short acknowledgment, NPC DM follows. Town only."""
     if player["state"] != "town":
         return fmt("Whisper is in town. Head back first.")
 
-    if player.get("town_location") == "whisper":
-        return fmt("Whisper's gaze hasn't left you. DM her or LEAVE.")
-
-    if not player.get("town_location"):
-        return fmt("You're outside. BAR to enter the tavern first.")
-
-    player_model.update_state(conn, player["id"], town_location="whisper")
+    _sync_town_position(conn, player["id"], "whisper")
     return fmt(TOWN_DESCRIPTIONS["whisper"])
 
 

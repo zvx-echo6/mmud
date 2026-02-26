@@ -75,7 +75,9 @@ def _seed_test_world(conn: sqlite3.Connection) -> None:
 
 
 def _register(engine: GameEngine, node_id: str = "!test1234"):
-    engine.process_message(node_id, "Tester", "hello")
+    engine.process_message(node_id, "Tester", "join")
+    engine.process_message(node_id, "Tester", "Tester")
+    engine.process_message(node_id, "Tester", "testpass")
     engine.process_message(node_id, "Tester", "w")
     return node_id
 
@@ -114,7 +116,7 @@ def test_buy_item():
     engine = GameEngine(conn)
     _register(engine)
 
-    player = player_model.get_player_by_mesh_id(conn, "!test1234")
+    player = player_model.get_player_by_session(conn, "!test1234")
     player_model.award_gold(conn, player["id"], 200)
 
     resp = engine.process_message("!test1234", "Tester", "buy rusty sword")
@@ -141,7 +143,7 @@ def test_sell_item():
     engine = GameEngine(conn)
     _register(engine)
 
-    player = player_model.get_player_by_mesh_id(conn, "!test1234")
+    player = player_model.get_player_by_session(conn, "!test1234")
     player_model.award_gold(conn, player["id"], 200)
     engine.process_message("!test1234", "Tester", "buy rusty sword")
 
@@ -183,7 +185,7 @@ def test_deposit_gold():
     engine = GameEngine(conn)
     _register(engine)
 
-    player = player_model.get_player_by_mesh_id(conn, "!test1234")
+    player = player_model.get_player_by_session(conn, "!test1234")
     player_model.award_gold(conn, player["id"], 100)
 
     resp = engine.process_message("!test1234", "Tester", "dep 50")
@@ -202,7 +204,7 @@ def test_deposit_all():
     engine = GameEngine(conn)
     _register(engine)
 
-    player = player_model.get_player_by_mesh_id(conn, "!test1234")
+    player = player_model.get_player_by_session(conn, "!test1234")
     player_model.award_gold(conn, player["id"], 75)
 
     resp = engine.process_message("!test1234", "Tester", "dep all")
@@ -219,7 +221,7 @@ def test_withdraw_gold():
     engine = GameEngine(conn)
     _register(engine)
 
-    player = player_model.get_player_by_mesh_id(conn, "!test1234")
+    player = player_model.get_player_by_session(conn, "!test1234")
     player_model.award_gold(conn, player["id"], 100)
     economy.deposit_gold(conn, player["id"], "100")
 
@@ -253,7 +255,7 @@ def test_heal_prompt():
     engine = GameEngine(conn)
     _register(engine)
 
-    player = player_model.get_player_by_mesh_id(conn, "!test1234")
+    player = player_model.get_player_by_session(conn, "!test1234")
     player_model.update_state(conn, player["id"], hp=10)
     player_model.award_gold(conn, player["id"], 500)
 
@@ -269,7 +271,7 @@ def test_heal_confirm():
     engine = GameEngine(conn)
     _register(engine)
 
-    player = player_model.get_player_by_mesh_id(conn, "!test1234")
+    player = player_model.get_player_by_session(conn, "!test1234")
     player_model.update_state(conn, player["id"], hp=10)
     player_model.award_gold(conn, player["id"], 500)
 
@@ -311,7 +313,7 @@ def test_death_loses_carried_gold_only():
     engine = GameEngine(conn)
     _register(engine)
 
-    player = player_model.get_player_by_mesh_id(conn, "!test1234")
+    player = player_model.get_player_by_session(conn, "!test1234")
     player_model.award_gold(conn, player["id"], 100)
     economy.deposit_gold(conn, player["id"], "50")
 
@@ -337,7 +339,7 @@ def test_gold_awarded_on_kill():
     # Monster gives 5g (min=max=5)
     assert "5g" in resp
 
-    player = player_model.get_player_by_mesh_id(conn, "!test1234")
+    player = player_model.get_player_by_session(conn, "!test1234")
     assert player["gold_carried"] >= 5
 
 
@@ -350,7 +352,7 @@ def test_economy_responses_under_150():
     engine = GameEngine(conn)
     _register(engine)
 
-    player = player_model.get_player_by_mesh_id(conn, "!test1234")
+    player = player_model.get_player_by_session(conn, "!test1234")
     player_model.award_gold(conn, player["id"], 1000)
     player_model.update_state(conn, player["id"], stat_points=2, hp=10)
 

@@ -75,6 +75,25 @@ def reset_epoch_tables(conn: sqlite3.Connection) -> None:
     except Exception:
         conn.execute("ALTER TABLE players ADD COLUMN deepest_floor_reached INTEGER DEFAULT 1")
 
+    # Ensure node_sessions table exists (character auth migration)
+    conn.execute("""CREATE TABLE IF NOT EXISTS node_sessions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        mesh_id TEXT UNIQUE NOT NULL,
+        player_id INTEGER NOT NULL REFERENCES players(id),
+        logged_in_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        last_active DATETIME DEFAULT CURRENT_TIMESTAMP
+    )""")
+
+    # Ensure accounts has character_name and password_hash columns
+    try:
+        conn.execute("SELECT character_name FROM accounts LIMIT 0")
+    except Exception:
+        conn.execute("ALTER TABLE accounts ADD COLUMN character_name TEXT DEFAULT ''")
+    try:
+        conn.execute("SELECT password_hash FROM accounts LIMIT 0")
+    except Exception:
+        conn.execute("ALTER TABLE accounts ADD COLUMN password_hash TEXT DEFAULT ''")
+
     epoch_tables = [
         "broadcast_seen", "broadcasts", "player_messages", "mail",
         "epoch_votes", "npc_journals", "npc_dialogue", "narrative_skins",
@@ -85,7 +104,7 @@ def reset_epoch_tables(conn: sqlite3.Connection) -> None:
         "discovery_buffs", "secret_progress", "secrets",
         "inventory", "monsters", "room_exits", "rooms", "items",
         "floor_themes", "floor_progress",
-        "players", "epoch",
+        "node_sessions", "players", "epoch",
     ]
     for table in epoch_tables:
         conn.execute(f"DELETE FROM {table}")

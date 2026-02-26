@@ -76,7 +76,7 @@ def generate_town(conn: sqlite3.Connection, backend: Optional[DummyBackend] = No
 
             name = backend.generate_town_room_name(r, c, npc_name=npc)
             desc = backend.generate_town_description(name, npc_name=npc)
-            short = desc  # Town rooms use same desc for short
+            short = desc  # Town rooms: same desc for move and look
 
             room_id = _insert_room(
                 conn, floor=0, name=name, desc=desc, desc_short=short,

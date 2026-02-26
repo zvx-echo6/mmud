@@ -33,6 +33,9 @@ class GameEngine:
         self.npc_dm_queue: list[tuple[str, str]] = []
         # Per-player per-NPC cooldown timestamps {(mesh_id, npc): monotonic_time}
         self._npc_dm_cooldowns: dict[tuple[str, str], float] = {}
+        # Character auth state machines
+        self._pending_registrations: dict[str, dict] = {}
+        self._pending_logins: dict[str, dict] = {}
 
         # Schema migration: add town_location column (idempotent)
         try:
@@ -143,6 +146,13 @@ class GameEngine:
         except Exception:
             pass
 
+        # Schema migration: epoch preamble (migration 014)
+        try:
+            conn.execute("ALTER TABLE epoch ADD COLUMN preamble TEXT DEFAULT ''")
+            conn.commit()
+        except Exception:
+            pass
+
         # Schema migration: NPC persistent memory
         try:
             conn.execute("""CREATE TABLE IF NOT EXISTS npc_memory (
@@ -173,6 +183,29 @@ class GameEngine:
         except Exception:
             pass
 
+        # Schema migration: character auth — node_sessions table + account columns
+        try:
+            conn.execute("""CREATE TABLE IF NOT EXISTS node_sessions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                mesh_id TEXT UNIQUE NOT NULL,
+                player_id INTEGER NOT NULL REFERENCES players(id),
+                logged_in_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                last_active DATETIME DEFAULT CURRENT_TIMESTAMP
+            )""")
+            conn.commit()
+        except Exception:
+            pass
+        try:
+            conn.execute("ALTER TABLE accounts ADD COLUMN character_name TEXT DEFAULT ''")
+            conn.commit()
+        except Exception:
+            pass
+        try:
+            conn.execute("ALTER TABLE accounts ADD COLUMN password_hash TEXT DEFAULT ''")
+            conn.commit()
+        except Exception:
+            pass
+
     def process_message(self, sender_id: str, sender_name: str, text: str) -> Optional[str]:
         """Process an inbound message and return a response.
 
@@ -189,83 +222,178 @@ class GameEngine:
         # Clear NPC DM queue from previous call
         self.npc_dm_queue.clear()
 
-        # Parse command
+        # Step 1: Continue pending registration
+        if sender_id in self._pending_registrations:
+            return self._handle_registration(sender_id, sender_name, text)
+
+        # Step 2: Continue pending login
+        if sender_id in self._pending_logins:
+            return self._handle_login(sender_id, sender_name, text)
+
+        # Step 3: Check for active session (auto-resume)
+        player = player_model.get_player_by_session(self.conn, sender_id)
+
+        if player:
+            # Update session activity
+            player_model.update_session_activity(self.conn, sender_id)
+
+            # Parse command
+            parsed = parse(text)
+            if not parsed:
+                return None
+
+            # Handle logout
+            if parsed.command == "logout":
+                player_model.clear_node_session(self.conn, sender_id)
+                return fmt("Logged out. Send LOGIN to reconnect.")
+
+            # Refresh player state
+            player = player_model.get_player(self.conn, player["id"])
+
+            # Accrue bard tokens on each interaction
+            barkeep_sys.accrue_tokens(self.conn, player["id"])
+            player = player_model.get_player(self.conn, player["id"])
+
+            # Execute action
+            response = handle_action(self.conn, player, parsed.command, parsed.args)
+
+            # Queue NPC greeting DM if this command triggers one
+            self._maybe_queue_npc_dm(sender_id, player, parsed.command)
+
+            # Prepend unseen tier 1 broadcasts
+            news = broadcast_sys.deliver_unseen(self.conn, player["id"], limit=1)
+            if news and response:
+                combined = f"[{news}] {response}"
+                if len(combined) <= 150:
+                    response = combined
+
+            if response:
+                logger.info(f"[{sender_name}] {parsed.command} → {response[:60]}...")
+
+            return response
+
+        # Step 4: No session — parse command to check for JOIN/LOGIN
         parsed = parse(text)
         if not parsed:
             return None
 
-        # Look up or create player
-        player = player_model.get_player_by_mesh_id(self.conn, sender_id)
+        if parsed.command == "join":
+            self._pending_registrations[sender_id] = {"step": "name"}
+            return fmt("Choose a character name (2-16 chars):")
 
-        if not player:
-            # New player — route to registration
-            return self._handle_new_player(sender_id, sender_name, parsed)
+        if parsed.command == "login":
+            self._pending_logins[sender_id] = {"step": "name"}
+            return fmt("Character name:")
 
-        # Refresh player state
-        player = player_model.get_player(self.conn, player["id"])
+        # Unknown node — prompt for JOIN or LOGIN
+        return fmt("Send JOIN to create or LOGIN to continue.")
 
-        # Accrue bard tokens on each interaction (checks internally if day changed)
-        barkeep_sys.accrue_tokens(self.conn, player["id"])
-        # Re-fetch after token accrual may have updated last_login
-        player = player_model.get_player(self.conn, player["id"])
-
-        # Execute action
-        response = handle_action(self.conn, player, parsed.command, parsed.args)
-
-        # Queue NPC greeting DM if this command triggers one
-        self._maybe_queue_npc_dm(sender_id, player, parsed.command)
-
-        # Prepend unseen tier 1 broadcasts
-        news = broadcast_sys.deliver_unseen(self.conn, player["id"], limit=1)
-        if news and response:
-            combined = f"[{news}] {response}"
-            if len(combined) <= 150:
-                response = combined
-
-        if response:
-            logger.info(f"[{sender_name}] {parsed.command} → {response[:60]}...")
-
-        return response
-
-    def _handle_new_player(
-        self, sender_id: str, sender_name: str, parsed: ParsedCommand
+    def _handle_registration(
+        self, sender_id: str, sender_name: str, text: str
     ) -> str:
-        """Handle messages from unregistered players.
+        """Multi-step registration: name → password → class."""
+        state = self._pending_registrations[sender_id]
+        text = text.strip()
 
-        Registration flow:
-        1. Any message → show class picker
-        2. Player sends class choice → create character
+        if state["step"] == "name":
+            name = text
+            if len(name) < 2 or len(name) > 16:
+                return fmt("Name must be 2-16 characters. Try again:")
+            if not all(c.isalnum() or c == " " for c in name):
+                return fmt("Letters, numbers, spaces only. Try again:")
+            existing = player_model.get_account_by_character_name(self.conn, name)
+            if existing:
+                return fmt("Name taken. Choose another:")
+            state["name"] = name
+            state["step"] = "password"
+            return fmt(f"Name: {name}. Choose a password (4+ chars):")
 
-        Uses a two-message flow:
-        - First contact: "Welcome! Pick class: W)arrior C)aster R)ogue"
-        - Second contact: class letter → character created
-        """
-        # Check if they're picking a class
-        choice = parsed.raw.strip().lower()
+        if state["step"] == "password":
+            password = text
+            if len(password) < 4:
+                return fmt("Password must be 4+ characters. Try again:")
+            state["password"] = password
+            state["step"] = "class"
+            return fmt("Pick class: W)arrior C)aster R)ogue")
 
-        class_map = {
-            "w": "warrior", "warrior": "warrior",
-            "c": "caster", "caster": "caster",
-            "r": "rogue", "rogue": "rogue",
-        }
+        if state["step"] == "class":
+            choice = text.lower()
+            class_map = {
+                "w": "warrior", "warrior": "warrior",
+                "c": "caster", "caster": "caster",
+                "r": "rogue", "rogue": "rogue",
+            }
+            cls = class_map.get(choice)
+            if not cls:
+                return fmt("Pick class: W)arrior C)aster R)ogue")
 
-        if choice in class_map:
-            cls = class_map[choice]
-            account_id = player_model.get_or_create_account(
-                self.conn, sender_id, sender_name
+            # Create account, player, session
+            account_id = player_model.create_account_with_password(
+                self.conn, state["name"], state["password"]
             )
             player = player_model.create_player(
-                self.conn, account_id, sender_name, cls
+                self.conn, account_id, state["name"], cls
             )
+            player_model.create_node_session(self.conn, sender_id, player["id"])
+            del self._pending_registrations[sender_id]
+
             stats = CLASSES[cls]
             return fmt(
-                f"Welcome {sender_name} the {cls.title()}! "
+                f"Welcome {state['name']} the {cls.title()}! "
                 f"POW:{stats['POW']} DEF:{stats['DEF']} SPD:{stats['SPD']} "
-                f"Move:N/S/E/W Fight:F Look:L Flee:FL Stats:ST Help:H"
+                f"Move:N/S/E/W Fight:F Look:L Stats:ST Help:H"
             )
 
-        # First contact — show class picker
-        return fmt("Welcome to meshMUD! Pick class: W)arrior C)aster R)ogue")
+        # Should never reach here — clean up
+        del self._pending_registrations[sender_id]
+        return fmt("Registration error. Send JOIN to restart.")
+
+    def _handle_login(
+        self, sender_id: str, sender_name: str, text: str
+    ) -> str:
+        """Multi-step login: name → password."""
+        state = self._pending_logins[sender_id]
+        text = text.strip()
+
+        if state["step"] == "name":
+            account = player_model.get_account_by_character_name(self.conn, text)
+            if not account:
+                del self._pending_logins[sender_id]
+                return fmt("Unknown character. JOIN to create or LOGIN to retry.")
+            state["name"] = text
+            state["account_id"] = account["id"]
+            state["step"] = "password"
+            return fmt(f"Password for {text}:")
+
+        if state["step"] == "password":
+            account = self.conn.execute(
+                "SELECT * FROM accounts WHERE id = ?", (state["account_id"],)
+            ).fetchone()
+            if not account or not player_model.verify_password(text, account["password_hash"]):
+                del self._pending_logins[sender_id]
+                return fmt("Wrong password. Send LOGIN to try again.")
+
+            # Find current-epoch player for this account
+            player = self.conn.execute(
+                "SELECT * FROM players WHERE account_id = ? "
+                "ORDER BY created_at DESC LIMIT 1",
+                (state["account_id"],),
+            ).fetchone()
+            if not player:
+                del self._pending_logins[sender_id]
+                return fmt("No character this epoch. Send JOIN to create.")
+
+            player_model.create_node_session(self.conn, sender_id, player["id"])
+            del self._pending_logins[sender_id]
+            p = dict(player)
+            return fmt(
+                f"Welcome back {state['name']}! "
+                f"Lv{p['level']} {p['class'].title()}."
+            )
+
+        # Should never reach here — clean up
+        del self._pending_logins[sender_id]
+        return fmt("Login error. Send LOGIN to restart.")
 
     def _maybe_queue_npc_dm(
         self, sender_id: str, player: dict, command: str

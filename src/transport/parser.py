@@ -53,6 +53,10 @@ ALIASES = {
     # Class abilities
     "charge": "charge", "sneak": "sneak", "cast": "cast",
     "rest": "rest",
+    # Character auth
+    "join": "join", "register": "join", "create": "join", "new": "join",
+    "login": "login", "auth": "login", "connect": "login",
+    "logout": "logout", "disconnect": "logout", "quit": "logout",
     # Leave / Exit
     "exit": "leave", "go back": "leave", "back": "leave",
     # Floor transition aliases

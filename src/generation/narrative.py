@@ -163,7 +163,11 @@ class BackendInterface(ABC):
             return DummyBackend().generate_floor_themes()
 
     def generate_town_room_name(self, row: int, col: int, npc_name: str = None) -> str:
-        """Generate a town room name for Floor 0."""
+        """Generate a town room name for Floor 0.
+
+        NPC rooms keep fixed names. Non-NPC rooms get LLM-generated names.
+        Falls back to DummyBackend on failure.
+        """
         if npc_name == "grist":
             return "The Last Ember"
         if npc_name == "maren":
@@ -172,11 +176,56 @@ class BackendInterface(ABC):
             return "Torval's Trading Post"
         if npc_name == "whisper":
             return "Whisper's Alcove"
-        return f"Town ({row},{col})"
+
+        prompt = (
+            "Generate one short name (2-4 words) for a location in a small "
+            "frontier settlement built around a tavern at the edge of a dungeon. "
+            "This is a worn, atmospheric town — crumbling walls, ash-dusted paths, "
+            "old market stalls, lantern-lit alleys. Not a fantasy city. A last outpost. "
+            "Return ONLY the name, nothing else."
+        )
+        try:
+            raw = self.complete(prompt, max_tokens=30)
+            name = raw.strip().strip('"\'').split('\n')[0].strip()
+            if name and len(name) <= 40:
+                return name
+        except Exception as e:
+            logger.warning(f"Town room name generation failed: {e}")
+        return DummyBackend().generate_town_room_name(row, col, npc_name)
 
     def generate_town_description(self, name: str, npc_name: str = None) -> str:
-        """Generate a town room description for Floor 0."""
-        return name
+        """Generate a town room description for Floor 0.
+
+        Returns an atmospheric sensory description. Under 150 characters.
+        Falls back to DummyBackend on failure.
+        """
+        if npc_name:
+            npc_ctx = {
+                "grist": "This is the bar. Smoke, amber light, a long wooden counter.",
+                "maren": "This is the healer's workspace. Herbs, clean linens, sharp tools.",
+                "torval": "This is the merchant's shop. Crates, weapons, armor on display.",
+                "whisper": "This is the sage's alcove. Shadows, old books, strange markings.",
+            }
+            ctx = npc_ctx.get(npc_name, "An NPC lives here.")
+            prompt = (
+                f"Write a one-sentence description of '{name}' in a frontier tavern settlement. "
+                f"Context: {ctx} Sensory details — what you see, smell, hear. "
+                f"Under 150 characters. Return ONLY the description."
+            )
+        else:
+            prompt = (
+                f"Write a one-sentence description of '{name}' in a worn frontier settlement "
+                f"at the edge of a dungeon. Ash-dusted, lantern-lit, crumbling but alive. "
+                f"Sensory details. Under 150 characters. Return ONLY the description."
+            )
+        try:
+            raw = self.complete(prompt, max_tokens=80)
+            text = raw.strip().strip('"\'').split('\n')[0].strip()
+            if text and text.lower() != name.lower():
+                return text[:LLM_OUTPUT_CHAR_LIMIT]
+        except Exception as e:
+            logger.warning(f"Town description generation failed: {e}")
+        return DummyBackend().generate_town_description(name, npc_name)
 
     def generate_lore_fragment(self, floor: int) -> str:
         """Generate a lore fragment for a room (<=80 chars).
@@ -483,50 +532,150 @@ class BackendInterface(ABC):
             logger.warning(f"Atmospheric broadcast generation failed: {e}")
         return DummyBackend().generate_atmospheric_broadcast(theme)
 
+    def generate_epoch_preamble(self, endgame_mode: str, breach_type: str,
+                               narrative_theme: str = "",
+                               floor_themes: dict = None,
+                               spell_names: list = None) -> str:
+        """Generate a rich prose preamble for the web dashboard header.
+
+        This is web-only content — no character limit. Returns 5-10 paragraphs
+        of atmospheric prose describing the new epoch. Generated once at epoch
+        start, stored in the epoch table, displayed for 30 days.
+
+        Falls back to DummyBackend static text on failure.
+        """
+        from config import FLOOR_THEMES as BASE_THEMES
+
+        # Build context for the prompt
+        theme_ctx = f" themed around '{narrative_theme}'" if narrative_theme else ""
+        mode_labels = {
+            "hold_the_line": "Hold the Line — defend floor checkpoints",
+            "raid_boss": "Raid Boss — a colossal creature waits at the bottom",
+            "retrieve_and_escape": "Retrieve & Escape — find the objective and get out alive",
+        }
+        mode_desc = mode_labels.get(endgame_mode, endgame_mode)
+
+        floor_desc = ""
+        if floor_themes:
+            parts = []
+            for f in sorted(floor_themes):
+                ft = floor_themes[f]
+                name = ft.get("floor_name", BASE_THEMES.get(f, f"Floor {f}"))
+                parts.append(f"Floor {f}: {name}")
+            floor_desc = "\n".join(parts)
+
+        spell_ctx = ""
+        if spell_names:
+            spell_ctx = f"This epoch's spells: {', '.join(spell_names)}."
+
+        prompt = (
+            f"You are writing the opening preamble for a new epoch of a mesh-radio "
+            f"text dungeon called the Darkcragg Depths. This is a 30-day cycle where "
+            f"5-30 players explore an 8-floor dungeon via LoRa radio messages.\n\n"
+            f"The epoch{theme_ctx}. Endgame mode: {mode_desc}. Breach type: {breach_type}.\n\n"
+            f"{'Floor layout:\\n' + floor_desc + chr(10) + chr(10) if floor_desc else ''}"
+            f"{spell_ctx + chr(10) + chr(10) if spell_ctx else ''}"
+            f"Write 5-10 paragraphs of atmospheric prose for the tavern dashboard. "
+            f"Cover these beats in order:\n"
+            f"1. THE SHIVER — the dungeon has regenerated. Describe the physical sensation. "
+            f"Ground tremors, air pressure changes, dust falling from tavern rafters.\n"
+            f"2. EPOCH IDENTITY — what makes this cycle different. Reference the theme, "
+            f"the floor names, what scouts have reported from below.\n"
+            f"3. THE TOWN — the Last Ember tavern right now. Sensory: smoke, amber light, "
+            f"the sound of Grist's bar, murmured conversations. Who's already here.\n"
+            f"4. NPC REACTIONS — Grist pouring drinks and writing in his ledger. "
+            f"Maren checking supplies. Torval pricing new gear. Whisper saying something "
+            f"cryptic from the corner.\n"
+            f"5. THE DESCENT — what the stairs feel like. Cold air rising from below. "
+            f"The first floor's atmosphere leaking upward.\n"
+            f"6. THE INVITATION — close with a quiet hook. The stairs are open. "
+            f"Not a command, not a rallying cry. Just a fact.\n\n"
+            f"RULES:\n"
+            f"- Pure prose. No headers, no markdown, no bullet points, no labels.\n"
+            f"- Sensory and grounded — sound, smell, temperature, texture.\n"
+            f"- Dark fantasy tone. Worn, atmospheric, understated.\n"
+            f"- Reference NPCs by name: Grist, Maren, Torval, Whisper.\n"
+            f"- No exclamation marks. No questions directed at the reader.\n"
+            f"- Each paragraph is 2-4 sentences.\n"
+            f"- Return ONLY the prose paragraphs separated by blank lines."
+        )
+        try:
+            raw = self.complete(prompt, max_tokens=2000)
+            # Clean up: strip markdown artifacts, ensure paragraph breaks
+            text = raw.strip()
+            # Remove any markdown headers the LLM might have added
+            lines = []
+            for line in text.split('\n'):
+                stripped = line.strip()
+                if stripped.startswith('#'):
+                    continue
+                if stripped.startswith('**') and stripped.endswith('**'):
+                    continue
+                lines.append(line)
+            text = '\n'.join(lines).strip()
+            if text and len(text) > 100:
+                return text
+        except Exception as e:
+            logger.warning(f"Epoch preamble generation failed: {e}")
+        return DummyBackend().generate_epoch_preamble(
+            endgame_mode, breach_type, narrative_theme, floor_themes, spell_names,
+        )
+
     def generate_epoch_announcements(self, endgame_mode: str,
                                      breach_type: str,
-                                     narrative_theme: str = "") -> list[str]:
-        """Generate 3 atmospheric broadcast messages announcing a new epoch.
+                                     narrative_theme: str = "",
+                                     epoch_name: str = "") -> list[str]:
+        """Generate 3 broadcast messages announcing a new epoch.
 
-        Default implementation calls self.complete() with a themed prompt.
-        DummyBackend overrides with static messages.
-        Falls back to static messages on failure.
+        Three beats:
+          1. The Announcement — atmospheric reveal of the epoch name
+          2. The Town — sensory description of the tavern
+          3. The Invitation — short, direct, come in
+
+        Args:
+            endgame_mode: Endgame mode string.
+            breach_type: Breach mini-event type.
+            narrative_theme: Optional narrative theme.
+            epoch_name: Epoch identity name for Message 1.
+
+        Returns:
+            List of exactly 3 broadcast strings (each <= 200 chars).
         """
+        from config import BROADCAST_CHAR_LIMIT
+
+        name_ctx = f" called '{epoch_name}'" if epoch_name else ""
         theme_ctx = f" themed around '{narrative_theme}'" if narrative_theme else ""
         prompt = (
-            f"A living dungeon has just regenerated. The old epoch is gone. "
-            f"A new one has begun — mode: {endgame_mode.replace('_', ' ')}, "
-            f"breach: {breach_type}{theme_ctx}.\n\n"
-            f"Write exactly 3 announcement messages the dungeon broadcasts to "
-            f"nearby adventurers. These are the dungeon waking up — not a "
-            f"system notification.\n\n"
-            f"Message 1: The Shiver. The old world ending. Ominous, disorienting.\n"
-            f"Message 2: The Reveal. What the dungeon has become. Atmospheric.\n"
-            f"Message 3: The Invitation. Come. Short, direct, menacing.\n\n"
+            f"A living dungeon has regenerated{name_ctx}{theme_ctx}.\n\n"
+            f"Write exactly 3 announcement broadcasts.\n\n"
+            f"Message 1: The Announcement. Name the new epoch atmospherically. "
+            f"What it is, what it feels like. Ominous reveal.\n"
+            f"Message 2: The Town. What the tavern feels/smells/sounds like "
+            f"right now. Sensory, grounded.\n"
+            f"Message 3: The Invitation. Short. Direct. The stairs are open. "
+            f"Come in.\n\n"
             f"Rules:\n"
-            f"- Each message MUST be under 150 characters\n"
+            f"- Each message MUST be under 200 characters\n"
             f"- No quotes, labels, prefixes, or emoji\n"
             f"- Sensory, not informational\n\n"
             f"Return exactly 3 lines, one message per line, nothing else."
         )
         fallback = [
-            "The ground shifts. Stone grinds against stone. The air tastes different.",
-            "A new shape stirs below. The dungeon remembers something it hasn't been yet.",
-            "The stairs are open. The tavern door holds. For now.",
+            "The ground shifts. Stone grinds against stone. Something ancient stirs below.",
+            "Smoke curls from the chimney. The bar smells of char and old wood. Grist is pouring.",
+            "The stairs are open.",
         ]
         try:
-            raw = self.complete(prompt, max_tokens=300)
+            raw = self.complete(prompt, max_tokens=400)
             lines = [ln.strip() for ln in raw.strip().split('\n') if ln.strip()]
             announcements = []
             for line in lines[:3]:
-                # Strip any accidental numbering like "1. " or "1) "
                 cleaned = line.lstrip('0123456789.)- ').strip()
                 if not cleaned:
                     cleaned = line.strip()
-                if len(cleaned) > LLM_OUTPUT_CHAR_LIMIT:
-                    cleaned = cleaned[:LLM_OUTPUT_CHAR_LIMIT - 3].rsplit(' ', 1)[0] + '...'
+                if len(cleaned) > BROADCAST_CHAR_LIMIT:
+                    cleaned = cleaned[:BROADCAST_CHAR_LIMIT - 3].rsplit(' ', 1)[0] + '...'
                 announcements.append(cleaned)
-            # Pad with fallbacks if fewer than 3
             while len(announcements) < 3:
                 announcements.append(fallback[len(announcements)])
             return announcements
@@ -1381,13 +1530,50 @@ class DummyBackend(BackendInterface):
         ]
         return random.choice(msgs)[:LLM_OUTPUT_CHAR_LIMIT]
 
+    def generate_epoch_preamble(self, endgame_mode: str, breach_type: str,
+                               narrative_theme: str = "",
+                               floor_themes: dict = None,
+                               spell_names: list = None) -> str:
+        """Static preamble for DummyBackend."""
+        return (
+            "It came in the small hours, the way it always does. A tremor that started "
+            "below the cellars and worked its way up through the stone until the bottles "
+            "behind the bar rattled and Grist's ledger slid half an inch to the left. "
+            "The lanterns dimmed. The fire popped. Then silence — the particular silence "
+            "that means the Darkcragg has shed its skin and grown a new one.\n\n"
+            "The scouts who went down at first light came back pale and quiet. Eight floors, "
+            "same as before, but nothing where they left it. New corridors where walls used "
+            "to be. Old rooms turned inside out. The air rising from the stairwell smells "
+            "different — colder, wetter, with something underneath that nobody wants to name.\n\n"
+            "The Last Ember is full tonight. Smoke hangs in layers above the bar. Grist "
+            "pours without being asked, his hand steady, his eyes on the door. The ledger "
+            "is open to a fresh page. He writes the date at the top and waits for names to "
+            "fill in below it.\n\n"
+            "Maren is in her corner, checking supplies — clean linens, sharp tools, the herbs "
+            "that stop bleeding and the ones that stop pain. She doesn't look up when new "
+            "arrivals come in. She already knows how many bandages she'll need. Torval has "
+            "laid out fresh stock on the counter: blades still bright from the forge, leather "
+            "that hasn't been scored yet. His prices are chalked on the wall. They're fair. "
+            "They won't stay that way.\n\n"
+            "Whisper sits where Whisper always sits — the corner where the lamplight doesn't "
+            "quite reach. A finger traces patterns on the table that might be a map or might "
+            "be nothing. \"Different this time,\" the voice says, to no one in particular. "
+            "\"The bones of it have shifted.\"\n\n"
+            "The stairwell door is open. Cold air drifts up from below, carrying the smell "
+            "of wet stone and old iron. The first few steps are visible in the torchlight — "
+            "worn smooth by all the boots that have gone down and the fewer that came back up. "
+            "Beyond the light, the stairs curve into darkness.\n\n"
+            "The stairs are open. They always are."
+        )
+
     def generate_epoch_announcements(self, endgame_mode: str,
                                      breach_type: str,
-                                     narrative_theme: str = "") -> list[str]:
+                                     narrative_theme: str = "",
+                                     epoch_name: str = "") -> list[str]:
         """Static epoch announcements for DummyBackend."""
         return [
             "The ground trembles. The air shifts. Something ancient stirs below.",
-            "A new epoch has begun. The dungeon remembers a different shape.",
+            "Smoke curls from the chimney. The bar smells of char and old wood. Grist is pouring.",
             "The stairs are open.",
         ]
 

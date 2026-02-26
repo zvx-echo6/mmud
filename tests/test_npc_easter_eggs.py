@@ -52,6 +52,9 @@ def _create_test_db(day_number=5) -> sqlite3.Connection:
                    'town', 3, 200, 0, NULL, 2, 100,
                    '2026-01-05T00:00:00')"""
     )
+    conn.execute(
+        "INSERT INTO node_sessions (mesh_id, player_id) VALUES ('!test01', 1)"
+    )
     # Room and monster for death logging tests
     conn.execute(
         """INSERT INTO rooms (id, floor, name, description, description_short)

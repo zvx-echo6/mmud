@@ -28,6 +28,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from config import (
     BREACH_MINI_EVENTS,
+    BROADCAST_CHAR_LIMIT,
     ENDGAME_MODES,
     FLOOR_THEMES,
     LLM_OUTPUT_CHAR_LIMIT,
@@ -174,6 +175,46 @@ def generate_epoch(
         if len(validation["warnings"]) > 10:
             print(f"    ... and {len(validation['warnings']) - 10} more")
 
+    # Announce the new epoch (non-fatal)
+    announcement_count = 0
+    try:
+        epoch_row = conn.execute("SELECT * FROM epoch WHERE id = 1").fetchone()
+        narrative_theme = epoch_row["narrative_theme"] if epoch_row else ""
+        epoch_name = epoch_row["epoch_name"] if epoch_row else ""
+        announcements = backend.generate_epoch_announcements(
+            endgame_mode, breach_type, narrative_theme or "", epoch_name or "",
+        )
+        conn.execute(
+            "UPDATE epoch SET announcements = ? WHERE id = 1",
+            (json.dumps(announcements),),
+        )
+        for msg in announcements:
+            conn.execute(
+                "INSERT INTO broadcasts (tier, message) VALUES (1, ?)",
+                (msg[:BROADCAST_CHAR_LIMIT],),
+            )
+        conn.commit()
+        announcement_count = len(announcements)
+        print(f"  Epoch announced: {announcement_count} broadcasts queued")
+    except Exception as e:
+        print(f"  WARNING: Epoch announcement failed (non-fatal): {e}")
+
+    # Generate dashboard preamble (non-fatal)
+    try:
+        spell_csv = conn.execute("SELECT spell_names FROM epoch WHERE id = 1").fetchone()
+        spell_list = spell_csv["spell_names"].split(",") if spell_csv and spell_csv["spell_names"] else []
+        preamble = backend.generate_epoch_preamble(
+            endgame_mode, breach_type,
+            narrative_theme=narrative_theme or "",
+            floor_themes=floor_themes,
+            spell_names=spell_list,
+        )
+        conn.execute("UPDATE epoch SET preamble = ? WHERE id = 1", (preamble,))
+        conn.commit()
+        print(f"  Dashboard preamble: {len(preamble)} chars")
+    except Exception as e:
+        print(f"  WARNING: Preamble generation failed (non-fatal): {e}")
+
     conn.close()
 
     print()
@@ -258,20 +299,6 @@ def _generate_narrative_content(
         ("breach", "title", skin["title"][:LLM_OUTPUT_CHAR_LIMIT]),
     )
     counts["skins"] += 1
-
-    # Atmospheric broadcasts
-    for floor in range(1, NUM_FLOORS + 1):
-        if floor_themes and floor in floor_themes:
-            theme = floor_themes[floor]["floor_name"]
-        else:
-            theme = FLOOR_THEMES.get(floor, "")
-        for _ in range(2):
-            msg = backend.generate_atmospheric_broadcast(theme)
-            conn.execute(
-                "INSERT INTO broadcasts (tier, message) VALUES (2, ?)",
-                (msg[:LLM_OUTPUT_CHAR_LIMIT],),
-            )
-            counts["broadcasts"] += 1
 
     # Spell names (3 per epoch, ≤20 chars each)
     theme = FLOOR_THEMES.get(1, "")

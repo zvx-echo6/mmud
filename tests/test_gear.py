@@ -69,7 +69,9 @@ def _seed_test_world(conn: sqlite3.Connection) -> None:
 
 
 def _register(engine: GameEngine, node_id: str = "!test1234"):
-    engine.process_message(node_id, "Tester", "hello")
+    engine.process_message(node_id, "Tester", "join")
+    engine.process_message(node_id, "Tester", "Tester")
+    engine.process_message(node_id, "Tester", "testpass")
     engine.process_message(node_id, "Tester", "w")
     return node_id
 
@@ -92,7 +94,7 @@ def test_equip_item():
     engine = GameEngine(conn)
     _register(engine)
 
-    player = player_model.get_player_by_mesh_id(conn, "!test1234")
+    player = player_model.get_player_by_session(conn, "!test1234")
     _give_item(conn, player["id"], 1)  # Rusty Sword
 
     resp = engine.process_message("!test1234", "Tester", "equip rusty sword")
@@ -107,7 +109,7 @@ def test_equip_replaces_existing():
     engine = GameEngine(conn)
     _register(engine)
 
-    player = player_model.get_player_by_mesh_id(conn, "!test1234")
+    player = player_model.get_player_by_session(conn, "!test1234")
     _give_item(conn, player["id"], 1)  # Rusty Sword
     _give_item(conn, player["id"], 4)  # Iron Blade
 
@@ -130,7 +132,7 @@ def test_unequip_item():
     engine = GameEngine(conn)
     _register(engine)
 
-    player = player_model.get_player_by_mesh_id(conn, "!test1234")
+    player = player_model.get_player_by_session(conn, "!test1234")
     _give_item(conn, player["id"], 1)
     engine.process_message("!test1234", "Tester", "equip rusty sword")
 
@@ -155,7 +157,7 @@ def test_drop_item():
     engine = GameEngine(conn)
     _register(engine)
 
-    player = player_model.get_player_by_mesh_id(conn, "!test1234")
+    player = player_model.get_player_by_session(conn, "!test1234")
     _give_item(conn, player["id"], 1)
 
     resp = engine.process_message("!test1234", "Tester", "drop rusty sword")
@@ -175,7 +177,7 @@ def test_effective_stats_no_gear():
     engine = GameEngine(conn)
     _register(engine)
 
-    player = player_model.get_player_by_mesh_id(conn, "!test1234")
+    player = player_model.get_player_by_session(conn, "!test1234")
     eff = economy.get_effective_stats(conn, player)
     assert eff["pow"] == player["pow"]
     assert eff["def"] == player["def"]
@@ -188,7 +190,7 @@ def test_effective_stats_with_gear():
     engine = GameEngine(conn)
     _register(engine)
 
-    player = player_model.get_player_by_mesh_id(conn, "!test1234")
+    player = player_model.get_player_by_session(conn, "!test1234")
     _give_item(conn, player["id"], 1)  # Rusty Sword: +2 POW
     _give_item(conn, player["id"], 2)  # Leather Cap: +2 DEF
     _give_item(conn, player["id"], 3)  # Lucky Charm: +2 SPD
@@ -209,7 +211,7 @@ def test_stats_display_shows_effective():
     engine = GameEngine(conn)
     _register(engine)
 
-    player = player_model.get_player_by_mesh_id(conn, "!test1234")
+    player = player_model.get_player_by_session(conn, "!test1234")
     _give_item(conn, player["id"], 1)  # Rusty Sword: +2 POW
     economy.equip_item(conn, player["id"], "rusty sword")
 
@@ -228,7 +230,7 @@ def test_inventory_shows_equipped_and_backpack():
     engine = GameEngine(conn)
     _register(engine)
 
-    player = player_model.get_player_by_mesh_id(conn, "!test1234")
+    player = player_model.get_player_by_session(conn, "!test1234")
     _give_item(conn, player["id"], 1)
     _give_item(conn, player["id"], 2)
     economy.equip_item(conn, player["id"], "rusty sword")
@@ -257,7 +259,7 @@ def test_backpack_limit():
     engine = GameEngine(conn)
     _register(engine)
 
-    player = player_model.get_player_by_mesh_id(conn, "!test1234")
+    player = player_model.get_player_by_session(conn, "!test1234")
 
     # Fill backpack to capacity
     for _ in range(BACKPACK_SIZE):
@@ -278,7 +280,7 @@ def test_loot_drop_function():
     engine = GameEngine(conn)
     _register(engine)
 
-    player = player_model.get_player_by_mesh_id(conn, "!test1234")
+    player = player_model.get_player_by_session(conn, "!test1234")
 
     # Run it many times to exercise both paths
     results = set()
@@ -307,7 +309,7 @@ def test_gear_responses_under_150():
     engine = GameEngine(conn)
     _register(engine)
 
-    player = player_model.get_player_by_mesh_id(conn, "!test1234")
+    player = player_model.get_player_by_session(conn, "!test1234")
     _give_item(conn, player["id"], 1)
     _give_item(conn, player["id"], 2)
     _give_item(conn, player["id"], 3)

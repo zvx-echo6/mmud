@@ -8,13 +8,23 @@
 
 CREATE TABLE IF NOT EXISTS accounts (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    mesh_id TEXT UNIQUE NOT NULL,       -- Meshtastic node ID
+    mesh_id TEXT UNIQUE NOT NULL,       -- Meshtastic node ID (or "char_<name>" for character accounts)
     handle TEXT UNIQUE NOT NULL,        -- Display name
+    character_name TEXT DEFAULT '',     -- Chosen character name (for auth lookup)
+    password_hash TEXT DEFAULT '',      -- "salt:sha256hex" password hash
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     total_epochs INTEGER DEFAULT 0,
     epoch_wins INTEGER DEFAULT 0,
     lifetime_kills INTEGER DEFAULT 0,
     longest_hardcore_streak INTEGER DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS node_sessions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    mesh_id TEXT UNIQUE NOT NULL,       -- Meshtastic node ID currently logged in
+    player_id INTEGER NOT NULL REFERENCES players(id),
+    logged_in_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    last_active DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE IF NOT EXISTS titles (
@@ -59,7 +69,8 @@ CREATE TABLE IF NOT EXISTS epoch (
     narrative_theme TEXT,
     day_number INTEGER DEFAULT 1,
     spell_names TEXT DEFAULT '',       -- Comma-separated spell names (3 per epoch, ≤20 chars each)
-    announcements TEXT DEFAULT ''      -- JSON array of 3 epoch announcement strings
+    announcements TEXT DEFAULT '',     -- JSON array of 3 epoch announcement strings
+    preamble TEXT DEFAULT ''           -- Rich prose preamble for dashboard header (web-only)
 );
 
 CREATE TABLE IF NOT EXISTS floor_themes (

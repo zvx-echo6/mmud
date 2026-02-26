@@ -118,7 +118,9 @@ def _seed_world(conn: sqlite3.Connection) -> None:
 
 def _register(engine: GameEngine, node_id: str = "!test1234", name: str = "Tester") -> None:
     """Register a warrior player."""
-    engine.process_message(node_id, name, "hello")
+    engine.process_message(node_id, name, "join")
+    engine.process_message(node_id, name, name)
+    engine.process_message(node_id, name, "testpass")
     engine.process_message(node_id, name, "w")
 
 
@@ -132,7 +134,11 @@ def _place_in_dungeon(conn: sqlite3.Connection, player_id: int, room_id: int, fl
 
 
 def _get_player(conn: sqlite3.Connection, node_id: str = "!test1234") -> dict:
-    """Get player by node id."""
+    """Get player by session."""
+    from src.models import player as player_model
+    p = player_model.get_player_by_session(conn, node_id)
+    if p:
+        return p
     row = conn.execute(
         """SELECT p.* FROM players p
            JOIN accounts a ON p.account_id = a.id

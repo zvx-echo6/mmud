@@ -13,6 +13,16 @@
 {% endblock %}
 
 {% block content %}
+  {# ═══ EPOCH PREAMBLE ═══ #}
+  {% if preamble %}
+  <div class="epoch-preamble">
+    {% for para in preamble %}
+    <p>{{ para }}</p>
+    {% endfor %}
+  </div>
+  <div class="divider">◆</div>
+  {% endif %}
+
   {# ═══ EPOCH IDENTITY ═══ #}
   {% set mode_labels = {
     'hold_the_line': 'HOLD THE LINE',

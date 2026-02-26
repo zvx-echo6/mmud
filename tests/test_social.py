@@ -62,6 +62,13 @@ def _seed(conn: sqlite3.Connection) -> None:
            VALUES (2, 2, 'Sidekick', 'rogue', 18, 20, 2, 1, 3, 'dungeon', 2, 1, 2,
                    '2026-01-01T00:00:00', 3)"""
     )
+    # Node sessions for engine-based tests
+    conn.execute(
+        "INSERT INTO node_sessions (mesh_id, player_id) VALUES ('!abc', 1)"
+    )
+    conn.execute(
+        "INSERT INTO node_sessions (mesh_id, player_id) VALUES ('!def', 2)"
+    )
     conn.commit()
 
 

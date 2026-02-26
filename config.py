@@ -429,6 +429,7 @@ INCURSION_HOLD_HOURS = 48
 # BROADCASTS
 # =============================================================================
 
+BROADCAST_CHAR_LIMIT = 200     # Broadcast storage limit (longer than mesh transport)
 BROADCAST_TIERS = {
     1: "immediate",   # Server-wide, always delivered
     2: "batched",     # Server-wide, batched into barkeep recap if offline

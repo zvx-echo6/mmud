@@ -57,7 +57,9 @@ def _seed_test_world(conn: sqlite3.Connection) -> None:
 
 def _register_and_enter(engine: GameEngine, node_id: str = "!test1234"):
     """Register a player and enter the dungeon."""
-    engine.process_message(node_id, "Tester", "hello")
+    engine.process_message(node_id, "Tester", "join")
+    engine.process_message(node_id, "Tester", "Tester")
+    engine.process_message(node_id, "Tester", "testpass")
     engine.process_message(node_id, "Tester", "w")  # warrior
     engine.process_message(node_id, "Tester", "enter")
     return node_id
@@ -73,7 +75,7 @@ def test_xp_awarded_on_kill():
     resp = engine.process_message("!test1234", "Tester", "fight")
 
     assert "xp" in resp.lower() or "+200xp" in resp
-    player = player_model.get_player_by_mesh_id(conn, "!test1234")
+    player = player_model.get_player_by_session(conn, "!test1234")
     assert player["xp"] >= 200
 
 
@@ -83,7 +85,7 @@ def test_level_up_grants_stat_points():
     engine = GameEngine(conn)
     _register_and_enter(engine)
 
-    player = player_model.get_player_by_mesh_id(conn, "!test1234")
+    player = player_model.get_player_by_session(conn, "!test1234")
     assert player["stat_points"] == 0
 
     # Manually give enough XP to level up
@@ -100,7 +102,7 @@ def test_multi_level_up():
     engine = GameEngine(conn)
     _register_and_enter(engine)
 
-    player = player_model.get_player_by_mesh_id(conn, "!test1234")
+    player = player_model.get_player_by_session(conn, "!test1234")
     # Give enough XP to go from level 1 to level 4 (XP_PER_LEVEL[3] = 500)
     player_model.award_xp(conn, player["id"], 500)
 
@@ -115,7 +117,7 @@ def test_train_stat_pow():
     engine = GameEngine(conn)
     _register_and_enter(engine)
 
-    player = player_model.get_player_by_mesh_id(conn, "!test1234")
+    player = player_model.get_player_by_session(conn, "!test1234")
     original_pow = player["pow"]
 
     # Give stat points
@@ -137,7 +139,7 @@ def test_train_stat_def():
     engine = GameEngine(conn)
     _register_and_enter(engine)
 
-    player = player_model.get_player_by_mesh_id(conn, "!test1234")
+    player = player_model.get_player_by_session(conn, "!test1234")
     original_def = player["def"]
     player_model.update_state(conn, player["id"], stat_points=1)
     engine.process_message("!test1234", "Tester", "town")
@@ -156,7 +158,7 @@ def test_train_stat_spd():
     engine = GameEngine(conn)
     _register_and_enter(engine)
 
-    player = player_model.get_player_by_mesh_id(conn, "!test1234")
+    player = player_model.get_player_by_session(conn, "!test1234")
     original_spd = player["spd"]
     player_model.update_state(conn, player["id"], stat_points=1)
     engine.process_message("!test1234", "Tester", "town")
@@ -196,7 +198,7 @@ def test_train_no_arg_shows_points():
     engine = GameEngine(conn)
     _register_and_enter(engine)
 
-    player = player_model.get_player_by_mesh_id(conn, "!test1234")
+    player = player_model.get_player_by_session(conn, "!test1234")
     player_model.update_state(conn, player["id"], stat_points=3)
     engine.process_message("!test1234", "Tester", "town")
 
@@ -211,7 +213,7 @@ def test_level_up_increases_hp():
     engine = GameEngine(conn)
     _register_and_enter(engine)
 
-    player = player_model.get_player_by_mesh_id(conn, "!test1234")
+    player = player_model.get_player_by_session(conn, "!test1234")
     original_hp_max = player["hp_max"]
 
     player_model.award_xp(conn, player["id"], XP_PER_LEVEL[1])
@@ -226,7 +228,7 @@ def test_stats_shows_stat_points():
     engine = GameEngine(conn)
     _register_and_enter(engine)
 
-    player = player_model.get_player_by_mesh_id(conn, "!test1234")
+    player = player_model.get_player_by_session(conn, "!test1234")
     player_model.update_state(conn, player["id"], stat_points=2)
 
     resp = engine.process_message("!test1234", "Tester", "stats")

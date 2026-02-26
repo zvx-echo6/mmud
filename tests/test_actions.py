@@ -75,30 +75,39 @@ def _seed_test_world(conn: sqlite3.Connection) -> None:
     conn.commit()
 
 
-def register_player(engine: GameEngine, node_id: str = "!test1234", name: str = "Tester") -> str:
+def register_player(engine: GameEngine, node_id: str = "!test1234", name: str = "Tester", cls: str = "w") -> str:
     """Register a new player via the engine. Returns the welcome response."""
-    # First message — get class picker
-    resp1 = engine.process_message(node_id, name, "hello")
-    assert "Pick class" in resp1
-
-    # Second message — pick warrior
-    resp2 = engine.process_message(node_id, name, "w")
-    assert "Welcome" in resp2
-    return resp2
+    resp = engine.process_message(node_id, name, "join")
+    assert "name" in resp.lower() or "Name" in resp
+    resp = engine.process_message(node_id, name, name)
+    assert "password" in resp.lower() or "Password" in resp
+    resp = engine.process_message(node_id, name, "testpass")
+    assert "class" in resp.lower() or "Pick" in resp
+    resp = engine.process_message(node_id, name, cls)
+    assert "Welcome" in resp
+    return resp
 
 
 def test_new_player_registration():
-    """New player gets class picker, then registers."""
+    """New player gets name prompt, then password, then class, then registers."""
     conn = make_test_db()
     engine = GameEngine(conn)
 
-    resp = engine.process_message("!abc", "Alice", "hello")
-    assert "Pick class" in resp
+    resp = engine.process_message("!abc", "Alice", "join")
+    assert "name" in resp.lower() or "Name" in resp
+    assert len(resp) <= MSG_CHAR_LIMIT
+
+    resp = engine.process_message("!abc", "Alice", "Alice")
+    assert "password" in resp.lower() or "Password" in resp
+    assert len(resp) <= MSG_CHAR_LIMIT
+
+    resp = engine.process_message("!abc", "Alice", "test1234")
+    assert "Pick" in resp or "class" in resp.lower()
     assert len(resp) <= MSG_CHAR_LIMIT
 
     resp = engine.process_message("!abc", "Alice", "w")
     assert "Welcome" in resp
-    assert "warrior" in resp.lower()
+    assert "warrior" in resp.lower() or "Warrior" in resp
     assert len(resp) <= MSG_CHAR_LIMIT
 
 

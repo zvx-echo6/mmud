@@ -17,7 +17,7 @@
         <th>Floor</th>
         <th>State</th>
         <th>HP</th>
-        <th>Mesh ID</th>
+        <th>Active Nodes</th>
         <th>Actions</th>
       </tr>
     </thead>
@@ -33,7 +33,7 @@
         <td>{{ p.floor }}</td>
         <td>{{ p.state }}</td>
         <td>{{ p.hp }}/{{ p.hp_max }}</td>
-        <td>{{ p.mesh_id or '—' }}</td>
+        <td>{{ p.active_nodes or '—' }}</td>
         <td style="white-space:nowrap;">
           {% if not p.is_banned %}
           <form method="post" action="{{ url_for('admin.kick_player', player_id=p.id) }}" style="display:inline;">
@@ -46,6 +46,16 @@
           {% endif %}
           <form method="post" action="{{ url_for('admin.reset_player', player_id=p.id) }}" style="display:inline;">
             <button type="submit" class="admin-btn secondary" style="font-size:9px;padding:3px 8px;" onclick="return confirm('Reset {{ p.name }} to level 1?')">Reset</button>
+          </form>
+          <form method="post" action="{{ url_for('admin.force_logout', player_id=p.id) }}" style="display:inline;">
+            <button type="submit" class="admin-btn secondary" style="font-size:9px;padding:3px 8px;" onclick="return confirm('Force logout {{ p.name }}?')">Logout</button>
+          </form>
+          <form method="post" action="{{ url_for('admin.reset_password', player_id=p.id) }}" style="display:inline;">
+            <input type="hidden" name="new_password" value="">
+            <button type="submit" class="admin-btn secondary" style="font-size:9px;padding:3px 8px;" onclick="var pw=prompt('New password for {{ p.name }} (4+ chars):'); if(!pw||pw.length<4){return false;} this.form.querySelector('[name=new_password]').value=pw; return true;">PW Reset</button>
+          </form>
+          <form method="post" action="{{ url_for('admin.delete_character', player_id=p.id) }}" style="display:inline;">
+            <button type="submit" class="admin-btn danger" style="font-size:9px;padding:3px 8px;" onclick="return confirm('DELETE character {{ p.name }}? This cannot be undone.')">Delete</button>
           </form>
         </td>
       </tr>

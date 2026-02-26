@@ -8,6 +8,8 @@ import sqlite3
 from datetime import datetime, timezone
 from typing import Optional
 
+from config import BROADCAST_CHAR_LIMIT
+
 
 def create_broadcast(
     conn: sqlite3.Connection,
@@ -31,7 +33,7 @@ def create_broadcast(
     cursor = conn.execute(
         """INSERT INTO broadcasts (tier, targeted, target_condition, message, created_at)
            VALUES (?, ?, ?, ?, ?)""",
-        (tier, 1 if targeted else 0, target_condition, message[:150],
+        (tier, 1 if targeted else 0, target_condition, message[:BROADCAST_CHAR_LIMIT],
          datetime.now(timezone.utc).isoformat()),
     )
     conn.commit()
@@ -234,3 +236,47 @@ def broadcast_new_bounty(
 ) -> None:
     """Broadcast new bounty activation (tier 2)."""
     create_broadcast(conn, 2, f"# New bounty: {description}")
+
+
+def broadcast_floor_unlock(
+    conn: sqlite3.Connection, cleared_floor: int
+) -> Optional[int]:
+    """Broadcast that a floor boss was killed, unlocking the next floor.
+
+    Composes the message from floor_themes data for the NEXT floor
+    (the one being unlocked). Format:
+      [transition flavor]. [floor_name]. [atmosphere snippet].
+
+    Args:
+        conn: Database connection.
+        cleared_floor: The floor whose boss was just killed.
+
+    Returns:
+        Broadcast ID, or None if next floor has no theme data or is floor 8+.
+    """
+    from config import NUM_FLOORS
+
+    next_floor = cleared_floor + 1
+    if next_floor > NUM_FLOORS:
+        return None
+
+    row = conn.execute(
+        "SELECT floor_name, atmosphere, floor_transition FROM floor_themes WHERE floor = ?",
+        (next_floor,),
+    ).fetchone()
+    if not row:
+        return None
+
+    transition = row["floor_transition"] if row["floor_transition"] else ""
+    floor_name = row["floor_name"] if row["floor_name"] else f"Floor {next_floor}"
+    atmosphere = row["atmosphere"] if row["atmosphere"] else ""
+
+    parts = []
+    if transition:
+        parts.append(transition.rstrip('.') + '.')
+    parts.append(floor_name.rstrip('.') + '.')
+    if atmosphere:
+        parts.append(atmosphere.rstrip('.') + '.')
+
+    message = " ".join(parts)
+    return create_broadcast(conn, 1, message)

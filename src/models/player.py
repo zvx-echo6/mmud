@@ -3,8 +3,10 @@ Player state management for MMUD.
 One row per player. No joins on the hot path.
 """
 
+import hashlib
 import math
 import random
+import secrets
 import sqlite3
 from datetime import datetime, timezone
 from typing import Optional
@@ -372,5 +374,94 @@ def reset_daily_actions(conn: sqlite3.Connection) -> None:
            social_actions_remaining = ?,
            special_actions_remaining = ?""",
         (DUNGEON_ACTIONS_PER_DAY, SOCIAL_ACTIONS_PER_DAY, SPECIAL_ACTIONS_PER_DAY),
+    )
+    conn.commit()
+
+
+# ═══ CHARACTER AUTH ═══
+
+
+def hash_password(password: str) -> str:
+    """Hash a password with a random salt. Returns 'salt:sha256hex'."""
+    salt = secrets.token_hex(16)
+    h = hashlib.sha256(f"{salt}{password}".encode()).hexdigest()
+    return f"{salt}:{h}"
+
+
+def verify_password(password: str, password_hash: str) -> bool:
+    """Verify a password against a stored hash."""
+    if ":" not in password_hash:
+        return False
+    salt, h = password_hash.split(":", 1)
+    return hashlib.sha256(f"{salt}{password}".encode()).hexdigest() == h
+
+
+def create_account_with_password(
+    conn: sqlite3.Connection, character_name: str, password: str
+) -> int:
+    """Create a new account with character name and password.
+
+    Returns:
+        account_id (integer primary key).
+    """
+    pw_hash = hash_password(password)
+    cursor = conn.execute(
+        "INSERT INTO accounts (mesh_id, handle, character_name, password_hash) "
+        "VALUES (?, ?, ?, ?)",
+        (f"char_{character_name}", character_name, character_name, pw_hash),
+    )
+    conn.commit()
+    return cursor.lastrowid
+
+
+def get_account_by_character_name(
+    conn: sqlite3.Connection, name: str
+) -> Optional[dict]:
+    """Look up an account by character name (case-insensitive)."""
+    row = conn.execute(
+        "SELECT * FROM accounts WHERE character_name = ? COLLATE NOCASE",
+        (name,),
+    ).fetchone()
+    return dict(row) if row else None
+
+
+def create_node_session(
+    conn: sqlite3.Connection, mesh_id: str, player_id: int
+) -> None:
+    """Create or replace a node session (one node = one active character)."""
+    conn.execute(
+        "INSERT OR REPLACE INTO node_sessions "
+        "(mesh_id, player_id, logged_in_at, last_active) "
+        "VALUES (?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
+        (mesh_id, player_id),
+    )
+    conn.commit()
+
+
+def get_player_by_session(
+    conn: sqlite3.Connection, mesh_id: str
+) -> Optional[dict]:
+    """Get the player logged in on a specific node via session table."""
+    row = conn.execute(
+        "SELECT p.* FROM players p "
+        "JOIN node_sessions ns ON ns.player_id = p.id "
+        "WHERE ns.mesh_id = ?",
+        (mesh_id,),
+    ).fetchone()
+    return dict(row) if row else None
+
+
+def clear_node_session(conn: sqlite3.Connection, mesh_id: str) -> None:
+    """Remove the session for a node (logout)."""
+    conn.execute("DELETE FROM node_sessions WHERE mesh_id = ?", (mesh_id,))
+    conn.commit()
+
+
+def update_session_activity(conn: sqlite3.Connection, mesh_id: str) -> None:
+    """Update last_active timestamp for a node session."""
+    conn.execute(
+        "UPDATE node_sessions SET last_active = CURRENT_TIMESTAMP "
+        "WHERE mesh_id = ?",
+        (mesh_id,),
     )
     conn.commit()
