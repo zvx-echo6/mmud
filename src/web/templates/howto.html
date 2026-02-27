@@ -42,15 +42,15 @@
     <div class="flow-step">
       <div class="flow-step-num">1</div>
       <div class="flow-step-content">
-        <div class="flow-step-label">Send a DM to the game node</div>
-        <div class="flow-step-text">Find the meshMUD node on your Meshtastic client and send any message. The server responds with a welcome and asks you to pick a class.</div>
+        <div class="flow-step-label">Send <code>JOIN</code> to the game node</div>
+        <div class="flow-step-text">Find the meshMUD node (<strong>EMBR</strong>) on your Meshtastic client and DM it the word <code>JOIN</code>. The server will ask you to pick a name.</div>
       </div>
     </div>
     <div class="flow-step">
       <div class="flow-step-num">2</div>
       <div class="flow-step-content">
-        <div class="flow-step-label">Pick your class</div>
-        <div class="flow-step-text">One letter. <code>W</code> for Warrior, <code>C</code> for Caster, <code>R</code> for Rogue. That's your only creation choice — everything else emerges through play.</div>
+        <div class="flow-step-label">Name, password, class</div>
+        <div class="flow-step-text">Pick a name, set a password, then choose your class: <code>W</code> for Warrior, <code>C</code> for Caster, <code>R</code> for Rogue. Next time, just send <code>LOGIN</code> to resume.</div>
       </div>
     </div>
     <div class="flow-step">
@@ -63,12 +63,14 @@
   </div>
 
   <div class="msg-example">
-    <span class="msg-player">You → meshMUD:</span> <span class="msg-gold">hello</span><br>
-    <span class="msg-server">meshMUD:</span> Welcome to The Last Ember. Pick a class: (W)arrior (C)aster (R)ogue<br>
+    <span class="msg-player">You → EMBR:</span> <span class="msg-gold">join</span><br>
+    <span class="msg-server">EMBR:</span> Welcome. Pick a name for your character.<br>
+    <span class="msg-player">You:</span> <span class="msg-gold">Kael</span><br>
+    <span class="msg-server">EMBR:</span> Set a password for Kael.<br>
+    <span class="msg-player">You:</span> <span class="msg-gold">mypassword</span><br>
+    <span class="msg-server">EMBR:</span> Pick a class: (W)arrior (C)aster (R)ogue<br>
     <span class="msg-player">You:</span> <span class="msg-gold">W</span><br>
-    <span class="msg-server">meshMUD:</span> Kael the Warrior. POW:5 DEF:4 SPD:3 HP:30. You stand in the tavern. Type L.<br>
-    <span class="msg-player">You:</span> <span class="msg-gold">L</span><br>
-    <span class="msg-server">meshMUD:</span> The Last Ember. Lanterns burn without oil. <span class="npc-name" data-npc="grist" role="button" tabindex="0">Grist</span> polishes a glass. Exits: dungeon.<br>
+    <span class="msg-server">EMBR:</span> Kael the Warrior. HP:50 POW:3 DEF:2 SPD:1. You stand in the tavern. Type L.<br>
   </div>
 
   {# ═══ CLASSES ═══ #}
@@ -100,7 +102,7 @@
   {# ═══ A TYPICAL DAY ═══ #}
   <div class="divider">A Typical Day</div>
 
-  <p class="prose">A session takes <strong>five to fifteen minutes</strong>. You get 12 dungeon actions per day — enough to explore a few rooms, fight a few monsters, and make progress without burning out. Town actions are always free.</p>
+  <p class="prose">A session takes <strong>five to fifteen minutes</strong>. You get 8 movement actions per day — enough to explore several rooms and make real progress. Combat is free, so you can fight as much as you want. Town actions are always free.</p>
 
   <div class="flow-steps">
     <div class="flow-step">
@@ -128,7 +130,7 @@
       <div class="flow-step-num">4</div>
       <div class="flow-step-content">
         <div class="flow-step-label">Enter the dungeon</div>
-        <div class="flow-step-text">Move room to room, fight what you find, look for secrets, leave messages for other players. Each move or fight costs an action. Twelve per day — spend them wisely.</div>
+        <div class="flow-step-text">Move room to room, fight what you find, look for secrets, leave messages for other players. Only movement costs an action — combat is free. Eight moves per day, so choose your path wisely.</div>
       </div>
     </div>
     <div class="flow-step">
@@ -253,6 +255,7 @@
       <span class="cmd-key">n s e w</span><span class="cmd-desc">Move north, south, east, west</span>
       <span class="cmd-key">l</span><span class="cmd-desc">Look — describe current room, show exits</span>
       <span class="cmd-key">x [thing]</span><span class="cmd-desc">Examine something in the room <span class="cmd-unlock">LV5</span></span>
+      <span class="cmd-key">return</span><span class="cmd-desc">Retreat to town from anywhere in the dungeon</span>
       <span class="cmd-key">who</span><span class="cmd-desc">List active players <span class="cmd-unlock">LV3</span></span>
     </div>
   </div>
@@ -301,6 +304,9 @@
   <div class="callout gold">
     <div class="callout-label">Meta</div>
     <div class="cmd-grid">
+      <span class="cmd-key">join</span><span class="cmd-desc">Create a new character</span>
+      <span class="cmd-key">login</span><span class="cmd-desc">Log in to an existing character</span>
+      <span class="cmd-key">logout</span><span class="cmd-desc">End your session</span>
       <span class="cmd-key">h</span><span class="cmd-desc">Help — list all available commands</span>
       <span class="cmd-key">h [cmd]</span><span class="cmd-desc">Help on a specific command</span>
       <span class="cmd-key">vote</span><span class="cmd-desc">Vote for next epoch's mode (day 30 only) <span class="cmd-unlock">LV1</span></span>
@@ -316,7 +322,7 @@
     <p class="prose"><strong>Visit <span class="npc-name" data-npc="grist" role="button" tabindex="0">Grist</span> every session.</strong> His recap costs nothing and tells you everything you missed. The bounty board is there too. Five seconds of reading saves you from walking into something that killed Sable yesterday.</p>
     <p class="prose"><strong>Leave messages.</strong> A 15-character note in a dangerous room saves someone's life tomorrow. This is a small network. Help each other.</p>
     <p class="prose"><strong>Read room descriptions.</strong> The dungeon hides things in plain sight. If the text mentions scratches on a wall, there's a reason. If <span class="npc-name" data-npc="whisper" role="button" tabindex="0">Whisper</span> mumbles about the eastern branch, there's a reason. The game rewards attention.</p>
-    <p class="prose"><strong>You don't have to fight everything.</strong> Twelve actions is enough for a good day, not enough for a reckless one. Know when to push and when to walk away. The dungeon will be here tomorrow.</p>
+    <p class="prose"><strong>You don't have to explore everything.</strong> Eight moves is enough for a good day, not enough for a reckless one. Combat is free, but every step costs. Know when to push deeper and when to RETURN to town.</p>
     <p class="prose"><strong>Bard tokens accrue whether you log in or not.</strong> One per day, cap at five. Spend them at the barkeep for things gold can't buy — hints, buffs, intel. A patient player who saves five tokens gets information that changes everything.</p>
   </div>
 {% endblock %}

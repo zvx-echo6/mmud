@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-MMUD is a text-based multiplayer dungeon crawler designed for Meshtastic LoRa mesh networks. Think BBS door games (Legend of the Red Dragon, TradeWars 2002) adapted for modern mesh radio constraints: 175-character message limits (200 overflow max), async play, 5-30 players, 12 dungeon actions per day, 30-day wipe cycles (epochs).
+MMUD is a text-based multiplayer dungeon crawler designed for Meshtastic LoRa mesh networks. Think BBS door games (Legend of the Red Dragon, TradeWars 2002) adapted for modern mesh radio constraints: 175-character message limits (200 overflow max), async play, 5-30 players, 8 movement actions per day, 30-day wipe cycles (epochs).
 
 **The complete design document is at `docs/planned.md`.** Read it before making architectural decisions. Every mechanic has been deliberately designed around the constraints of mesh radio play.
 
@@ -11,7 +11,7 @@ MMUD is a text-based multiplayer dungeon crawler designed for Meshtastic LoRa me
 - **175 characters per message** — target limit for Meshtastic LoRa (200 overflow max)
 - **Game engine never calls LLMs at runtime** — all text content is batch-generated at epoch start and served via template substitution. The one exception is NPC conversation DMs, which use runtime LLM calls through a transaction tag (TX) system.
 - **Async-first** — no guarantee two players are ever online simultaneously. Every multiplayer mechanic works through shared state in the database.
-- **12 dungeon actions per day** — the primary scarcity mechanic. Town actions are always free.
+- **8 movement actions per day** — only room-to-room movement costs actions. Combat (fight, flee, charge, sneak, cast) is free. Town actions are always free.
 - **30-day epochs** — everything except player accounts and meta-progression resets
 
 ## Tech Stack
@@ -104,8 +104,8 @@ src/
     prototypes/       # Original HTML design references
   db/
     schema.sql    # Database schema
-    migrations/   # Schema versioning (008 = reveal + spells)
-tests/            # 900+ tests, mirror src/ structure
+    migrations/   # Schema versioning (014 = epoch preamble)
+tests/            # 990+ tests, mirror src/ structure
 scripts/
   epoch_generate.py  # Run epoch generation pipeline
   epoch_reset.py     # Wipe and start new epoch
@@ -118,13 +118,20 @@ docker-compose.yml   # Container orchestration
 
 ## Key Design Patterns
 
+### Character Authentication
+Players must JOIN (create) or LOGIN before playing. The flow:
+- **JOIN** → pick name → set password → pick class (W/C/R) → spawned in town
+- **LOGIN** → name → password → resume session
+- **LOGOUT** → ends session, clears node binding
+- Node sessions tracked in `node_sessions` table — one active session per node at a time
+
 ### Message Processing Loop
 ```
 receive_message() -> parse_command() -> check_action_budget() -> execute_action() -> format_response() -> send_message()
                                                                        |
                                                               (maybe_queue_npc_dm)
 ```
-Every inbound message follows this pipeline. If the action costs a dungeon action, decrement the budget before executing. After execution, the engine checks if the player entered an NPC's town location and queues a greeting DM if cooldown permits.
+Every inbound message follows this pipeline. Only movement (`move`) costs an action — combat and abilities are free. After execution, the engine checks if the player entered an NPC's town location and queues a greeting DM if cooldown permits.
 
 ### State Machine
 Player state is simple: `town`, `dungeon`, `combat`, `dead`. Actions are validated against current state — you can't `fight` in town, you can't `shop` in the dungeon.
@@ -160,6 +167,15 @@ Rooms are populated with hidden content during epoch generation:
 - **Secrets**: Auto-detected if undiscovered secret exists in room
 - Tracking: `player_reveals` table enforces once-per-room-per-player-per-epoch
 
+### RETURN Command
+Players can retreat to town from any dungeon floor via `RETURN` (aliases: `RETREAT`, `TOWN`, `ASCEND`). Always works regardless of remaining actions. Blocked during combat (must FLEE first). Returns floor-depth-appropriate narrative text.
+
+### Epoch Preamble & Announcements
+Each epoch generates a rich narrative preamble (<=500 chars) displayed at the top of the dashboard, and 3 tier-1 atmospheric announcements broadcast during the epoch. Both are LLM-generated at epoch start and stored in the `epoch` table.
+
+### Transport Reliability
+`MeshTransport` (meshtastic.py) includes connection health monitoring, a threaded send queue with configurable delays, and ACK tracking with retry tags. The health monitor reconnects automatically on connection loss. Send queue prevents message flooding on LoRa.
+
 ### Epoch Spell Names
 Three themed spell names are generated per epoch (<=20 chars each) and stored comma-separated in `epoch.spell_names`. In-combat cast uses a random spell name instead of hardcoded text. DummyBackend picks from a pool of 9 names; real LLM backends prompt for themed names.
 
@@ -169,7 +185,7 @@ Three themed spell names are generated per epoch (<=20 chars each) and stored co
 - Player state is one row per player. No joins for the hot path.
 - Shared state uses atomic UPDATE statements for concurrent access.
 - Epoch generation writes all content at epoch start. Runtime is reads + state updates.
-- Schema migrations via `src/db/migrations/` (currently 008). Engine applies idempotent `ALTER TABLE` on startup.
+- Schema migrations via `src/db/migrations/` (currently 014). Engine applies idempotent `ALTER TABLE` on startup.
 
 ## Config Constants
 
@@ -207,7 +223,7 @@ The Last Ember is a Flask web dashboard in `src/web/`. It runs in-process with t
 
 ## Testing
 
-- **900+ tests** — unit tests for combat math, integration tests for full action pipelines, epoch generation validation
+- **990+ tests** — unit tests for combat math, integration tests for full action pipelines, epoch generation validation
 - No mocking the DB — use in-memory SQLite
 - `python3 -m pytest tests/ -x -v` to run all
 - Tests use `helpers.py:generate_test_epoch()` for full epoch setup
@@ -218,8 +234,10 @@ The Last Ember is a Flask web dashboard in `src/web/`. It runs in-process with t
 - **175 chars is the target limit** (200 overflow max). Test every message template.
 - **Spell names must be <= 20 chars**, lore fragments <= 80 chars.
 - **Actions are atomic.** One command in, one response out. No multi-step confirmations.
-- **Town is free.** Never charge a dungeon action for anything in town.
-- **Class abilities refund resource if dungeon action fails.** Check resource first, then dungeon action. If dungeon action fails, restore the resource.
+- **Town is free.** Never charge a movement action for anything in town.
+- **Combat is free.** Fight, flee, charge, sneak, cast never cost movement actions. Only room-to-room movement (N/S/E/W) costs actions.
+- **RETURN always works.** Players can retreat to town from any dungeon state (not combat) regardless of remaining actions.
 - **Reveal is once per room per player.** The `player_reveals` table tracks this with a UNIQUE constraint.
+- **Docker is COPY-based, not bind-mount.** `docker compose restart` does NOT pick up code changes. Must run `docker compose build --no-cache && docker compose up -d`.
 - **No max_tokens on LLM calls.** Character limits in prompts and MSG_CHAR_LIMIT enforce output length. Never pass max_tokens — thinking models (Gemini 2.5 Flash) count thinking tokens against the limit, causing truncated responses.
 - **The design doc is the source of truth.** If code contradicts `docs/planned.md`, the code is wrong.

@@ -2,7 +2,7 @@
 
 A text-based multiplayer dungeon crawler for [Meshtastic](https://meshtastic.org/) LoRa mesh networks.
 
-BBS door games (Legend of the Red Dragon, TradeWars 2002) reborn for off-grid mesh radio. 150-character messages, async play, 30-day wipe cycles, 5-30 players on a mesh network.
+BBS door games (Legend of the Red Dragon, TradeWars 2002) reborn for off-grid mesh radio. 175-character messages, async play, 30-day wipe cycles, 5-30 players on a mesh network.
 
 ## What Is This?
 
@@ -12,7 +12,7 @@ Every 30 days the world wipes and regenerates. New dungeon layout, new narrative
 
 ## Key Features
 
-- **150-char message limit** — every response fits in one Meshtastic LoRa packet
+- **175-char message limit** — every response fits in one Meshtastic LoRa packet
 - **30-day epochs** — full wipe cycle with progression arc from newbie to endgame
 - **3 endgame modes** — Retrieve & Escape (cooperative relay), Raid Boss (shared HP pool), Hold the Line (territory control). Voted each epoch.
 - **The Breach** — random mid-epoch event on day 15 with 4 possible mini-events
@@ -44,7 +44,7 @@ python src/main.py                 # Start the game server
 
 ## Project Status
 
-Early development. Design is complete. Implementation starting with Phase 1 (core game loop).
+Live on a 6-node meshtasticd SIM mesh. All 6 game phases implemented. 990+ tests. Deployed as Docker container on CT 109 with Flask web dashboard at mmud.echo6.co.
 
 ## License
 

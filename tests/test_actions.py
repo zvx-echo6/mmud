@@ -207,14 +207,14 @@ def test_fight_monster():
 
 
 def test_return_to_town():
-    """TOWN returns player from dungeon."""
+    """TOWN/RETURN returns player from dungeon with narrative."""
     conn = make_test_db()
     engine = GameEngine(conn)
     register_player(engine)
 
     engine.process_message("!test1234", "Tester", "enter")
     resp = engine.process_message("!test1234", "Tester", "town")
-    assert "Last Ember" in resp
+    assert "Town" in resp
     assert len(resp) <= MSG_CHAR_LIMIT
 
 
@@ -226,14 +226,14 @@ def test_action_budget_enforcement():
 
     engine.process_message("!test1234", "Tester", "enter")
 
-    # Burn all 12 dungeon actions on moves (back and forth)
+    # Burn all movement actions on moves (back and forth)
     for i in range(DUNGEON_ACTIONS_PER_DAY):
         direction = "e" if i % 2 == 0 else "w"
         engine.process_message("!test1234", "Tester", direction)
 
-    # 13th action should be blocked
+    # Next action should be blocked
     resp = engine.process_message("!test1234", "Tester", "e")
-    assert "No dungeon actions" in resp or "no dungeon" in resp.lower()
+    assert "No movement actions" in resp or "no movement" in resp.lower()
     assert len(resp) <= MSG_CHAR_LIMIT
 
 
@@ -262,6 +262,204 @@ def test_all_responses_under_150():
         )
 
 
+# ── Free Combat Tests ─────────────────────────────────────────────────────
+
+
+def _enter_combat(engine, node_id="!test1234", name="Tester"):
+    """Enter dungeon, move to monster room, enter combat."""
+    engine.process_message(node_id, name, "enter")
+    engine.process_message(node_id, name, "n")  # Move to rat room → combat
+
+
+def _drain_actions(conn, player_id):
+    """Set dungeon_actions_remaining to 0."""
+    conn.execute(
+        "UPDATE players SET dungeon_actions_remaining = 0 WHERE id = ?",
+        (player_id,),
+    )
+    conn.commit()
+
+
+def test_fight_with_zero_actions():
+    """Fight works with 0 dungeon actions — combat is free."""
+    conn = make_test_db()
+    engine = GameEngine(conn)
+    register_player(engine)
+    _enter_combat(engine)
+    # Drain actions
+    p = conn.execute("SELECT id FROM players LIMIT 1").fetchone()
+    _drain_actions(conn, p["id"])
+    # Fight should still work
+    resp = engine.process_message("!test1234", "Tester", "fight")
+    assert "No movement" not in resp
+    assert "no dungeon" not in resp.lower()
+    assert len(resp) <= MSG_CHAR_LIMIT
+
+
+def test_flee_with_zero_actions():
+    """Flee works with 0 dungeon actions — combat is free."""
+    conn = make_test_db()
+    engine = GameEngine(conn)
+    register_player(engine)
+    _enter_combat(engine)
+    p = conn.execute("SELECT id FROM players LIMIT 1").fetchone()
+    _drain_actions(conn, p["id"])
+    resp = engine.process_message("!test1234", "Tester", "flee")
+    assert "No movement" not in resp
+    assert "no dungeon" not in resp.lower()
+    assert len(resp) <= MSG_CHAR_LIMIT
+
+
+def test_move_with_zero_actions_blocked():
+    """Movement is blocked with 0 actions."""
+    conn = make_test_db()
+    engine = GameEngine(conn)
+    register_player(engine)
+    engine.process_message("!test1234", "Tester", "enter")
+    p = conn.execute("SELECT id FROM players LIMIT 1").fetchone()
+    _drain_actions(conn, p["id"])
+    resp = engine.process_message("!test1234", "Tester", "n")
+    assert "No movement actions" in resp
+    assert len(resp) <= MSG_CHAR_LIMIT
+
+
+def test_player_starts_with_8_actions():
+    """New players start with 8 dungeon actions (not 12)."""
+    conn = make_test_db()
+    engine = GameEngine(conn)
+    register_player(engine)
+    p = conn.execute("SELECT dungeon_actions_remaining FROM players LIMIT 1").fetchone()
+    assert p["dungeon_actions_remaining"] == DUNGEON_ACTIONS_PER_DAY
+    assert p["dungeon_actions_remaining"] == 8
+
+
+# ── RETURN Command Tests ─────────────────────────────────────────────────
+
+
+def test_return_from_dungeon_floor1():
+    """RETURN from dungeon floor 1 gives narrative + back in town."""
+    conn = make_test_db()
+    engine = GameEngine(conn)
+    register_player(engine)
+    engine.process_message("!test1234", "Tester", "enter")
+    resp = engine.process_message("!test1234", "Tester", "return")
+    assert "Town" in resp
+    assert "first floor" in resp.lower() or "entrance" in resp.lower()
+    assert len(resp) <= MSG_CHAR_LIMIT
+    # Verify player is in town state
+    p = conn.execute("SELECT state FROM players LIMIT 1").fetchone()
+    assert p["state"] == "town"
+
+
+def test_return_from_town():
+    """RETURN from town says already in town."""
+    conn = make_test_db()
+    engine = GameEngine(conn)
+    register_player(engine)
+    resp = engine.process_message("!test1234", "Tester", "return")
+    assert "already in town" in resp.lower()
+
+
+def test_return_from_combat():
+    """RETURN from combat says flee first."""
+    conn = make_test_db()
+    engine = GameEngine(conn)
+    register_player(engine)
+    _enter_combat(engine)
+    resp = engine.process_message("!test1234", "Tester", "return")
+    assert "FLEE" in resp
+    assert len(resp) <= MSG_CHAR_LIMIT
+
+
+def test_retreat_alias():
+    """RETREAT is an alias for RETURN."""
+    conn = make_test_db()
+    engine = GameEngine(conn)
+    register_player(engine)
+    engine.process_message("!test1234", "Tester", "enter")
+    resp = engine.process_message("!test1234", "Tester", "retreat")
+    assert "Town" in resp
+    p = conn.execute("SELECT state FROM players LIMIT 1").fetchone()
+    assert p["state"] == "town"
+
+
+def test_return_deep_floor_narrative():
+    """RETURN from a deep floor gives longer narrative."""
+    conn = make_test_db()
+    engine = GameEngine(conn)
+    register_player(engine)
+    engine.process_message("!test1234", "Tester", "enter")
+    # Manually set floor to 6
+    conn.execute("UPDATE players SET floor = 6")
+    conn.commit()
+    resp = engine.process_message("!test1234", "Tester", "return")
+    assert "Town" in resp
+    assert "6" in resp or "tavern" in resp.lower() or "shaking" in resp.lower()
+    assert len(resp) <= MSG_CHAR_LIMIT
+
+
+def test_charge_with_zero_actions():
+    """Charge works with 0 dungeon actions (costs Focus, not actions)."""
+    conn = make_test_db()
+    engine = GameEngine(conn)
+    register_player(engine, cls="w")  # warrior
+    _enter_combat(engine)
+    p = conn.execute("SELECT id FROM players LIMIT 1").fetchone()
+    _drain_actions(conn, p["id"])
+    resp = engine.process_message("!test1234", "Tester", "charge")
+    assert "No movement" not in resp
+    assert "no dungeon" not in resp.lower()
+    assert len(resp) <= MSG_CHAR_LIMIT
+
+
+def test_sneak_with_zero_actions():
+    """Sneak works with 0 dungeon actions (costs Tricks, not actions)."""
+    conn = make_test_db()
+    engine = GameEngine(conn)
+    register_player(engine, node_id="!rog1", name="Rogue1", cls="r")
+    _enter_combat(engine, node_id="!rog1", name="Rogue1")
+    p = conn.execute("SELECT id FROM players LIMIT 1").fetchone()
+    _drain_actions(conn, p["id"])
+    resp = engine.process_message("!rog1", "Rogue1", "sneak")
+    assert "No movement" not in resp
+    assert "no dungeon" not in resp.lower()
+    assert len(resp) <= MSG_CHAR_LIMIT
+
+
+def test_cast_with_zero_actions():
+    """Cast works with 0 dungeon actions (costs Mana, not actions)."""
+    conn = make_test_db()
+    engine = GameEngine(conn)
+    register_player(engine, node_id="!cas1", name="Caster1", cls="c")
+    _enter_combat(engine, node_id="!cas1", name="Caster1")
+    p = conn.execute("SELECT id FROM players LIMIT 1").fetchone()
+    _drain_actions(conn, p["id"])
+    resp = engine.process_message("!cas1", "Caster1", "cast")
+    assert "No movement" not in resp
+    assert "no dungeon" not in resp.lower()
+    assert len(resp) <= MSG_CHAR_LIMIT
+
+
+def test_full_combat_zero_actions():
+    """Full combat scenario: fight until 0 actions, keep fighting, flee."""
+    conn = make_test_db()
+    engine = GameEngine(conn)
+    register_player(engine)
+    _enter_combat(engine)
+    p = conn.execute("SELECT id FROM players LIMIT 1").fetchone()
+    _drain_actions(conn, p["id"])
+
+    # Fight multiple times with 0 actions
+    for _ in range(3):
+        resp = engine.process_message("!test1234", "Tester", "fight")
+        assert "No movement" not in resp
+
+    # Flee should also work
+    resp = engine.process_message("!test1234", "Tester", "flee")
+    assert "No movement" not in resp
+    assert len(resp) <= MSG_CHAR_LIMIT
+
+
 if __name__ == "__main__":
     test_new_player_registration()
     test_look_in_town()
@@ -275,4 +473,14 @@ if __name__ == "__main__":
     test_return_to_town()
     test_action_budget_enforcement()
     test_all_responses_under_150()
+    test_fight_with_zero_actions()
+    test_flee_with_zero_actions()
+    test_move_with_zero_actions_blocked()
+    test_player_starts_with_8_actions()
+    test_return_from_dungeon_floor1()
+    test_return_from_town()
+    test_return_from_combat()
+    test_retreat_alias()
+    test_return_deep_floor_narrative()
+    test_full_combat_zero_actions()
     print("All action tests passed!")

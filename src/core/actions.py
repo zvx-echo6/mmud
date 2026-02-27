@@ -49,15 +49,15 @@ from src.transport.formatter import (
 )
 
 
-# Actions that cost a dungeon action
-DUNGEON_COST_ACTIONS = {"move", "fight", "flee", "charge", "sneak", "cast"}
+# Actions that cost a dungeon action (movement only — combat is free)
+DUNGEON_COST_ACTIONS = {"move"}
 
 # Actions that are always free
 FREE_ACTIONS = {
     "look", "stats", "inventory", "help", "who", "rest", "examine",
     "shop", "buy", "sell", "heal", "bank", "deposit", "withdraw",
     "barkeep", "token", "spend", "train", "equip", "unequip", "drop",
-    "enter", "town", "leave", "bounty", "read", "helpful", "message", "mail",
+    "enter", "return", "leave", "bounty", "read", "helpful", "message", "mail",
     "grist", "healer", "merchant", "rumor",
     "logout",
 }
@@ -89,7 +89,7 @@ def handle_action(
         "flee": action_flee,
         "stats": action_stats,
         "enter": action_enter_dungeon,
-        "town": action_return_town,
+        "return": action_return,
         "leave": action_leave,
         "help": action_help,
         "inventory": action_inventory,
@@ -131,13 +131,6 @@ def handle_action(
     handler = handlers.get(command)
     if not handler:
         return _smart_error(player)
-
-    # Check action budget for dungeon-cost actions
-    # Skip pre-check for "move" — the handler does its own check with free traversal logic
-    if command in DUNGEON_COST_ACTIONS and command != "move":
-        if player["state"] in ("dungeon", "combat"):
-            if player["dungeon_actions_remaining"] <= 0:
-                return fmt("No dungeon actions left today! Return to town and rest.")
 
     return handler(conn, player, args)
 
@@ -257,7 +250,7 @@ def action_move(conn: sqlite3.Connection, player: dict, args: list[str]) -> str:
     if player["state"] == "dungeon":
         if not (FREE_TRAVERSAL_ON_CLEARED and _is_player_floor_cleared(conn, player)):
             if not player_model.use_dungeon_action(conn, player["id"]):
-                return fmt("No dungeon actions left today!")
+                return fmt("No movement actions left today. RETURN to town and rest.")
 
     room, error = world_mgr.move_player(conn, player, direction)
     if error:
@@ -350,10 +343,6 @@ def action_fight(conn: sqlite3.Connection, player: dict, args: list[str]) -> str
 
         # Enter combat
         world_mgr.enter_combat(conn, player["id"], monster["id"])
-
-    # Cost a dungeon action
-    if not player_model.use_dungeon_action(conn, player["id"]):
-        return fmt("No dungeon actions left today!")
 
     # Use effective stats (base + gear bonuses)
     eff = economy.get_effective_stats(conn, player)
@@ -461,10 +450,6 @@ def action_flee(conn: sqlite3.Connection, player: dict, args: list[str]) -> str:
         world_mgr.exit_combat(conn, player["id"])
         return fmt("The monster is gone. You're safe.")
 
-    # Cost a dungeon action
-    if not player_model.use_dungeon_action(conn, player["id"]):
-        return fmt("No dungeon actions left today!")
-
     # Use effective stats
     eff = economy.get_effective_stats(conn, player)
 
@@ -549,18 +534,43 @@ def action_enter_dungeon(
     return fmt_room(room["name"], room["description"], exit_dirs)
 
 
-def action_return_town(
+def action_return(
     conn: sqlite3.Connection, player: dict, args: list[str]
 ) -> str:
-    """Return to town."""
+    """Retreat to town with narrative summary of the journey back."""
     if player["state"] == "town":
         return fmt("You're already in town.")
 
     if player["state"] == "combat":
         return fmt("You're in combat! FLEE first.")
 
+    if player["state"] == "dead":
+        return fmt("You are dead.")
+
+    current_floor = player.get("floor", 1)
+
+    if current_floor <= 1:
+        narrative = "You retrace your steps through the first floor. The entrance light grows. Town."
+    elif current_floor <= 3:
+        narrative = (
+            f"You climb back through {current_floor} floors. "
+            f"Cleared rooms echo with your footsteps. The air warms as you ascend. Town."
+        )
+    elif current_floor <= 5:
+        narrative = (
+            f"The long climb from floor {current_floor}. "
+            f"Familiar corridors, old bloodstains, the smell of the upper floors. "
+            f"You emerge into lamplight and smoke. Town."
+        )
+    else:
+        narrative = (
+            f"Floor {current_floor} to the surface. A long retreat through "
+            f"stone and silence. Each floor lighter than the last. "
+            f"By the time you see the tavern door, your legs are shaking. Town."
+        )
+
     world_mgr.return_to_town(conn, player["id"])
-    return fmt(TOWN_DESCRIPTIONS["tavern"])
+    return fmt(narrative)
 
 
 def action_leave(
@@ -587,7 +597,7 @@ def action_help(conn: sqlite3.Connection, player: dict, args: list[str]) -> str:
     if player["state"] == "combat":
         return fmt(f"FIGHT(F) FLEE{hint} STATS LOOK HELP")
     if player["state"] == "dungeon":
-        return fmt(f"N/S/E/W LOOK(L) FIGHT(F) FLEE{hint} MSG HELPFUL STATS(ST) INV(I) TOWN HELP")
+        return fmt(f"N/S/E/W LOOK(L) FIGHT(F) FLEE{hint} RETURN STATS(ST) INV(I) HELP")
     return fmt("LOOK STATS HELP")
 
 
@@ -922,11 +932,6 @@ def action_examine(conn: sqlite3.Connection, player: dict, args: list[str]) -> s
     if not player.get("room_id"):
         return fmt("Nothing to examine here.")
 
-    # In dungeon/combat: costs a dungeon action
-    if player["state"] in ("dungeon", "combat"):
-        if not player_model.use_dungeon_action(conn, player["id"]):
-            return fmt("No dungeon actions left today!")
-
     # Check for undiscovered secret in this room
     secret = conn.execute(
         "SELECT id, name, description FROM secrets WHERE room_id = ? AND discovered_by IS NULL LIMIT 1",
@@ -990,9 +995,6 @@ def action_charge(conn: sqlite3.Connection, player: dict, args: list[str]) -> st
         return fmt("Nothing to charge at in town.")
     if not player_model.use_resource(conn, player["id"], CHARGE_RESOURCE_COST):
         return fmt(f"Not enough Focus. Need {CHARGE_RESOURCE_COST}.")
-    if not player_model.use_dungeon_action(conn, player["id"]):
-        player_model.restore_resource(conn, player["id"], CHARGE_RESOURCE_COST)
-        return fmt("No dungeon actions left today!")
 
     if player["state"] == "combat":
         eff = economy.get_effective_stats(conn, player)
@@ -1080,9 +1082,6 @@ def action_sneak(conn: sqlite3.Connection, player: dict, args: list[str]) -> str
         return fmt("Nothing to sneak past in town.")
     if not player_model.use_resource(conn, player["id"], SNEAK_RESOURCE_COST):
         return fmt("Not enough Tricks. Need 1.")
-    if not player_model.use_dungeon_action(conn, player["id"]):
-        player_model.restore_resource(conn, player["id"], SNEAK_RESOURCE_COST)
-        return fmt("No dungeon actions left today!")
 
     if player["state"] == "combat":
         eff = economy.get_effective_stats(conn, player)
@@ -1156,9 +1155,6 @@ def action_cast(conn: sqlite3.Connection, player: dict, args: list[str]) -> str:
         return fmt("Nothing to cast at in town.")
     if not player_model.use_resource(conn, player["id"], CAST_RESOURCE_COST):
         return fmt("Not enough Mana. Need 1.")
-    if not player_model.use_dungeon_action(conn, player["id"]):
-        player_model.restore_resource(conn, player["id"], CAST_RESOURCE_COST)
-        return fmt("No dungeon actions left today!")
 
     if player["state"] == "combat":
         eff = economy.get_effective_stats(conn, player)

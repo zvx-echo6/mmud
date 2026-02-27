@@ -136,13 +136,13 @@ This means on a 200 HP bounty troll:
 - Two players make progress comfortably
 - Three players push through fast
 
-Cooperation is rewarded but not mandatory. The action economy is the real balancing lever — each engagement costs 4-5 dungeon actions out of 12 daily.
+Cooperation is rewarded but not mandatory. The action economy is the real balancing lever — reaching a bounty costs movement actions from the daily budget of 8, though combat itself is free once you arrive.
 
 ### Chip-and-Run Combat
 
 Players engage the bounty monster, trade rounds, and flee when health gets low. The flee mechanic carries real risk (speed-based chance, eat a hit on failure). The troll's damage persists in the DB between encounters.
 
-The tactical decision: "Do I push one more round or run now?" You're gambling HP and carried gold (death penalty) for bounty contribution. Each engagement costs dungeon actions from your daily budget (~4-5 actions per attempt out of 12 dungeon actions per day).
+The tactical decision: "Do I push one more round or run now?" You're gambling HP and carried gold (death penalty) for bounty contribution. Getting to the bounty costs movement actions from your daily budget of 8, but the fight itself is free — the real cost is the trip, not the combat.
 
 ### Rewards
 
@@ -276,11 +276,11 @@ Percentage-based XP penalty creates natural escalation. Day 2: 15% of 200 XP = 3
 Town actions are always free — shopping, healing, banking, training, visiting the barkeep. Nothing outside the dungeon or purchasing should cost actions. The scarcity is on the dangerous stuff, not the bookkeeping.
 
 Costed actions:
-- **12 dungeon actions** — combat, movement, exploration (the real budget)
+- **8 movement actions** — room-to-room movement only (the real budget)
 - **2 social actions** — sending mail, posting to board
 - **1 special action** — reserved for future mechanics
 
-At ~45-60 seconds per action over mesh radio, produces 11-20 minute sessions. Over 30 days: ~450 dungeon actions total.
+Combat (fight, flee, charge, sneak, cast) is free — only moving between rooms costs actions. This prevents combat softlocks where a player runs out of actions mid-fight. At ~45-60 seconds per move over mesh radio, plus free combat time, produces 10-15 minute sessions. Over 30 days: ~240 movement actions total.
 
 ### Free Actions
 
@@ -292,7 +292,7 @@ You can't hoard. Daily engagement is rewarded naturally through having more sess
 
 ### Bonus Actions
 
-Bard tokens can grant 1 bonus dungeon action (for 2 tokens). This is the only way to exceed the base 12 dungeon actions in a day. Kept deliberately moderate — the token system is a care package, not a power multiplier.
+Bard tokens can grant 1 bonus movement action (for 2 tokens). This is the only way to exceed the base 8 movement actions in a day. Kept deliberately moderate — the token system is a care package, not a power multiplier.
 
 ---
 
@@ -386,7 +386,7 @@ If the carrier dies, the objective drops at their death location and the server 
 
 **Blockers — tank the Pursuer directly.** A non-carrier standing in a room between the Pursuer and the carrier becomes a blocker. The Pursuer must fight through them before advancing. It's still invulnerable — the blocker can't kill it — but every round the blocker survives is a round the Pursuer isn't moving. A DEF-tanked player might hold 4-5 rounds. A SPD build holds 2 rounds but has a better flee chance afterward. The blocker is buying distance for the carrier with their HP. Possibly their life.
 
-**Warders — harden the escape path.** A non-carrier who clears a room on the escape route can spend 1 extra action to ward it. A warded room slows the Pursuer — it takes 2 ticks to pass through instead of 1. The ward breaks after one use. Clearing + warding costs 3-4 actions per room out of 12 daily. A dedicated player preps 3 rooms per day. Over several days before the run, the team can build a serious escape corridor. This is the preparation role — done across multiple sessions before anyone grabs the objective.
+**Warders — harden the escape path.** A non-carrier who clears a room on the escape route can spend 1 extra action to ward it. A warded room slows the Pursuer — it takes 2 ticks to pass through instead of 1. The ward breaks after one use. Clearing + warding costs 2 movement actions per room (move in + ward) out of 8 daily. A dedicated player preps 4 rooms per day. Over several days before the run, the team can build a serious escape corridor. This is the preparation role — done across multiple sessions before anyone grabs the objective.
 
 **Lures — divert the Pursuer off-path.** A non-carrier on the same floor as the Pursuer can spend 2 actions to lure it. The Pursuer diverts toward the lure player for 3 ticks before snapping back to tracking the carrier. Ideal play: lure it down a dead-end branch. The Pursuer burns 3 ticks going the wrong way, then 3 more returning — 6 ticks of breathing room. But the lure player is now in a dead end with an invulnerable monster between them and the exit. A SPD build can lure and escape. A slow tank might get trapped and die.
 
@@ -442,7 +442,7 @@ Players discover mechanics through trial and error. The first 2-3 days of engage
 
 *Control mechanics:*
 - **No escape** — below 25% HP, flee attempts automatically fail. Committed fight — kill it or it kills you. Makes the final stretch terrifying.
-- **Summoner** — spawns 1-2 adds at the start of each engagement that must be killed before the boss can be damaged. Costs 2-4 extra actions per fight — a significant tax out of 12 daily.
+- **Summoner** — spawns 1-2 adds at the start of each engagement that must be killed before the boss can be damaged. Extra combat rounds per fight slow progress even though combat is free.
 - **Lockout** — after engaging the boss, that player can't engage again for 24 hours. Forces the group to rotate fighters. A 5-player server needs all 5 contributing.
 - **Enrage timer** — if a single engagement goes longer than 5 rounds, the boss's damage doubles each round after. Punishes greedy players who try to squeeze too much damage per session.
 
@@ -475,7 +475,7 @@ Core mechanics:
 
 Regen scales with depth so early floors are forgiving and deep floors demand coordination. Ticks are spread evenly across the day (e.g., floor 2 at 4 rooms/day = 1 room every 6 hours). Rates bumped from the 14-day baseline to maintain tension across the full 30-day epoch — 2 consistent players should finish around day 20-25, not coast to victory by day 14.
 
-Based on: 17 rooms avg per floor, 12 dungeon actions per day, clearing a room costs 2-3 actions (move in + fight), so one player clears ~4-6 rooms per day.
+Based on: 17 rooms avg per floor, 8 movement actions per day, clearing a room costs 1 movement action (move in, combat is free), so one player clears ~8 rooms per day.
 
 - **Floor 1: 3 rooms revert per day.** Solo player gains 1-3 rooms/day. Manageable but no longer trivial. A new player can still make visible progress on day 1, but holding ground requires attention by day 3-4.
 - **Floor 2: 5 rooms revert per day.** Solo player loses ground. Two players gain slowly (~3-5 net rooms/day). The first real coordination gate.
@@ -523,7 +523,7 @@ A level 3-4 solo player kills the floor 1 boss in 2-3 sessions regardless of rol
 **Floor 3 boss table (roll 1 — punishes solo play):**
 - **Rotating resistance** — immune to the highest stat used against it each session. POW build hits it today, it's POW-immune tomorrow. Forces class diversity.
 - **Retaliator** — reflects a percentage of damage back. High-damage builds hurt themselves. Rewards DEF tanks.
-- **Summoner** — spawns an add each session that must be killed first. The add is easy but costs 2-3 actions, eating into boss damage budget.
+- **Summoner** — spawns an add each session that must be killed first. The add is easy but costs extra combat rounds, slowing boss damage output.
 - **Cursed** — debuffs the player who dealt the most damage last session. They get -2 to a random stat next login. Spreads the load across the group.
 
 **Floor 4 boss table (roll 2 — the Warden, the big fight):**
@@ -577,7 +577,7 @@ Secrets that benefit the player who finds them:
 
 ### Server-Wide Discoveries
 
-Secrets that benefit every player on the server when activated. These are the big moments — the explorer spending their 12 dungeon actions on side rooms instead of the front line is contributing in a way that helps everyone.
+Secrets that benefit every player on the server when activated. These are the big moments — the explorer spending their 8 movement actions on side rooms instead of the front line is contributing in a way that helps everyone.
 
 **Hold the Line mode:**
 - **Ancient Wards** — activate a mechanism that halves dungeon regen rate on one floor for 24 hours. Floor 3 drops from 4 rooms/day to 2, giving fighters a real window to push.

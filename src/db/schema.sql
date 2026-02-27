@@ -109,7 +109,7 @@ CREATE TABLE IF NOT EXISTS players (
     combat_monster_id INTEGER,
     town_location TEXT,                -- NULL=exterior, bar, maren, torval, whisper
     hardcore INTEGER DEFAULT 0,        -- 1 = permadeath enabled
-    dungeon_actions_remaining INTEGER DEFAULT 12,
+    dungeon_actions_remaining INTEGER DEFAULT 8,
     social_actions_remaining INTEGER DEFAULT 2,
     special_actions_remaining INTEGER DEFAULT 1,
     stat_points INTEGER DEFAULT 0,

@@ -465,7 +465,7 @@ def test_charge_dead_end_room1():
     assert "CHARGE" in result
 
 
-def test_charge_costs_focus_and_action():
+def test_charge_costs_focus_not_action():
     conn = _make_db()
     p = _make_player(conn, "warrior", "Costs", "!war5")
     r1, r2 = _make_connected_rooms(conn)
@@ -476,7 +476,8 @@ def test_charge_costs_focus_and_action():
     handle_action(conn, dict(p), "charge", ["n"])
     updated = get_player(conn, p["id"])
     assert updated["resource"] == starting_resource - CHARGE_RESOURCE_COST
-    assert updated["dungeon_actions_remaining"] == starting_actions - 1
+    # Combat actions are free — only movement costs dungeon actions
+    assert updated["dungeon_actions_remaining"] == starting_actions
 
 
 def test_charge_no_direction():

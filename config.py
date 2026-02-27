@@ -16,7 +16,7 @@ BREACH_DAY = 15               # Mid-epoch event trigger
 # DAILY ACTION BUDGET
 # =============================================================================
 
-DUNGEON_ACTIONS_PER_DAY = 12  # Primary scarcity mechanic
+DUNGEON_ACTIONS_PER_DAY = 8   # Movement budget (only room-to-room costs)
 SOCIAL_ACTIONS_PER_DAY = 2    # Mail, board posts
 SPECIAL_ACTIONS_PER_DAY = 1   # Reserved for future mechanics
 BONUS_ACTION_TOKEN_COST = 2   # Bard tokens for +1 dungeon action
