@@ -2,9 +2,14 @@
 Meshtastic transport layer for MMUD.
 Wraps the Meshtastic Python API for message send/receive.
 Supports both serial (USB) and TCP connections.
+
+Outbound messages are queued and sent with inter-message delays
+to respect LoRa half-duplex timing (LONG_FAST ~1.5s per message).
 """
 
 import logging
+import queue
+import threading
 import time
 from dataclasses import dataclass
 from typing import Callable, Optional
@@ -27,7 +32,14 @@ class MeshTransport:
 
     Handles connection to a Meshtastic device via serial or TCP,
     and provides send/receive for game messages.
+
+    Outbound messages are queued and sent by a background thread
+    with SEND_INTERVAL spacing to avoid overwhelming the radio.
     """
+
+    # Minimum seconds between sends. LONG_FAST airtime ~1.5s per message
+    # plus ACK window. 3 seconds is safe for back-to-back responses.
+    SEND_INTERVAL = 3.0
 
     def __init__(self, connection_string: str, channel: int = 0):
         """Initialize transport.
@@ -42,6 +54,10 @@ class MeshTransport:
         self._interface = None
         self._my_node_id: Optional[str] = None
         self._on_message: Optional[Callable] = None
+        self._send_queue: queue.Queue = queue.Queue()
+        self._send_thread: Optional[threading.Thread] = None
+        self._stop_event = threading.Event()
+        self._last_send_time: float = 0.0
 
     def connect(self) -> None:
         """Connect to the Meshtastic device."""
@@ -72,8 +88,21 @@ class MeshTransport:
         # Subscribe to incoming messages
         pub.subscribe(self._handle_packet, "meshtastic.receive.text")
 
+        # Start send queue thread
+        self._stop_event.clear()
+        self._send_thread = threading.Thread(
+            target=self._send_loop,
+            name=f"mesh-send-{self._conn_str}",
+            daemon=True,
+        )
+        self._send_thread.start()
+
     def disconnect(self) -> None:
         """Disconnect from the device."""
+        self._stop_event.set()
+        if self._send_thread:
+            self._send_thread.join(timeout=5)
+            self._send_thread = None
         if self._interface:
             self._interface.close()
             self._interface = None
@@ -88,7 +117,7 @@ class MeshTransport:
         self._on_message = callback
 
     def send_dm(self, dest_id: str, text: str) -> None:
-        """Send a direct message to a specific node.
+        """Queue a direct message for sending.
 
         Args:
             dest_id: Destination node ID.
@@ -97,15 +126,10 @@ class MeshTransport:
         if not self._interface:
             logger.error("Not connected — cannot send DM")
             return
-
-        logger.debug(f"DM to {dest_id}: {text[:50]}...")
-        self._interface.sendText(
-            text=text,
-            destinationId=dest_id,
-        )
+        self._send_queue.put(("dm", dest_id, text))
 
     def send_broadcast(self, text: str, channel: Optional[int] = None) -> None:
-        """Send a broadcast message to a channel.
+        """Queue a broadcast message for sending.
 
         Args:
             text: Message text (must be <= 175 chars).
@@ -114,13 +138,13 @@ class MeshTransport:
         if not self._interface:
             logger.error("Not connected — cannot send broadcast")
             return
-
         ch = channel if channel is not None else self._channel
-        logger.debug(f"Broadcast ch{ch}: {text[:50]}...")
-        self._interface.sendText(
-            text=text,
-            channelIndex=ch,
-        )
+        self._send_queue.put(("broadcast", ch, text))
+
+    @property
+    def send_queue_depth(self) -> int:
+        """Current number of messages waiting to send."""
+        return self._send_queue.qsize()
 
     @property
     def my_node_id(self) -> Optional[str]:
@@ -218,6 +242,57 @@ class MeshTransport:
 
         self._interface.localNode.writeConfig("lora")
         logger.info(f"LoRa config updated: {kwargs}")
+
+    def _send_loop(self) -> None:
+        """Background thread: process send queue with inter-message delay."""
+        while not self._stop_event.is_set():
+            try:
+                msg_type, target, text = self._send_queue.get(timeout=1.0)
+            except queue.Empty:
+                continue
+
+            # Warn on queue buildup
+            depth = self._send_queue.qsize()
+            if depth > 10:
+                logger.warning(f"Send queue depth: {depth}")
+
+            # Wait for minimum interval since last send
+            elapsed = time.time() - self._last_send_time
+            if elapsed < self.SEND_INTERVAL:
+                wait = self.SEND_INTERVAL - elapsed
+                self._stop_event.wait(wait)
+                if self._stop_event.is_set():
+                    break
+
+            # Send with one retry on failure
+            success = False
+            for attempt in range(2):
+                try:
+                    if msg_type == "dm":
+                        logger.debug(f"DM to {target}: {text[:50]}...")
+                        self._interface.sendText(
+                            text=text,
+                            destinationId=target,
+                            wantAck=True,
+                        )
+                    else:
+                        logger.debug(f"Broadcast ch{target}: {text[:50]}...")
+                        self._interface.sendText(
+                            text=text,
+                            channelIndex=target,
+                        )
+                    self._last_send_time = time.time()
+                    success = True
+                    break
+                except Exception as e:
+                    logger.warning(f"Send failed (attempt {attempt + 1}): {e}")
+                    if attempt == 0:
+                        time.sleep(1.0)
+
+            if not success:
+                logger.error(f"Message dropped after retries: {text[:60]}...")
+
+            self._send_queue.task_done()
 
     def _handle_packet(self, packet: dict, interface=None) -> None:
         """Handle an incoming text packet from the Meshtastic device."""
