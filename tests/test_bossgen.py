@@ -135,18 +135,32 @@ def test_warden_hp_range():
 # ── Boss stats scale with floor ──
 
 
+def test_floor_bosses_generate_with_zero_hp():
+    """Floor bosses (except Warden) generate with hp=0 for dynamic scaling."""
+    conn, stats = _generate()
+    for floor in range(1, NUM_FLOORS):
+        boss = conn.execute(
+            """SELECT m.hp, m.hp_max FROM monsters m
+               JOIN rooms r ON m.room_id = r.id
+               WHERE m.is_floor_boss = 1 AND r.floor = ?""",
+            (floor,),
+        ).fetchone()
+        assert boss["hp"] == 0, f"Floor {floor} boss should have hp=0 at generation"
+        assert boss["hp_max"] == 0, f"Floor {floor} boss should have hp_max=0 at generation"
+
+
 def test_boss_stats_scale():
+    """Boss POW/DEF/SPD should increase with floor."""
     conn, stats = _generate()
     bosses = conn.execute(
-        """SELECT m.hp_max, r.floor FROM monsters m
+        """SELECT m.pow, m.def, r.floor FROM monsters m
            JOIN rooms r ON m.room_id = r.id
            WHERE m.is_floor_boss = 1
            ORDER BY r.floor"""
     ).fetchall()
-    # HP should generally increase with floor
-    # (with some randomness, check floor 1 < floor 4)
+    # Stats should generally increase with floor
     if len(bosses) >= 2:
-        assert bosses[0]["hp_max"] < bosses[-1]["hp_max"]
+        assert bosses[0]["pow"] <= bosses[-1]["pow"]
 
 
 # ── Raid boss ──

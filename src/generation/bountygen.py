@@ -10,6 +10,7 @@ Distribution:
 
 import random
 import sqlite3
+from collections import deque
 from typing import Optional
 
 from config import (
@@ -51,13 +52,17 @@ def generate_bounties(
             day = day_min + (i * (day_max - day_min)) // max(count - 1, 1)
 
             # Get eligible rooms on target floors
-            rooms = conn.execute(
-                """SELECT r.id, r.floor, r.name FROM rooms r
-                   WHERE r.floor >= ? AND r.floor <= ?
-                   AND r.is_hub = 0 AND r.is_breach = 0
-                   ORDER BY RANDOM() LIMIT 1""",
-                (floor_min, floor_max),
-            ).fetchone()
+            # Early phase: exclude rooms within 3 steps of floor hub
+            if phase_name == "early":
+                rooms = _pick_distant_bounty_room(conn, floor_min, floor_max, min_distance=3)
+            else:
+                rooms = conn.execute(
+                    """SELECT r.id, r.floor, r.name FROM rooms r
+                       WHERE r.floor >= ? AND r.floor <= ?
+                       AND r.is_hub = 0 AND r.is_breach = 0
+                       ORDER BY RANDOM() LIMIT 1""",
+                    (floor_min, floor_max),
+                ).fetchone()
 
             if not rooms:
                 continue
@@ -147,3 +152,56 @@ def _floor_theme(floor: int, floor_themes: dict = None) -> str:
         return floor_themes[floor].get("floor_name", "Unknown Depths")
     from config import FLOOR_THEMES
     return FLOOR_THEMES.get(floor, "Unknown Depths")
+
+
+def _bfs_distances(conn: sqlite3.Connection, hub_id: int) -> dict[int, int]:
+    """BFS from hub, returns {room_id: distance}."""
+    distances = {hub_id: 0}
+    queue = deque([hub_id])
+    while queue:
+        rid = queue.popleft()
+        exits = conn.execute(
+            "SELECT to_room_id FROM room_exits WHERE from_room_id = ?", (rid,)
+        ).fetchall()
+        for ex in exits:
+            tid = ex["to_room_id"]
+            if tid not in distances:
+                distances[tid] = distances[rid] + 1
+                queue.append(tid)
+    return distances
+
+
+def _pick_distant_bounty_room(
+    conn: sqlite3.Connection, floor_min: int, floor_max: int, min_distance: int = 3,
+) -> Optional[sqlite3.Row]:
+    """Pick a non-hub room at least min_distance from the hub for bounty placement.
+
+    Checks each floor in the range and picks from distant rooms.
+    Falls back to any eligible room if none are far enough.
+    """
+    all_eligible = []
+    far_rooms = []
+
+    for fl in range(floor_min, floor_max + 1):
+        hub = conn.execute(
+            "SELECT id FROM rooms WHERE floor = ? AND is_hub = 1 LIMIT 1", (fl,),
+        ).fetchone()
+        if not hub:
+            continue
+
+        distances = _bfs_distances(conn, hub["id"])
+
+        eligible = conn.execute(
+            """SELECT id, floor, name FROM rooms
+               WHERE floor = ? AND is_hub = 0 AND is_breach = 0""",
+            (fl,),
+        ).fetchall()
+
+        all_eligible.extend(eligible)
+        far_rooms.extend(r for r in eligible if distances.get(r["id"], 0) >= min_distance)
+
+    if far_rooms:
+        return random.choice(far_rooms)
+    if all_eligible:
+        return random.choice(all_eligible)
+    return None

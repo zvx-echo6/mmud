@@ -27,13 +27,13 @@ MMUD is a text-based multiplayer dungeon crawler designed for Meshtastic LoRa me
 
 | Class | Stats | HP | Resource | Special | Command |
 |-------|-------|----|----------|---------|---------|
-| Warrior | POW:3 DEF:2 SPD:1 | 50 | Focus (5) | Charge | `charge` |
-| Rogue | POW:2 DEF:1 SPD:3 | 40 | Tricks (5) | Sneak | `sneak` |
-| Caster | POW:1 DEF:1 SPD:2 | 35 | Mana (5) | Cast | `cast` |
+| Warrior | POW:2 DEF:4 SPD:1 | 60 | Focus (5) | Charge | `charge` |
+| Rogue | POW:3 DEF:3 SPD:3 | 40 | Tricks (5) | Sneak | `sneak` |
+| Caster | POW:4 DEF:1 SPD:2 | 35 | Mana (5) | Cast | `cast` |
 
 ### Class Abilities
 
-- **Charge** (Warrior, 2 Focus): In combat — 1.5x damage, no counterattack. In dungeon — double-move through 2 rooms (player picks first direction, second is random). Stops on monster contact.
+- **Charge** (Warrior, 2 Focus): In combat — 2x damage, no counterattack. In dungeon — double-move through 2 rooms (player picks first direction, second is random). Stops on monster contact.
 - **Sneak** (Rogue, 1 Trick): In combat — 85% backstab (2x damage + exit combat). In dungeon — 85% bypass monster in room.
 - **Cast** (Caster, 1 Mana): In combat — 2x POW magic damage (ignores DEF, uses epoch spell name). In dungeon — reveals hidden room content (gold, lore fragments, secrets). Once per room per player per epoch.
 

@@ -70,7 +70,7 @@
     <span class="msg-player">You:</span> <span class="msg-gold">mypassword</span><br>
     <span class="msg-server">EMBR:</span> Pick a class: (W)arrior (C)aster (R)ogue<br>
     <span class="msg-player">You:</span> <span class="msg-gold">W</span><br>
-    <span class="msg-server">EMBR:</span> Kael the Warrior. HP:50 POW:3 DEF:2 SPD:1. You stand in the tavern. Type L.<br>
+    <span class="msg-server">EMBR:</span> Kael the Warrior. HP:60 POW:2 DEF:4 SPD:1. You stand in the tavern. Type L.<br>
   </div>
 
   {# ═══ CLASSES ═══ #}
@@ -82,19 +82,19 @@
     <div class="class-card fighter">
       <div class="class-card-icon">⚔</div>
       <div class="class-card-name">Warrior</div>
-      <div class="class-card-stat">POW-FOCUSED</div>
-      <div class="class-card-desc">High HP. Hits hard. Takes hits. CHARGE for devastating strikes with no counterattack. Focus fuels your rage. The front line.</div>
+      <div class="class-card-stat">DEF-FOCUSED</div>
+      <div class="class-card-desc">High HP. Takes hits. Holds the line. CHARGE for devastating strikes with no counterattack. Focus fuels your rage. The front line.</div>
     </div>
     <div class="class-card caster">
       <div class="class-card-icon">✦</div>
       <div class="class-card-name">Caster</div>
-      <div class="class-card-stat">SPD-FOCUSED</div>
+      <div class="class-card-stat">POW-FOCUSED</div>
       <div class="class-card-desc">Arcane power. CAST unleashes pure magic that ignores armor. Sense nearby rooms. Mana fuels everything. Glass cannon with knowledge.</div>
     </div>
     <div class="class-card rogue">
       <div class="class-card-icon">◈</div>
       <div class="class-card-name">Rogue</div>
-      <div class="class-card-stat">SPD-FOCUSED</div>
+      <div class="class-card-stat">BALANCED</div>
       <div class="class-card-desc">Stealth and precision. SNEAK past monsters or backstab for double damage. Tricks fuel your cunning. Thrives in the shadows.</div>
     </div>
   </div>
@@ -266,6 +266,9 @@
       <span class="cmd-key">f</span><span class="cmd-desc">Fight — engage the monster in this room</span>
       <span class="cmd-key">a</span><span class="cmd-desc">Attack — basic melee/spell attack</span>
       <span class="cmd-key">flee</span><span class="cmd-desc">Attempt to escape combat (SPD-based chance)</span>
+      <span class="cmd-key">charge</span><span class="cmd-desc">Warrior — 2x damage, no counterattack (2 Focus)</span>
+      <span class="cmd-key">sneak</span><span class="cmd-desc">Rogue — 85% backstab (2x dmg + exit combat, 1 Trick)</span>
+      <span class="cmd-key">cast</span><span class="cmd-desc">Caster — 2x magic damage, ignores DEF (1 Mana)</span>
     </div>
   </div>
 

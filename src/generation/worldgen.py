@@ -504,7 +504,7 @@ def _floor_to_tier(floor: int) -> int:
     With 40% chance to bump up one tier (capped at 5).
     """
     base = min((floor + 1) // 2, 4)
-    if random.random() < 0.4:
+    if floor > 1 and random.random() < 0.4:
         base = min(base + 1, 5)
     return max(1, base)
 

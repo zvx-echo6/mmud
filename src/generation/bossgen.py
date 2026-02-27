@@ -19,6 +19,8 @@ import random
 import sqlite3
 from typing import Optional
 
+from collections import deque
+
 from config import (
     FLOOR_BOSS_MECHANICS,
     LLM_OUTPUT_CHAR_LIMIT,
@@ -79,12 +81,16 @@ def _generate_floor_boss(
     mechanics = _roll_floor_boss_mechanics(floor)
 
     # Pick a non-hub, non-vault room on this floor for the boss
-    room = conn.execute(
-        """SELECT id, floor, name FROM rooms
-           WHERE floor = ? AND is_hub = 0 AND is_vault = 0 AND is_breach = 0
-           ORDER BY RANDOM() LIMIT 1""",
-        (floor,),
-    ).fetchone()
+    # On floors 1-2, exclude rooms within 3 steps of the hub
+    if floor <= 2:
+        room = _pick_distant_room(conn, floor, min_distance=3)
+    else:
+        room = conn.execute(
+            """SELECT id, floor, name FROM rooms
+               WHERE floor = ? AND is_hub = 0 AND is_vault = 0 AND is_breach = 0
+               ORDER BY RANDOM() LIMIT 1""",
+            (floor,),
+        ).fetchone()
 
     if not room:
         return None
@@ -93,16 +99,17 @@ def _generate_floor_boss(
 
     # Boss name and stats
     name = backend.generate_boss_name(floor, floor_theme=floor_theme)
-    hp_max = _boss_hp(floor)
     pow_ = _boss_stat(floor, "pow")
     def_ = _boss_stat(floor, "def")
     spd = _boss_stat(floor, "spd")
     xp = _boss_xp(floor)
     gold_min, gold_max = _boss_gold(floor)
 
-    # Final floor Warden gets special HP
+    # Floor bosses (except Warden) generate with hp=0 — scaled on first encounter
     if floor == NUM_FLOORS:
         hp_max = random.randint(WARDEN_HP_MIN, WARDEN_HP_MAX)
+    else:
+        hp_max = 0
 
     # Store mechanic as first rolled (monsters.mechanic is a single string)
     # Additional mechanics stored as JSON in mechanic field for floor 4
@@ -211,8 +218,8 @@ def _boss_hp(floor: int) -> int:
 
 def _boss_stat(floor: int, stat: str) -> int:
     """Calculate floor boss stat via formula (stronger than regular monsters)."""
-    base = min(4 + 2 * floor, 20)
-    return base + random.randint(0, 3)
+    base = min(2 + floor, 20)
+    return base + random.randint(0, 2)
 
 
 def _boss_xp(floor: int) -> int:
@@ -224,3 +231,51 @@ def _boss_xp(floor: int) -> int:
 def _boss_gold(floor: int) -> tuple[int, int]:
     """Floor bosses drop more gold than regular monsters, scaling by formula."""
     return (10 + 15 * floor, 30 + 25 * floor)
+
+
+def _bfs_distances(conn: sqlite3.Connection, hub_id: int) -> dict[int, int]:
+    """BFS from hub, returns {room_id: distance}."""
+    distances = {hub_id: 0}
+    queue = deque([hub_id])
+    while queue:
+        rid = queue.popleft()
+        exits = conn.execute(
+            "SELECT to_room_id FROM room_exits WHERE from_room_id = ?", (rid,)
+        ).fetchall()
+        for ex in exits:
+            tid = ex["to_room_id"]
+            if tid not in distances:
+                distances[tid] = distances[rid] + 1
+                queue.append(tid)
+    return distances
+
+
+def _pick_distant_room(
+    conn: sqlite3.Connection, floor: int, min_distance: int = 3,
+) -> Optional[sqlite3.Row]:
+    """Pick a non-hub, non-vault room at least min_distance from the hub.
+
+    Falls back to any eligible room if none are far enough.
+    """
+    hub = conn.execute(
+        "SELECT id FROM rooms WHERE floor = ? AND is_hub = 1 LIMIT 1", (floor,),
+    ).fetchone()
+    if not hub:
+        return None
+
+    distances = _bfs_distances(conn, hub["id"])
+
+    eligible = conn.execute(
+        """SELECT id, floor, name FROM rooms
+           WHERE floor = ? AND is_hub = 0 AND is_vault = 0 AND is_breach = 0""",
+        (floor,),
+    ).fetchall()
+
+    far_rooms = [r for r in eligible if distances.get(r["id"], 0) >= min_distance]
+    if far_rooms:
+        return random.choice(far_rooms)
+
+    # Fallback: any eligible room
+    if eligible:
+        return random.choice(eligible)
+    return None

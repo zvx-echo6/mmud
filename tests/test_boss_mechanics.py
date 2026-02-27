@@ -218,7 +218,10 @@ def test_splitting_only_once(conn, player):
 
 def test_rotating_resistance(conn, player):
     """Rotating resistance: reduces damage based on player's highest stat."""
-    # Warrior has highest POW
+    # Make player POW-dominant for this test (warrior default is DEF-focused)
+    conn.execute("UPDATE players SET pow = 10 WHERE id = ?", (player["id"],))
+    conn.commit()
+    player["pow"] = 10
     boss = _make_boss(conn, 3, "rotating_resistance", hp=80, hp_max=100)
     result = apply_boss_mechanic(conn, boss, player, 30)
     assert result["damage"] < 30  # Reduced

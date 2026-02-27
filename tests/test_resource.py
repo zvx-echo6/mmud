@@ -66,7 +66,7 @@ def test_caster_created_correctly():
     p = _make_player(conn, "caster", "Merlin", "!caster1")
     assert p["class"] == "caster"
     assert p["hp"] == 35
-    assert p["pow"] == 1
+    assert p["pow"] == 4
     assert p["def"] == 1
     assert p["spd"] == 2
     assert p["resource"] == 5
@@ -77,9 +77,19 @@ def test_rogue_created_correctly():
     p = _make_player(conn, "rogue", "Shadow", "!rogue1")
     assert p["class"] == "rogue"
     assert p["hp"] == 40
-    assert p["pow"] == 2
-    assert p["def"] == 1
+    assert p["pow"] == 3
+    assert p["def"] == 3
     assert p["spd"] == 3
+
+
+def test_warrior_created_correctly():
+    conn = _make_db()
+    p = _make_player(conn, "warrior", "Tank", "!war99")
+    assert p["class"] == "warrior"
+    assert p["hp"] == 60
+    assert p["pow"] == 2
+    assert p["def"] == 4
+    assert p["spd"] == 1
 
 
 # ── use_resource / restore_resource ──

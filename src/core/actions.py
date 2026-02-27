@@ -17,6 +17,8 @@ from config import (
     CLASSES,
     DUNGEON_ACTIONS_PER_DAY,
     FAST_TRAVEL_ENABLED,
+    FLOOR_BOSS_HP_MIN,
+    FLOOR_BOSS_HP_PER_PLAYER,
     FREE_TRAVERSAL_ON_CLEARED,
     MONSTER_RETREAT_ON_CLEARED,
     NUM_FLOORS,
@@ -76,6 +78,42 @@ def _is_player_floor_cleared(conn: sqlite3.Connection, player: dict) -> bool:
         return row is not None and row["boss_killed"] == 1
     except Exception:
         return False
+
+
+def _activate_floor_boss(conn: sqlite3.Connection, monster: dict) -> int:
+    """Scale floor boss HP on first discovery (first player to encounter it).
+
+    Active = all characters that exist at discovery time.
+    Returns the activated HP.
+    """
+    # Determine which floor the boss is on
+    room = conn.execute(
+        "SELECT floor FROM rooms WHERE id = ?", (monster["room_id"],)
+    ).fetchone()
+    floor = room["floor"] if room else 1
+
+    active = conn.execute("SELECT COUNT(*) as cnt FROM players").fetchone()["cnt"]
+    active = max(1, active)
+
+    hp_per = FLOOR_BOSS_HP_PER_PLAYER.get(floor, 70)
+    hp_min = FLOOR_BOSS_HP_MIN.get(floor, 60)
+    hp = max(hp_min, hp_per * active)
+
+    conn.execute(
+        "UPDATE monsters SET hp = ?, hp_max = ? WHERE id = ?",
+        (hp, hp, monster["id"]),
+    )
+    conn.commit()
+    return hp
+
+
+def _monster_tag(monster: dict) -> str:
+    """Return a [BOSS] or [BOUNTY] prefix for encounter text, or empty string."""
+    if monster.get("is_floor_boss"):
+        return "[BOSS] "
+    if monster.get("is_bounty"):
+        return "[BOUNTY] "
+    return ""
 
 
 def handle_action(
@@ -216,7 +254,8 @@ def action_look(conn: sqlite3.Connection, player: dict, args: list[str]) -> str:
     # Check for monster
     monster = world_data.get_room_monster(conn, player["room_id"])
     if monster:
-        monster_info = f" {monster['name']} lurks here!"
+        tag = _monster_tag(monster)
+        monster_info = f" {tag}{monster['name']} lurks here!"
         desc = room["description_short"] + monster_info
     else:
         desc = room["description"]
@@ -302,8 +341,13 @@ def action_move(conn: sqlite3.Connection, player: dict, args: list[str]) -> str:
             if MONSTER_RETREAT_ON_CLEARED and floor_cleared:
                 desc = transition + f" A {monster['name']} retreats deeper."
                 return fmt_room(room["name"], desc, exit_dirs)
+            # Activate floor boss on first encounter (hp=0 at generation)
+            if monster.get("is_floor_boss") and monster["hp"] <= 0:
+                _activate_floor_boss(conn, monster)
+                monster = world_data.get_monster(conn, monster["id"])
             world_mgr.enter_combat(conn, player["id"], monster["id"])
-            desc = transition + f" {monster['name']} blocks your path!"
+            tag = _monster_tag(monster)
+            desc = transition + f" {tag}{monster['name']} blocks your path!"
             return fmt_room(room["name"], desc, exit_dirs)
         return fmt_room(room["name"], transition, exit_dirs)
 
@@ -313,8 +357,13 @@ def action_move(conn: sqlite3.Connection, player: dict, args: list[str]) -> str:
         if MONSTER_RETREAT_ON_CLEARED and floor_cleared:
             desc = room["description_short"] + f" A {monster['name']} retreats deeper."
             return fmt_room(room["name"], desc, exit_dirs)
+        # Activate floor boss on first encounter (hp=0 at generation)
+        if monster.get("is_floor_boss") and monster["hp"] <= 0:
+            _activate_floor_boss(conn, monster)
+            monster = world_data.get_monster(conn, monster["id"])
         world_mgr.enter_combat(conn, player["id"], monster["id"])
-        desc = room["description_short"] + f" {monster['name']} blocks your path!"
+        tag = _monster_tag(monster)
+        desc = room["description_short"] + f" {tag}{monster['name']} blocks your path!"
         return fmt_room(room["name"], desc, exit_dirs)
 
     return fmt_room(room["name"], room["description_short"], exit_dirs)
@@ -340,6 +389,11 @@ def action_fight(conn: sqlite3.Connection, player: dict, args: list[str]) -> str
         monster = world_data.get_room_monster(conn, player["room_id"])
         if not monster:
             return fmt("No monster here. Room is clear.")
+
+        # Activate floor boss on first encounter (hp=0 at generation)
+        if monster.get("is_floor_boss") and monster["hp"] <= 0:
+            _activate_floor_boss(conn, monster)
+            monster = world_data.get_monster(conn, monster["id"])
 
         # Enter combat
         world_mgr.enter_combat(conn, player["id"], monster["id"])

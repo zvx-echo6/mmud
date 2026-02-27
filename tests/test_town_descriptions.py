@@ -228,7 +228,10 @@ def _create_test_db() -> sqlite3.Connection:
             xp_reward INTEGER DEFAULT 10,
             gold_reward_min INTEGER DEFAULT 5,
             gold_reward_max INTEGER DEFAULT 15,
-            respawn_hours INTEGER DEFAULT 24
+            respawn_hours INTEGER DEFAULT 24,
+            is_bounty INTEGER DEFAULT 0,
+            is_floor_boss INTEGER DEFAULT 0,
+            mechanic TEXT
         );
 
         CREATE TABLE secrets (

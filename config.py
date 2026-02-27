@@ -40,9 +40,9 @@ BACKPACK_SIZE = 8
 
 # Classes
 CLASSES = {
-    "warrior":  {"POW": 3, "DEF": 2, "SPD": 1},
-    "rogue":    {"POW": 2, "DEF": 1, "SPD": 3},
-    "caster":   {"POW": 1, "DEF": 1, "SPD": 2},
+    "warrior":  {"POW": 2, "DEF": 4, "SPD": 1},
+    "rogue":    {"POW": 3, "DEF": 3, "SPD": 3},
+    "caster":   {"POW": 4, "DEF": 1, "SPD": 2},
 }
 
 # Class resource system
@@ -54,7 +54,7 @@ RESOURCE_REGEN_REST = 1
 
 # Special ability constants
 CHARGE_RESOURCE_COST = 2
-CHARGE_DAMAGE_MULT = 1.5
+CHARGE_DAMAGE_MULT = 2.0
 SNEAK_RESOURCE_COST = 1
 SNEAK_BYPASS_CHANCE = 0.85
 CAST_RESOURCE_COST = 1
@@ -349,6 +349,10 @@ WARDEN_HP_MIN = 500
 WARDEN_HP_MAX = 800
 WARDEN_REGEN_RATE = 0.03         # 3% per 8 hours (same as raid boss)
 WARDEN_REGEN_INTERVAL_HOURS = 8
+
+# Floor boss dynamic HP scaling (scaled on first encounter to active player count)
+FLOOR_BOSS_HP_PER_PLAYER = {1: 30, 2: 40, 3: 55, 4: 70, 5: 85, 6: 100, 7: 120, 8: 0}
+FLOOR_BOSS_HP_MIN = {1: 40, 2: 60, 3: 80, 4: 100, 5: 130, 6: 160, 7: 200, 8: 0}
 
 # =============================================================================
 # RAID BOSS

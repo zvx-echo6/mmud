@@ -45,10 +45,12 @@ def get_exit_target(
 def get_room_monster(conn: sqlite3.Connection, room_id: int) -> Optional[dict]:
     """Get the living monster in a room (if any).
 
-    Returns the first monster with hp > 0 in the room.
+    Returns the first monster with hp > 0, or an unactivated floor boss (hp=0, hp_max=0).
     """
     row = conn.execute(
-        "SELECT * FROM monsters WHERE room_id = ? AND hp > 0 ORDER BY id LIMIT 1",
+        """SELECT * FROM monsters WHERE room_id = ? AND
+           (hp > 0 OR (is_floor_boss = 1 AND hp_max = 0))
+           ORDER BY id LIMIT 1""",
         (room_id,),
     ).fetchone()
     return dict(row) if row else None
