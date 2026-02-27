@@ -9,7 +9,7 @@ from unittest.mock import MagicMock
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from src.transport.meshtastic import MeshTransport
+from src.transport.meshtastic import MeshTransport, PendingMessage
 
 
 def _make_transport():
@@ -451,6 +451,183 @@ def test_send_loop_drops_message_when_reconnect_fails():
         _stop_send_loop(t)
 
 
+# ── ACK Tracking Tests ────────────────────────────────────────────────────
+
+
+def test_do_send_dm_stores_pending():
+    """_do_send_dm should store a PendingMessage for the destination."""
+    t = _make_transport()
+    t._do_send_dm("!abcd1234", "hello")
+    assert "!abcd1234" in t._pending_acks
+    pending = t._pending_acks["!abcd1234"]
+    assert pending.text == "hello"
+    assert pending.retry_count == 0
+    t._interface.sendText.assert_called_once_with(
+        text="hello", destinationId="!abcd1234", wantAck=True
+    )
+
+
+def test_do_send_dm_retry_does_not_overwrite_pending():
+    """Sending a retry-tagged message should not overwrite the original pending."""
+    t = _make_transport()
+    # Store original
+    t._pending_acks["!a"] = PendingMessage(
+        dest_id="!a", text="original", sent_at=time.time(), retry_count=1
+    )
+    # Send a retry
+    t._do_send_dm("!a", "[R1] original")
+    # Original pending should be unchanged
+    assert t._pending_acks["!a"].text == "original"
+    assert t._pending_acks["!a"].retry_count == 1
+
+
+def test_do_send_dm_lost_does_not_overwrite_pending():
+    """Sending a [LOST] notice should not create a pending entry."""
+    t = _make_transport()
+    t._do_send_dm("!a", "[LOST] Last response failed to deliver.")
+    assert "!a" not in t._pending_acks
+
+
+def test_get_unacked_returns_none_no_pending():
+    """get_unacked_for returns None when no pending exists."""
+    t = _make_transport()
+    assert t.get_unacked_for("!a") is None
+
+
+def test_get_unacked_clears_within_timeout():
+    """get_unacked_for clears pending and returns None within ACK window."""
+    t = _make_transport()
+    t.ACK_TIMEOUT = 60.0
+    # Pending sent 5 seconds ago — well within timeout
+    t._pending_acks["!a"] = PendingMessage(
+        dest_id="!a", text="response", sent_at=time.time() - 5
+    )
+    result = t.get_unacked_for("!a")
+    assert result is None
+    # Pending should be cleared (implicit ACK)
+    assert "!a" not in t._pending_acks
+
+
+def test_get_unacked_returns_tagged_after_timeout():
+    """get_unacked_for returns [R1] tagged message after ACK timeout."""
+    t = _make_transport()
+    t.ACK_TIMEOUT = 60.0
+    # Pending sent 90 seconds ago — past timeout
+    t._pending_acks["!a"] = PendingMessage(
+        dest_id="!a", text="response text", sent_at=time.time() - 90
+    )
+    result = t.get_unacked_for("!a")
+    assert result == "[R1] response text"
+    # Pending should still exist with incremented retry count
+    assert t._pending_acks["!a"].retry_count == 1
+
+
+def test_get_unacked_increments_retry_count():
+    """Successive calls to get_unacked_for increment the retry tag."""
+    t = _make_transport()
+    t.ACK_TIMEOUT = 0.0  # Immediate timeout for testing
+    t._pending_acks["!a"] = PendingMessage(
+        dest_id="!a", text="test", sent_at=time.time() - 1
+    )
+    r1 = t.get_unacked_for("!a")
+    assert r1 == "[R1] test"
+
+    # Reset sent_at to past timeout again
+    t._pending_acks["!a"].sent_at = time.time() - 1
+    r2 = t.get_unacked_for("!a")
+    assert r2 == "[R2] test"
+
+    t._pending_acks["!a"].sent_at = time.time() - 1
+    r3 = t.get_unacked_for("!a")
+    assert r3 == "[R3] test"
+
+
+def test_get_unacked_truncates_to_char_limit():
+    """Tagged message should be truncated to MSG_CHAR_LIMIT."""
+    from config import MSG_CHAR_LIMIT
+
+    t = _make_transport()
+    t.ACK_TIMEOUT = 0.0
+    # Create a message that fills the limit
+    long_text = "A" * MSG_CHAR_LIMIT
+    t._pending_acks["!a"] = PendingMessage(
+        dest_id="!a", text=long_text, sent_at=time.time() - 1
+    )
+    result = t.get_unacked_for("!a")
+    assert result.startswith("[R1] ")
+    assert len(result) <= MSG_CHAR_LIMIT
+
+
+def test_get_unacked_max_retries_returns_lost():
+    """After MAX_RETRIES, get_unacked_for returns [LOST] notice."""
+    t = _make_transport()
+    t.ACK_TIMEOUT = 0.0
+    t.MAX_RETRIES = 3
+    t._pending_acks["!a"] = PendingMessage(
+        dest_id="!a", text="lost msg", sent_at=time.time() - 1,
+        retry_count=3,  # Already at max
+    )
+    result = t.get_unacked_for("!a")
+    assert result.startswith("[LOST]")
+    # Pending should be cleared
+    assert "!a" not in t._pending_acks
+
+
+def test_expire_pending_removes_old_entries():
+    """_expire_pending should remove entries older than PENDING_EXPIRE."""
+    t = _make_transport()
+    t.PENDING_EXPIRE = 300.0
+    # One fresh, one stale
+    t._pending_acks["!fresh"] = PendingMessage(
+        dest_id="!fresh", text="new", sent_at=time.time()
+    )
+    t._pending_acks["!stale"] = PendingMessage(
+        dest_id="!stale", text="old", sent_at=time.time() - 600
+    )
+    t._expire_pending()
+    assert "!fresh" in t._pending_acks
+    assert "!stale" not in t._pending_acks
+
+
+def test_send_loop_stores_pending_for_dm():
+    """Send loop should store pending ACK when sending a DM."""
+    t = _make_transport()
+    t.SEND_INTERVAL = 0.0
+    _start_send_loop(t)
+    try:
+        t._send_queue.put(("dm", "!abcd1234", "hello"))
+        t._send_queue.join()
+        # Pending should be stored
+        assert "!abcd1234" in t._pending_acks
+        assert t._pending_acks["!abcd1234"].text == "hello"
+    finally:
+        _stop_send_loop(t)
+
+
+def test_broadcast_does_not_store_pending():
+    """Broadcasts should NOT store pending ACK entries."""
+    t = _make_transport()
+    t.SEND_INTERVAL = 0.0
+    _start_send_loop(t)
+    try:
+        t._send_queue.put(("broadcast", 0, "news"))
+        t._send_queue.join()
+        assert len(t._pending_acks) == 0
+    finally:
+        _stop_send_loop(t)
+
+
+def test_new_dm_replaces_old_pending():
+    """Sending a new DM to the same dest should replace the old pending."""
+    t = _make_transport()
+    t._pending_acks["!a"] = PendingMessage(
+        dest_id="!a", text="old response", sent_at=time.time() - 30
+    )
+    t._do_send_dm("!a", "new response")
+    assert t._pending_acks["!a"].text == "new response"
+    assert t._pending_acks["!a"].retry_count == 0
+
+
 if __name__ == "__main__":
     test_send_dm_queues_message()
     test_send_broadcast_queues_message()
@@ -474,4 +651,17 @@ if __name__ == "__main__":
     test_health_check_triggers_reconnect()
     test_send_loop_reconnects_on_send_failure()
     test_send_loop_drops_message_when_reconnect_fails()
+    test_do_send_dm_stores_pending()
+    test_do_send_dm_retry_does_not_overwrite_pending()
+    test_do_send_dm_lost_does_not_overwrite_pending()
+    test_get_unacked_returns_none_no_pending()
+    test_get_unacked_clears_within_timeout()
+    test_get_unacked_returns_tagged_after_timeout()
+    test_get_unacked_increments_retry_count()
+    test_get_unacked_truncates_to_char_limit()
+    test_get_unacked_max_retries_returns_lost()
+    test_expire_pending_removes_old_entries()
+    test_send_loop_stores_pending_for_dm()
+    test_broadcast_does_not_store_pending()
+    test_new_dm_replaces_old_pending()
     print("All transport tests passed!")

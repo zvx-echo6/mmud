@@ -367,6 +367,9 @@ class MockTransport:
     def set_message_callback(self, callback):
         self._callback = callback
 
+    def get_unacked_for(self, node_id):
+        return None
+
 
 # ── Test Cases ──────────────────────────────────────────────────────────────
 

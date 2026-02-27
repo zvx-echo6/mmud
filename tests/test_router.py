@@ -75,7 +75,9 @@ def _make_router(conn=None) -> tuple[NodeRouter, dict[str, MagicMock]]:
 
     transports = {}
     for name in ("EMBR", "DCRG", "GRST", "MRN", "TRVL", "WSPR"):
-        transports[name] = MagicMock()
+        mock = MagicMock()
+        mock.get_unacked_for.return_value = None  # No unacked messages by default
+        transports[name] = mock
 
     router = NodeRouter(engine, npc_handler, transports)
     return router, transports

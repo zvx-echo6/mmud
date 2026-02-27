@@ -14,8 +14,10 @@ import logging
 import queue
 import threading
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Callable, Optional
+
+from config import MSG_CHAR_LIMIT
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +32,15 @@ class MeshMessage:
     channel: int          # Channel index
 
 
+@dataclass
+class PendingMessage:
+    """Outbound DM awaiting delivery confirmation."""
+    dest_id: str
+    text: str
+    sent_at: float
+    retry_count: int = 0
+
+
 class MeshTransport:
     """Meshtastic device interface for MMUD.
 
@@ -41,6 +52,10 @@ class MeshTransport:
 
     A health monitor thread periodically checks the connection and
     triggers auto-reconnect on failure.
+
+    Outbound DMs are tracked for delivery. If a message is not
+    acknowledged within ACK_TIMEOUT seconds, it is resent with a
+    retry tag ([R1], [R2], ...) when the player's next command arrives.
     """
 
     # Minimum seconds between sends. LONG_FAST airtime ~1.5s per message
@@ -51,6 +66,11 @@ class MeshTransport:
     HEARTBEAT_INTERVAL = 30.0   # Seconds between connection health checks
     RECONNECT_DELAY = 5.0       # Seconds to wait before each reconnect attempt
     MAX_RECONNECT_ATTEMPTS = 10
+
+    # ACK tracking settings
+    ACK_TIMEOUT = 60.0          # Seconds before a message is considered unacked
+    MAX_RETRIES = 5             # Stop retrying after this many attempts
+    PENDING_EXPIRE = 300.0      # Seconds before stale pending entries are cleaned up
 
     def __init__(self, connection_string: str, channel: int = 0):
         """Initialize transport.
@@ -73,6 +93,7 @@ class MeshTransport:
         self._reconnect_lock = threading.Lock()
         self._last_send_time: float = 0.0
         self._subscribed: bool = False
+        self._pending_acks: dict[str, PendingMessage] = {}  # dest_id → last unacked msg
 
     def connect(self) -> None:
         """Connect to the Meshtastic device."""
@@ -296,6 +317,9 @@ class MeshTransport:
             if self._stop_event.is_set():
                 break
 
+            # Clean up stale pending ACK entries
+            self._expire_pending()
+
             if not self._connected or not self._interface:
                 self._attempt_reconnect()
                 continue
@@ -380,6 +404,70 @@ class MeshTransport:
 
         return False
 
+    # ── ACK Tracking ──────────────────────────────────────────────────────
+
+    def _do_send_dm(self, dest_id: str, text: str) -> None:
+        """Send a DM via the interface and track for ACK.
+
+        Stores the message as pending for delivery confirmation.
+        Retry-tagged messages ([R1], [R2], ...) and [LOST] notices
+        do not overwrite the pending entry.
+        """
+        self._interface.sendText(
+            text=text, destinationId=dest_id, wantAck=True
+        )
+        # Only track non-retry messages as new pending
+        if not text.startswith("[R") and not text.startswith("[LOST]"):
+            self._pending_acks[dest_id] = PendingMessage(
+                dest_id=dest_id, text=text, sent_at=time.time()
+            )
+
+    def get_unacked_for(self, node_id: str) -> Optional[str]:
+        """Check for unacked outbound message to this node.
+
+        Called by the router when a new inbound arrives. Returns:
+        - None if no pending or message is still within ACK window
+          (player sending a new command = implicit ACK).
+        - Tagged retry text "[R1] ..." if message was likely lost.
+        - "[LOST] ..." notice if max retries exhausted.
+        """
+        pending = self._pending_acks.get(node_id)
+        if not pending:
+            return None
+
+        age = time.time() - pending.sent_at
+        if age < self.ACK_TIMEOUT:
+            # Within ACK window — player sending a new command is implicit ACK
+            del self._pending_acks[node_id]
+            return None
+
+        # Past timeout — message likely lost
+        if pending.retry_count >= self.MAX_RETRIES:
+            logger.warning(
+                f"Max retries reached for {node_id}, dropping: "
+                f"{pending.text[:60]}..."
+            )
+            del self._pending_acks[node_id]
+            return "[LOST] Last response failed to deliver. Send your command again."
+
+        pending.retry_count += 1
+        pending.sent_at = time.time()  # Reset timer for next check
+
+        tag = f"[R{pending.retry_count}] "
+        tagged = tag + pending.text
+        if len(tagged) > MSG_CHAR_LIMIT:
+            tagged = tag + pending.text[:MSG_CHAR_LIMIT - len(tag)]
+
+        return tagged
+
+    def _expire_pending(self) -> None:
+        """Remove stale pending entries older than PENDING_EXPIRE."""
+        now = time.time()
+        expired = [k for k, v in self._pending_acks.items()
+                   if now - v.sent_at > self.PENDING_EXPIRE]
+        for k in expired:
+            del self._pending_acks[k]
+
     # ── Send Queue ─────────────────────────────────────────────────────────
 
     def _send_loop(self) -> None:
@@ -406,9 +494,7 @@ class MeshTransport:
             # Send with connection recovery
             if msg_type == "dm":
                 success = self._safe_send(
-                    lambda t=target, x=text: self._interface.sendText(
-                        text=x, destinationId=t, wantAck=True
-                    )
+                    lambda t=target, x=text: self._do_send_dm(t, x)
                 )
             else:
                 success = self._safe_send(

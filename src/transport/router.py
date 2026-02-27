@@ -124,6 +124,16 @@ class NodeRouter:
 
     def _handle_embr(self, msg: MeshMessage) -> None:
         """Handle a message on the EMBR (game) node."""
+        # Check for unacked previous response — resend before new command
+        transport = self.transports.get("EMBR")
+        if transport:
+            unacked = transport.get_unacked_for(msg.sender_id)
+            if unacked:
+                logger.info(
+                    f"Resending unacked to {msg.sender_id}: {unacked[:60]}..."
+                )
+                transport.send_dm(msg.sender_id, unacked)
+
         # Detect register vs command by checking if player has a session
         player = player_model.get_player_by_session(self.conn, msg.sender_id)
         is_register = player is None
@@ -244,6 +254,17 @@ class NodeRouter:
 
     def _handle_npc(self, node_name: str, npc: str, msg: MeshMessage) -> None:
         """Handle a message on an NPC node."""
+        # Check for unacked previous response — resend before new command
+        transport = self.transports.get(node_name)
+        if transport:
+            unacked = transport.get_unacked_for(msg.sender_id)
+            if unacked:
+                logger.info(
+                    f"Resending unacked to {msg.sender_id} on {node_name}: "
+                    f"{unacked[:60]}..."
+                )
+                transport.send_dm(msg.sender_id, unacked)
+
         # Log inbound
         log_message(
             self.conn, node_name, "inbound", msg.text, "npc_inbound",
