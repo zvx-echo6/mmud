@@ -234,7 +234,7 @@ def apply_death(conn: sqlite3.Connection, player_id: int) -> dict:
     - Lose DEATH_GOLD_LOSS_PERCENT% of carried gold
     - Lose 15% of current XP
     - Lose 1 daily dungeon action
-    - Respawn in town at 50% HP
+    - Respawn in town at 60% HP
     - State → 'town', floor → 0
 
     Returns:
@@ -249,7 +249,7 @@ def apply_death(conn: sqlite3.Connection, player_id: int) -> dict:
 
     gold_lost = math.floor(player["gold_carried"] * DEATH_GOLD_LOSS_PERCENT / 100)
     xp_lost = math.floor(player["xp"] * 0.15)
-    new_hp = max(1, player["hp_max"] // 2)
+    new_hp = max(1, player["hp_max"] * 3 // 5)
     new_actions = max(0, player["dungeon_actions_remaining"] - 1)
 
     new_resource = max(1, player.get("resource_max", RESOURCE_MAX) // 2)

@@ -327,6 +327,74 @@ def test_death_loses_carried_gold_only():
     assert player["gold_carried"] == 50 - expected_loss
 
 
+def test_marens_mercy_triggers():
+    """Maren's Mercy: free heal to 50% if broke and below 50% HP."""
+    conn = make_test_db()
+    engine = GameEngine(conn)
+    _register(engine)
+
+    player = player_model.get_player_by_session(conn, "!test1234")
+    hp_max = player["hp_max"]
+    # Set to broke and badly hurt (below 50% HP)
+    player_model.update_state(conn, player["id"], hp=5)
+    conn.execute("UPDATE players SET gold_carried = 0 WHERE id = ?", (player["id"],))
+    conn.commit()
+
+    resp = engine.process_message("!test1234", "Tester", "heal")
+    assert "Maren sighs" in resp
+
+    player = player_model.get_player(conn, player["id"])
+    assert player["hp"] == hp_max // 2
+
+
+def test_marens_mercy_not_if_has_gold():
+    """Maren's Mercy does NOT trigger if player has gold."""
+    conn = make_test_db()
+    engine = GameEngine(conn)
+    _register(engine)
+
+    player = player_model.get_player_by_session(conn, "!test1234")
+    player_model.update_state(conn, player["id"], hp=5)
+    player_model.award_gold(conn, player["id"], 10)
+
+    resp = engine.process_message("!test1234", "Tester", "heal")
+    assert "Maren sighs" not in resp
+    assert "Cost" in resp
+
+
+def test_marens_mercy_not_if_above_50_percent():
+    """Maren's Mercy does NOT trigger if HP is at or above 50%."""
+    conn = make_test_db()
+    engine = GameEngine(conn)
+    _register(engine)
+
+    player = player_model.get_player_by_session(conn, "!test1234")
+    hp_max = player["hp_max"]
+    # Set HP to exactly 50% and broke
+    player_model.update_state(conn, player["id"], hp=hp_max // 2)
+    conn.execute("UPDATE players SET gold_carried = 0 WHERE id = ?", (player["id"],))
+    conn.commit()
+
+    resp = engine.process_message("!test1234", "Tester", "heal")
+    # Should NOT trigger mercy (hp is not BELOW 50%)
+    assert "Maren sighs" not in resp
+
+
+def test_death_respawn_at_60_percent():
+    """Death respawns at 60% HP instead of 50%."""
+    conn = make_test_db()
+    engine = GameEngine(conn)
+    _register(engine)
+
+    player = player_model.get_player_by_session(conn, "!test1234")
+    hp_max = player["hp_max"]
+    expected_hp = max(1, hp_max * 3 // 5)
+
+    player_model.apply_death(conn, player["id"])
+    player = player_model.get_player(conn, player["id"])
+    assert player["hp"] == expected_hp
+
+
 def test_gold_awarded_on_kill():
     """Killing a monster awards gold."""
     conn = make_test_db()

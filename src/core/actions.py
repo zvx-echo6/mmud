@@ -353,7 +353,7 @@ def action_fight(conn: sqlite3.Connection, player: dict, args: list[str]) -> str
         player_spd=eff["spd"], player_hp=player["hp"],
         monster_pow=monster["pow"], monster_def=monster["def"],
         monster_spd=monster["spd"], monster_hp=monster["hp"],
-        monster_name=monster["name"],
+        monster_name=monster["name"], player_level=player["level"],
     )
 
     # Update player HP
@@ -765,6 +765,12 @@ def action_heal(conn: sqlite3.Connection, player: dict, args: list[str]) -> str:
     if player["hp"] >= player["hp_max"]:
         return fmt("Already at full HP.")
 
+    # Maren's Mercy: free heal to 50% if broke and badly hurt
+    mercy_hp = player["hp_max"] // 2
+    if player["gold_carried"] <= 0 and player["hp"] < mercy_hp:
+        player_model.update_state(conn, player["id"], hp=mercy_hp)
+        return fmt(f"Maren sighs. 'No gold? Sit down.' HP restored to {mercy_hp}/{player['hp_max']}.")
+
     cost = economy.calc_heal_cost(player)
     if args and args[0].lower() == "y":
         ok, msg = economy.heal_player(conn, player["id"], player)
@@ -1003,7 +1009,7 @@ def action_charge(conn: sqlite3.Connection, player: dict, args: list[str]) -> st
             world_mgr.exit_combat(conn, player["id"])
             return fmt("No target. Combat ended.")
         boosted_pow = int(eff["pow"] * CHARGE_DAMAGE_MULT)
-        dmg = combat_engine.calc_damage(boosted_pow, monster["def"])
+        dmg = combat_engine.calc_damage(boosted_pow, monster["def"], attacker_level=player["level"])
         world_data.damage_monster(conn, monster["id"], dmg)
         new_mhp = max(0, monster["hp"] - dmg)
         if new_mhp <= 0:
@@ -1029,7 +1035,7 @@ def action_charge(conn: sqlite3.Connection, player: dict, args: list[str]) -> st
         world_mgr.enter_combat(conn, player["id"], monster["id"])
         eff = economy.get_effective_stats(conn, player)
         boosted_pow = int(eff["pow"] * CHARGE_DAMAGE_MULT)
-        dmg = combat_engine.calc_damage(boosted_pow, monster["def"])
+        dmg = combat_engine.calc_damage(boosted_pow, monster["def"], attacker_level=player["level"])
         world_data.damage_monster(conn, monster["id"], dmg)
         new_mhp = max(0, monster["hp"] - dmg)
         if new_mhp <= 0:
@@ -1059,7 +1065,7 @@ def action_charge(conn: sqlite3.Connection, player: dict, args: list[str]) -> st
         world_mgr.enter_combat(conn, player["id"], monster2["id"])
         eff = economy.get_effective_stats(conn, player)
         boosted_pow = int(eff["pow"] * CHARGE_DAMAGE_MULT)
-        dmg = combat_engine.calc_damage(boosted_pow, monster2["def"])
+        dmg = combat_engine.calc_damage(boosted_pow, monster2["def"], attacker_level=player["level"])
         world_data.damage_monster(conn, monster2["id"], dmg)
         new_mhp = max(0, monster2["hp"] - dmg)
         if new_mhp <= 0:
@@ -1090,7 +1096,7 @@ def action_sneak(conn: sqlite3.Connection, player: dict, args: list[str]) -> str
             world_mgr.exit_combat(conn, player["id"])
             return fmt("No target.")
         if random.random() < SNEAK_BYPASS_CHANCE:
-            dmg = combat_engine.calc_damage(eff["pow"] * 2, monster["def"])
+            dmg = combat_engine.calc_damage(eff["pow"] * 2, monster["def"], attacker_level=player["level"])
             world_data.damage_monster(conn, monster["id"], dmg)
             new_mhp = max(0, monster["hp"] - dmg)
             if new_mhp <= 0:
@@ -1106,7 +1112,7 @@ def action_sneak(conn: sqlite3.Connection, player: dict, args: list[str]) -> str
             result = combat_engine.resolve_round(
                 eff["pow"], eff["def"], eff["spd"], player["hp"],
                 monster["pow"], monster["def"], monster["spd"], monster["hp"],
-                monster["name"],
+                monster["name"], player_level=player["level"],
             )
             player_model.update_state(conn, player["id"], hp=result.player_hp)
             if result.player_damage_dealt > 0:

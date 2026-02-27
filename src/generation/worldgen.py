@@ -511,16 +511,16 @@ def _floor_to_tier(floor: int) -> int:
 
 def _monster_hp(tier: int) -> int:
     """Calculate monster HP based on tier."""
-    base = {1: 15, 2: 30, 3: 50, 4: 75, 5: 100}
+    base = {1: 8, 2: 25, 3: 45, 4: 70, 5: 100}
     hp = base.get(tier, 15)
-    return hp + random.randint(-3, 5)
+    return hp + random.randint(-2, 3)
 
 
 def _monster_stat(tier: int, stat: str) -> int:
     """Calculate a monster stat based on tier."""
-    base = {1: 3, 2: 5, 3: 7, 4: 9, 5: 12}
+    base = {1: 2, 2: 4, 3: 7, 4: 9, 5: 12}
     val = base.get(tier, 3)
-    return max(1, val + random.randint(-1, 2))
+    return max(1, val + random.randint(-1, 1))
 
 
 def _monster_xp(tier: int) -> int:

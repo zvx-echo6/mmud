@@ -145,6 +145,84 @@ def test_flee_cannot_kill():
     assert found_fail
 
 
+def test_calc_damage_minimum_is_2_at_level_1():
+    """Level 1 player should always deal at least 2 damage."""
+    random.seed(42)
+    for _ in range(100):
+        dmg = calc_damage(attacker_pow=1, defender_def=20, attacker_level=1)
+        assert dmg >= 2, f"Level 1 damage {dmg} < 2"
+
+
+def test_calc_damage_minimum_scales_with_level():
+    """Minimum damage scales: level 1-2: 2, level 6-8: 3, level 9+: 4."""
+    random.seed(42)
+    for _ in range(100):
+        # Level 1: min 2
+        assert calc_damage(1, 20, attacker_level=1) >= 2
+        # Level 6: min 3 (1 + 6//3 = 3)
+        assert calc_damage(1, 20, attacker_level=6) >= 3
+        # Level 9: min 4 (1 + 9//3 = 4)
+        assert calc_damage(1, 20, attacker_level=9) >= 4
+
+
+def test_calc_damage_monster_min_stays_at_base():
+    """Monster attacks (level 0) should have minimum 2 damage."""
+    random.seed(42)
+    for _ in range(100):
+        dmg = calc_damage(attacker_pow=1, defender_def=20, attacker_level=0)
+        assert dmg >= 2
+
+
+def test_rogue_vs_tier1_always_2_plus():
+    """Rogue (POW 2) vs tier 1 monster (DEF 1-3) should deal >= 2 damage."""
+    random.seed(42)
+    for def_val in [1, 2, 3]:
+        for _ in range(100):
+            dmg = calc_damage(attacker_pow=2, defender_def=def_val, attacker_level=1)
+            assert dmg >= 2, f"Rogue vs DEF {def_val}: {dmg} < 2"
+
+
+def test_warrior_vs_tier1_always_2_plus():
+    """Warrior (POW 3) vs tier 1 monster (DEF 1-3) should deal >= 2 damage."""
+    random.seed(42)
+    for def_val in [1, 2, 3]:
+        for _ in range(100):
+            dmg = calc_damage(attacker_pow=3, defender_def=def_val, attacker_level=1)
+            assert dmg >= 2, f"Warrior vs DEF {def_val}: {dmg} < 2"
+
+
+def test_caster_vs_tier1_always_2_plus():
+    """Caster (POW 1) vs tier 1 monster (DEF 1-3) should deal >= 2 damage."""
+    random.seed(42)
+    for def_val in [1, 2, 3]:
+        for _ in range(100):
+            dmg = calc_damage(attacker_pow=1, defender_def=def_val, attacker_level=1)
+            assert dmg >= 2, f"Caster vs DEF {def_val}: {dmg} < 2"
+
+
+def test_rogue_survives_tier1_fight():
+    """Level 1 Rogue should survive most tier 1 fights (>80% survival over 100 sims)."""
+    random.seed(42)
+    survivals = 0
+    for _ in range(100):
+        p_hp = 40   # Rogue starting HP
+        m_hp = 8    # Tier 1 monster HP (new base)
+        for _round in range(30):  # Cap at 30 rounds
+            result = resolve_round(
+                player_pow=2, player_def=1, player_spd=3, player_hp=p_hp,
+                monster_pow=2, monster_def=2, monster_spd=2, monster_hp=m_hp,
+                monster_name="Rat", player_level=1,
+            )
+            p_hp = result.player_hp
+            m_hp = result.monster_hp
+            if result.monster_dead:
+                survivals += 1
+                break
+            if result.player_dead:
+                break
+    assert survivals > 80, f"Rogue survived {survivals}/100 fights (need >80)"
+
+
 if __name__ == "__main__":
     test_calc_damage_minimum()
     test_calc_damage_scaling()
@@ -157,4 +235,11 @@ if __name__ == "__main__":
     test_flee_success()
     test_flee_failure_takes_damage()
     test_flee_cannot_kill()
+    test_calc_damage_minimum_is_2_at_level_1()
+    test_calc_damage_minimum_scales_with_level()
+    test_calc_damage_monster_min_stays_at_base()
+    test_rogue_vs_tier1_always_2_plus()
+    test_warrior_vs_tier1_always_2_plus()
+    test_caster_vs_tier1_always_2_plus()
+    test_rogue_survives_tier1_fight()
     print("All combat tests passed!")

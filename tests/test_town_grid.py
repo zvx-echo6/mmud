@@ -4,6 +4,7 @@ Tests town generation, movement, NPC rooms, examine action,
 dungeon entry/exit, and tutorial monster stats.
 """
 
+import random
 import sys
 from collections import deque
 from pathlib import Path
@@ -547,6 +548,7 @@ def test_town_descriptions_under_150():
 
 def test_tutorial_zone_ratio():
     """~25% of Floor 1 rooms have tutorial monsters (softer stats)."""
+    random.seed(42)
     conn = make_town_db()
 
     # Get all Floor 1 rooms with monsters

@@ -33,22 +33,26 @@ class FleeResult:
     narrative: str
 
 
-def calc_damage(attacker_pow: int, defender_def: int) -> int:
+def calc_damage(attacker_pow: int, defender_def: int, attacker_level: int = 1) -> int:
     """Calculate damage from one attack.
 
-    Base damage = attacker POW - defender DEF/3, minimum 1.
+    Base damage = attacker POW - defender DEF/3.
+    Minimum damage scales with level: max(2, 1 + level//3).
     Random variance of +/- 20%.
 
     Args:
         attacker_pow: Attacker's POW stat.
         defender_def: Defender's DEF stat.
+        attacker_level: Attacker's level (default 1). Pass 0 for monsters.
 
     Returns:
         Damage dealt (always >= 1).
     """
-    base = max(1, attacker_pow - defender_def // 3)
+    base = attacker_pow - defender_def // 3
+    min_dmg = max(2, 1 + attacker_level // 3)
+    base = max(min_dmg, base)
     variance = random.uniform(0.8, 1.2)
-    return max(1, math.floor(base * variance))
+    return max(min_dmg, math.floor(base * variance))
 
 
 def check_initiative(player_spd: int, monster_spd: int) -> bool:
@@ -72,7 +76,7 @@ def check_initiative(player_spd: int, monster_spd: int) -> bool:
 def resolve_round(
     player_pow: int, player_def: int, player_spd: int, player_hp: int,
     monster_pow: int, monster_def: int, monster_spd: int, monster_hp: int,
-    monster_name: str,
+    monster_name: str, player_level: int = 1,
 ) -> CombatResult:
     """Resolve one round of combat.
 
@@ -82,14 +86,15 @@ def resolve_round(
     Args:
         player_*: Player stats and current HP.
         monster_*: Monster stats, current HP, and name.
+        player_level: Player level for minimum damage scaling.
 
     Returns:
         CombatResult with damage, HP changes, and narrative.
     """
     player_first = check_initiative(player_spd, monster_spd)
 
-    player_dmg = calc_damage(player_pow, monster_def)
-    monster_dmg = calc_damage(monster_pow, player_def)
+    player_dmg = calc_damage(player_pow, monster_def, attacker_level=player_level)
+    monster_dmg = calc_damage(monster_pow, player_def, attacker_level=0)
 
     p_hp = player_hp
     m_hp = monster_hp
