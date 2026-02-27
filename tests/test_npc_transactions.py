@@ -48,10 +48,10 @@ class MockBackend(BackendInterface):
     def set_response(self, response: str):
         self._response = response
 
-    def complete(self, prompt: str, max_tokens: int = 200) -> str:
+    def complete(self, prompt: str) -> str:
         return self._response
 
-    def chat(self, system: str, messages: list[dict], max_tokens: int = 80) -> str:
+    def chat(self, system: str, messages: list[dict]) -> str:
         return self._response
 
 

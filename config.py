@@ -537,7 +537,6 @@ MESH_NODES = {
 
 NPC_TO_NODE = {"grist": "GRST", "maren": "MRN", "torval": "TRVL", "whisper": "WSPR"}
 
-NPC_LLM_MAX_TOKENS = 1024         # Let the model think freely; 150-char limit enforced in npc_conversation.py
 NPC_LLM_TIMEOUT = 10              # Seconds before fallback to pre-generated dialogue
 NPC_SESSION_TTL = 300              # 5 minutes — session memory TTL in seconds
 

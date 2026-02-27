@@ -232,7 +232,7 @@ class NodeRouter:
                     f"One sentence, under 140 characters, stay in character. "
                     f"No quotes around your response."
                 )
-                greeting = backend.complete(prompt, max_tokens=100)
+                greeting = backend.complete(prompt)
                 if greeting and len(greeting.strip()) > 10:
                     return greeting.strip()[:MSG_CHAR_LIMIT]
             except Exception as e:

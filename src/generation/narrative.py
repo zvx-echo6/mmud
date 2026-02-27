@@ -31,25 +31,23 @@ class BackendInterface(ABC):
     """Base class all LLM provider backends implement."""
 
     @abstractmethod
-    def complete(self, prompt: str, max_tokens: int = 200) -> str:
+    def complete(self, prompt: str) -> str:
         """Generate text from a prompt.
 
         Args:
             prompt: The generation prompt.
-            max_tokens: Maximum tokens to generate.
 
         Returns:
             Generated text string.
         """
         ...
 
-    def chat(self, system: str, messages: list[dict], max_tokens: int = 80) -> str:
+    def chat(self, system: str, messages: list[dict]) -> str:
         """Multi-turn conversation. Override for real LLM backends.
 
         Args:
             system: System prompt (NPC personality + game state).
             messages: List of {"role": "user"|"assistant", "content": str}.
-            max_tokens: Maximum tokens to generate.
 
         Returns:
             Assistant response string.
@@ -60,7 +58,7 @@ class BackendInterface(ABC):
             if msg["role"] == "user":
                 last_user = msg["content"]
                 break
-        return self.complete(f"{system}\n\nPlayer says: {last_user}", max_tokens)
+        return self.complete(f"{system}\n\nPlayer says: {last_user}")
 
     def generate_spell_names(self, theme: str = "") -> list[str]:
         """Generate 3 spell names for the epoch (each <=20 chars).
@@ -78,7 +76,7 @@ class BackendInterface(ABC):
             f"Return only the names, one per line."
         )
         try:
-            raw = self.complete(prompt, max_tokens=100)
+            raw = self.complete(prompt)
             names = [line.strip() for line in raw.strip().splitlines() if line.strip()]
             # Strip leading markers like "1.", "- ", "* "
             cleaned = []
@@ -152,7 +150,7 @@ class BackendInterface(ABC):
             f"floor_name|atmosphere|narrative_beat|floor_transition"
         )
         try:
-            raw = self.complete(prompt, max_tokens=600)
+            raw = self.complete(prompt)
             lines = [l.strip() for l in raw.strip().splitlines() if l.strip()]
             # Strip leading markers
             cleaned = []
@@ -204,7 +202,7 @@ class BackendInterface(ABC):
             "Return ONLY the name, nothing else."
         )
         try:
-            raw = self.complete(prompt, max_tokens=30)
+            raw = self.complete(prompt)
             name = raw.strip().strip('"\'').split('\n')[0].strip()
             if name and len(name) <= 40:
                 return name
@@ -238,7 +236,7 @@ class BackendInterface(ABC):
                 f"Sensory details. Under 175 characters. Return ONLY the description."
             )
         try:
-            raw = self.complete(prompt, max_tokens=80)
+            raw = self.complete(prompt)
             text = raw.strip().strip('"\'').split('\n')[0].strip()
             if text and text.lower() != name.lower():
                 return text[:LLM_OUTPUT_CHAR_LIMIT]
@@ -263,7 +261,7 @@ class BackendInterface(ABC):
             f"Return only the fragment, no quotes."
         )
         try:
-            raw = self.complete(prompt, max_tokens=60)
+            raw = self.complete(prompt)
             text = raw.strip().strip('"\'')
             # Take only the first line if multi-line
             if "\n" in text:
@@ -291,7 +289,7 @@ class BackendInterface(ABC):
             f"themed around '{theme}'. Return ONLY the name, nothing else."
         )
         try:
-            raw = self.complete(prompt, max_tokens=30)
+            raw = self.complete(prompt)
             name = raw.strip().strip('"\'').split('\n')[0].strip()
             if name and len(name) <= 40:
                 return name
@@ -316,7 +314,7 @@ class BackendInterface(ABC):
             f"Under 175 characters. Return ONLY the description."
         )
         try:
-            raw = self.complete(prompt, max_tokens=80)
+            raw = self.complete(prompt)
             text = raw.strip().strip('"\'').split('\n')[0].strip()
             if text:
                 return text[:LLM_OUTPUT_CHAR_LIMIT]
@@ -339,7 +337,7 @@ class BackendInterface(ABC):
             f"One short sentence, under 100 characters. Return ONLY the text."
         )
         try:
-            raw = self.complete(prompt, max_tokens=50)
+            raw = self.complete(prompt)
             text = raw.strip().strip('"\'').split('\n')[0].strip()
             if text:
                 return text[:LLM_OUTPUT_CHAR_LIMIT]
@@ -359,7 +357,7 @@ class BackendInterface(ABC):
             f"Tier 1=weak, 5=legendary. Return ONLY the name."
         )
         try:
-            raw = self.complete(prompt, max_tokens=20)
+            raw = self.complete(prompt)
             name = raw.strip().strip('"\'').split('\n')[0].strip()
             if name and len(name) <= 30:
                 return name
@@ -379,7 +377,7 @@ class BackendInterface(ABC):
             f"on floor {floor} ({theme}). Under 175 characters. Return ONLY the text."
         )
         try:
-            raw = self.complete(prompt, max_tokens=80)
+            raw = self.complete(prompt)
             text = raw.strip().strip('"\'').split('\n')[0].strip()
             if text:
                 return text[:LLM_OUTPUT_CHAR_LIMIT]
@@ -401,7 +399,7 @@ class BackendInterface(ABC):
             f"of a dungeon themed around '{theme}'. Return ONLY the name."
         )
         try:
-            raw = self.complete(prompt, max_tokens=20)
+            raw = self.complete(prompt)
             name = raw.strip().strip('"\'').split('\n')[0].strip()
             if name and len(name) <= 30:
                 return name
@@ -428,7 +426,7 @@ class BackendInterface(ABC):
             prompt = f"Write a specific hint pointing to {room_name} on floor {floor}. Under 175 characters."
         prompt += " Do NOT use action verbs like 'go', 'move', 'take', 'fight'. Return ONLY the hint."
         try:
-            raw = self.complete(prompt, max_tokens=80)
+            raw = self.complete(prompt)
             text = raw.strip().strip('"\'').split('\n')[0].strip()
             if text:
                 return text[:LLM_OUTPUT_CHAR_LIMIT]
@@ -448,7 +446,7 @@ class BackendInterface(ABC):
             "Format: RIDDLE|ANSWER. Riddle under 175 characters."
         )
         try:
-            raw = self.complete(prompt, max_tokens=80)
+            raw = self.complete(prompt)
             line = raw.strip().split('\n')[0].strip()
             if '|' in line:
                 parts = line.split('|', 1)
@@ -472,7 +470,7 @@ class BackendInterface(ABC):
             f"Context: {context}. Under 175 characters. Return ONLY the dialogue."
         )
         try:
-            raw = self.complete(prompt, max_tokens=80)
+            raw = self.complete(prompt)
             text = raw.strip().strip('"\'').split('\n')[0].strip()
             if text:
                 return text[:LLM_OUTPUT_CHAR_LIMIT]
@@ -492,7 +490,7 @@ class BackendInterface(ABC):
             "dimensional breach zone in a dungeon. Return ONLY the name."
         )
         try:
-            raw = self.complete(prompt, max_tokens=20)
+            raw = self.complete(prompt)
             name = raw.strip().strip('"\'').split('\n')[0].strip()
             if name and len(name) <= 30:
                 return name
@@ -515,7 +513,7 @@ class BackendInterface(ABC):
             f"Return one line: TITLE|DESCRIPTION|BROADCAST"
         )
         try:
-            raw = self.complete(prompt, max_tokens=150)
+            raw = self.complete(prompt)
             line = raw.strip().split('\n')[0].strip()
             if '|' in line:
                 parts = [p.strip() for p in line.split('|')]
@@ -545,7 +543,7 @@ class BackendInterface(ABC):
             f"Under 175 characters. Return ONLY the message."
         )
         try:
-            raw = self.complete(prompt, max_tokens=80)
+            raw = self.complete(prompt)
             text = raw.strip().strip('"\'').split('\n')[0].strip()
             text = self._clean_preamble(text)
             if text:
@@ -659,7 +657,7 @@ class BackendInterface(ABC):
             f"- Return ONLY the prose paragraphs separated by blank lines."
         )
         try:
-            raw = self.complete(prompt, max_tokens=2000)
+            raw = self.complete(prompt)
             text = self._clean_preamble(raw)
             if text and len(text) > 100:
                 return text
@@ -714,7 +712,7 @@ class BackendInterface(ABC):
             "The stairs are open.",
         ]
         try:
-            raw = self.complete(prompt, max_tokens=400)
+            raw = self.complete(prompt)
             lines = [ln.strip() for ln in raw.strip().split('\n') if ln.strip()]
             announcements = []
             for line in lines[:3]:
@@ -1395,12 +1393,12 @@ class DummyBackend(BackendInterface):
         self._used_room_names: set[str] = set()
         self._town_name_index: int = 0
 
-    def complete(self, prompt: str, max_tokens: int = 200) -> str:
+    def complete(self, prompt: str) -> str:
         """Return template-based text. Ignores the prompt, uses context hints."""
         # Return a generic sensory line — callers use specialized methods instead
         return random.choice(_FLOOR_SENSORY.get(1, _FLOOR_SENSORY[1]))
 
-    def chat(self, system: str, messages: list[dict], max_tokens: int = 80) -> str:
+    def chat(self, system: str, messages: list[dict]) -> str:
         """Return a random NPC dialogue snippet. No LLM call."""
         # Try to detect which NPC from system prompt
         for npc in ("grist", "maren", "torval", "whisper"):
@@ -1649,7 +1647,7 @@ class AnthropicBackend(BackendInterface):
             self._client = anthropic.Anthropic(api_key=self.api_key)
         return self._client
 
-    def complete(self, prompt: str, max_tokens: int = 200) -> str:
+    def complete(self, prompt: str) -> str:
         response = self.client.messages.create(
             model=self.model,
             max_tokens=4096,
@@ -1657,7 +1655,7 @@ class AnthropicBackend(BackendInterface):
         )
         return response.content[0].text.strip()
 
-    def chat(self, system: str, messages: list[dict], max_tokens: int = 80) -> str:
+    def chat(self, system: str, messages: list[dict]) -> str:
         response = self.client.messages.create(
             model=self.model,
             max_tokens=4096,
@@ -1691,14 +1689,14 @@ class OpenAIBackend(BackendInterface):
             self._client = OpenAI(**kwargs)
         return self._client
 
-    def complete(self, prompt: str, max_tokens: int = 200) -> str:
+    def complete(self, prompt: str) -> str:
         response = self.client.chat.completions.create(
             model=self.model,
             messages=[{"role": "user", "content": prompt}],
         )
         return response.choices[0].message.content.strip()
 
-    def chat(self, system: str, messages: list[dict], max_tokens: int = 80) -> str:
+    def chat(self, system: str, messages: list[dict]) -> str:
         chat_messages = [{"role": "system", "content": system}] + messages
         response = self.client.chat.completions.create(
             model=self.model,
@@ -1724,14 +1722,14 @@ class GoogleBackend(BackendInterface):
             self._client = genai.Client(api_key=self.api_key)
         return self._client
 
-    def complete(self, prompt: str, max_tokens: int = 200) -> str:
+    def complete(self, prompt: str) -> str:
         response = self.client.models.generate_content(
             model=self.model,
             contents=prompt,
         )
         return response.text.strip()
 
-    def chat(self, system: str, messages: list[dict], max_tokens: int = 80) -> str:
+    def chat(self, system: str, messages: list[dict]) -> str:
         from google.genai import types
         contents = []
         for msg in messages:

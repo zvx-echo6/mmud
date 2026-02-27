@@ -31,7 +31,6 @@ from config import (
     GAMBLE_MIN_BET,
     LLM_OUTPUT_CHAR_LIMIT,
     MSG_CHAR_LIMIT,
-    NPC_LLM_MAX_TOKENS,
     NPC_LLM_TIMEOUT,
     NPC_NOT_IN_TOWN,
     NPC_SESSION_TTL,
@@ -464,7 +463,7 @@ def _update_memory_async(
                 conversation=conversation,
             )
 
-            new_memory = backend.complete(prompt, max_tokens=200)
+            new_memory = backend.complete(prompt)
             # Trim to 500 chars
             new_memory = new_memory.strip()[:500]
 
@@ -1144,7 +1143,6 @@ class NPCConversationHandler:
             response = self.backend.chat(
                 system=system_prompt,
                 messages=session.messages,
-                max_tokens=NPC_LLM_MAX_TOKENS,
             )
 
             # Parse TX tag from LLM response (only for real backends)

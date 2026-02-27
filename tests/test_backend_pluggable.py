@@ -53,14 +53,14 @@ PIPELINE_METHODS = [
 class MinimalBackend(BackendInterface):
     """Backend that only implements complete(). Tests inheritance of all other methods."""
 
-    def complete(self, prompt: str, max_tokens: int = 200) -> str:
+    def complete(self, prompt: str) -> str:
         return "test output"
 
 
 class BrokenBackend(BackendInterface):
     """Backend whose complete() always raises. Tests fallback behavior."""
 
-    def complete(self, prompt: str, max_tokens: int = 200) -> str:
+    def complete(self, prompt: str) -> str:
         raise RuntimeError("API down")
 
 
@@ -70,14 +70,14 @@ class EchoBackend(BackendInterface):
     def __init__(self, response: str = "Crystal Cavern"):
         self._response = response
 
-    def complete(self, prompt: str, max_tokens: int = 200) -> str:
+    def complete(self, prompt: str) -> str:
         return self._response
 
 
 class VerboseBackend(BackendInterface):
     """Backend that returns overly long output. Tests character limit enforcement."""
 
-    def complete(self, prompt: str, max_tokens: int = 200) -> str:
+    def complete(self, prompt: str) -> str:
         return "A" * 300
 
 

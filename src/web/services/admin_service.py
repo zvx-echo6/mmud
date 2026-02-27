@@ -329,7 +329,7 @@ def test_llm_connection(backend, api_key, model, base_url):
 
     try:
         b = _backend_from_config(config)
-        result = b.complete("Say 'ok' in one word.", max_tokens=10)
+        result = b.complete("Say 'ok' in one word.")
         if result and len(result.strip()) > 0:
             return True, f"Connected. Response: {result.strip()[:50]}"
         return False, "Backend returned empty response."

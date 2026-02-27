@@ -232,12 +232,12 @@ def test_session_passes_history_to_backend():
     call_log = []
 
     class TrackingBackend:
-        def chat(self, system, messages, max_tokens=80):
+        def chat(self, system, messages):
             # Snapshot messages at call time (list is mutated after)
             call_log.append([dict(m) for m in messages])
             return "Response"
 
-        def complete(self, prompt, max_tokens=200):
+        def complete(self, prompt):
             return "Response"
 
     handler = NPCConversationHandler(conn, TrackingBackend())

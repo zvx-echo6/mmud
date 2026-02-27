@@ -221,4 +221,5 @@ The Last Ember is a Flask web dashboard in `src/web/`. It runs in-process with t
 - **Town is free.** Never charge a dungeon action for anything in town.
 - **Class abilities refund resource if dungeon action fails.** Check resource first, then dungeon action. If dungeon action fails, restore the resource.
 - **Reveal is once per room per player.** The `player_reveals` table tracks this with a UNIQUE constraint.
+- **No max_tokens on LLM calls.** Character limits in prompts and MSG_CHAR_LIMIT enforce output length. Never pass max_tokens — thinking models (Gemini 2.5 Flash) count thinking tokens against the limit, causing truncated responses.
 - **The design doc is the source of truth.** If code contradicts `docs/planned.md`, the code is wrong.
