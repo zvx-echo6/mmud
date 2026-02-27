@@ -115,20 +115,39 @@ class BackendInterface(ABC):
         Default implementation calls self.complete() with a narrative arc prompt.
         Falls back to DummyBackend static pool on failure.
         """
-        from config import NUM_FLOORS, FLOOR_THEMES
+        import random as _rng
+        from config import NUM_FLOORS
 
-        floor_list = ", ".join(
-            f"Floor {f}: {FLOOR_THEMES.get(f, 'Unknown')}" for f in range(1, NUM_FLOORS + 1)
-        )
+        # Random seed elements to ensure variety across epochs
+        _envs = [
+            "subterranean river networks", "petrified forest", "collapsed cathedral",
+            "flooded mine shafts", "bone-walled catacombs", "volcanic fissures",
+            "frozen underground lake", "bioluminescent caverns", "rusted machinery",
+            "living coral tunnels", "obsidian galleries", "salt flats", "root systems",
+            "sulfur vents", "sandstone tombs", "mercury pools", "chitin warrens",
+            "glass spires", "tar pits", "fungal networks", "sunken aqueducts",
+            "iron forges", "crystal geodes", "ash drifts", "tidal caves",
+        ]
+        _moods = [
+            "dread", "claustrophobia", "vertigo", "wrongness", "hunger",
+            "grief", "paranoia", "reverence", "decay", "silence",
+            "weight", "abandonment", "watching", "erosion", "fever",
+        ]
+        seed_envs = _rng.sample(_envs, 3)
+        seed_mood = _rng.choice(_moods)
         prompt = (
-            f"Generate sub-themes for an 8-floor dungeon descent. "
-            f"Base themes: {floor_list}. "
-            f"For each floor, provide a unique floor_name (evocative 2-3 word name), "
-            f"atmosphere (sensory description), narrative_beat (what the player learns), "
-            f"and floor_transition (what the player sees when entering this floor). "
-            f"Act structure: Floor 1 = setup, Floors 2-4 = escalation, "
-            f"Floors 5-7 = deepening tension, Floor 8 = climax. "
-            f"Each field must be under 150 characters. "
+            f"Generate 8 unique floor identities for a dungeon descent. "
+            f"This epoch's dungeon draws from: {', '.join(seed_envs)}. "
+            f"The dominant mood is {seed_mood}. "
+            f"Each floor needs: floor_name (2-3 word evocative name — be creative, "
+            f"avoid generic fantasy cliches like 'depths', 'abyss', 'halls', 'caverns'), "
+            f"atmosphere (one vivid sensory sentence), "
+            f"narrative_beat (what the player discovers or realizes on this floor), "
+            f"floor_transition (what the player sees/feels when entering). "
+            f"Descent arc: Floor 1 = unsettling introduction, Floors 2-4 = escalating "
+            f"wrongness, Floors 5-7 = hostile and alien, Floor 8 = the source. "
+            f"Every name must be DISTINCT — no two floors should feel interchangeable. "
+            f"Each field under 150 characters. "
             f"Return exactly {NUM_FLOORS} entries, one per line, format: "
             f"floor_name|atmosphere|narrative_beat|floor_transition"
         )
