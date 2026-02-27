@@ -1,6 +1,6 @@
 """
 Command parser for MMUD.
-Parses 150-char Meshtastic messages into commands and arguments.
+Parses 175-char Meshtastic messages into commands and arguments.
 """
 
 from dataclasses import dataclass
@@ -88,7 +88,7 @@ def parse(text: str) -> Optional[ParsedCommand]:
     """Parse a raw message into a command.
 
     Args:
-        text: Raw message text (up to 150 chars).
+        text: Raw message text (up to 175 chars).
 
     Returns:
         ParsedCommand or None if the message is empty/unparseable.

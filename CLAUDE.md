@@ -2,13 +2,13 @@
 
 ## Project Overview
 
-MMUD is a text-based multiplayer dungeon crawler designed for Meshtastic LoRa mesh networks. Think BBS door games (Legend of the Red Dragon, TradeWars 2002) adapted for modern mesh radio constraints: 150-character message limits, async play, 5-30 players, 12 dungeon actions per day, 30-day wipe cycles (epochs).
+MMUD is a text-based multiplayer dungeon crawler designed for Meshtastic LoRa mesh networks. Think BBS door games (Legend of the Red Dragon, TradeWars 2002) adapted for modern mesh radio constraints: 175-character message limits (200 overflow max), async play, 5-30 players, 12 dungeon actions per day, 30-day wipe cycles (epochs).
 
 **The complete design document is at `docs/planned.md`.** Read it before making architectural decisions. Every mechanic has been deliberately designed around the constraints of mesh radio play.
 
 ## Core Constraints (Non-Negotiable)
 
-- **150 characters per message** — hard ceiling from Meshtastic LoRa
+- **175 characters per message** — target limit for Meshtastic LoRa (200 overflow max)
 - **Game engine never calls LLMs at runtime** — all text content is batch-generated at epoch start and served via template substitution. The one exception is NPC conversation DMs, which use runtime LLM calls through a transaction tag (TX) system.
 - **Async-first** — no guarantee two players are ever online simultaneously. Every multiplayer mechanic works through shared state in the database.
 - **12 dungeon actions per day** — the primary scarcity mechanic. Town actions are always free.
@@ -63,7 +63,7 @@ src/
     bossgen.py    # Floor boss and raid boss mechanic rolling
     breachgen.py  # Breach zone generation and mini-event selection
     narrative.py  # LLM backends (Dummy/Anthropic/OpenAI/Google), spell names, lore
-    validation.py # 150-char enforcement, spell name validation, lore length checks
+    validation.py # 175-char enforcement, spell name validation, lore length checks
   systems/        # Game systems
     bounty.py     # Bounty board, shared HP pools, reward distribution
     broadcast.py  # Broadcast tiers, targeted broadcasts, message queuing
@@ -79,8 +79,8 @@ src/
     breach_*.py   # Four breach mini-events (heist, emergence, incursion, resonance)
   transport/      # Message layer
     meshtastic.py # Meshtastic API wrapper, send/receive, DM vs broadcast
-    parser.py     # Command parsing from 150-char messages
-    formatter.py  # Response formatting under 150-char limit
+    parser.py     # Command parsing from 175-char messages
+    formatter.py  # Response formatting under 175-char limit
     router.py     # 6-node message routing (EMBR, DCRG, NPC nodes)
     broadcast_drain.py  # DCRG broadcast delivery
     message_logger.py   # Non-blocking message log writes
@@ -150,8 +150,8 @@ Bounties, raid boss, floor bosses, and the Warden all use the same shared HP poo
 - **Tier 2**: Server-wide, batched into barkeep recap if player is offline.
 - **Targeted**: Only delivered to players who meet a condition.
 
-### 150-Character Formatting
-Every outbound message MUST fit in 150 characters. The formatter is the last gate before send. If a message exceeds 150 chars, it gets truncated with `...`. Test every response template against this limit.
+### 175-Character Formatting
+Every outbound message should target 175 characters (200 overflow max). The formatter is the last gate before send. If a message exceeds MSG_CHAR_LIMIT (175), it gets truncated with `...`. Test every response template against this limit.
 
 ### Reveal System (Caster)
 Rooms are populated with hidden content during epoch generation:
@@ -215,7 +215,7 @@ The Last Ember is a Flask web dashboard in `src/web/`. It runs in-process with t
 ## Important Gotchas
 
 - **The game engine never calls an LLM at runtime.** All game text is pre-generated. NPC conversations DO use runtime LLM calls, but that's the `npc_conversation.py` system, not the game engine.
-- **150 chars is a hard limit**, not a guideline. Test every message template.
+- **175 chars is the target limit** (200 overflow max). Test every message template.
 - **Spell names must be <= 20 chars**, lore fragments <= 80 chars.
 - **Actions are atomic.** One command in, one response out. No multi-step confirmations.
 - **Town is free.** Never charge a dungeon action for anything in town.

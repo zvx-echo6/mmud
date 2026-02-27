@@ -30,6 +30,7 @@ from config import (
     GAMBLE_MAX_BET_RATIO,
     GAMBLE_MIN_BET,
     LLM_OUTPUT_CHAR_LIMIT,
+    MSG_CHAR_LIMIT,
     NPC_LLM_MAX_TOKENS,
     NPC_LLM_TIMEOUT,
     NPC_NOT_IN_TOWN,
@@ -851,7 +852,7 @@ def _execute_recap(conn: sqlite3.Connection, player: dict) -> tuple[bool, str, d
 
     recaps = barkeep_sys.get_recap(conn, player["id"])
     if recaps:
-        recap_text = recaps[0][:150]
+        recap_text = recaps[0][:MSG_CHAR_LIMIT]
     else:
         recap_text = "Quiet day. Nothing to report."
     meta = {"recap_text": recap_text}

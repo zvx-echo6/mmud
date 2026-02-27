@@ -11,7 +11,7 @@ import sqlite3
 import time
 from typing import Optional
 
-from config import CLASSES, COMMAND_NPC_DM_MAP, NPC_GREETING_COOLDOWN, NPC_TO_NODE
+from config import CLASSES, COMMAND_NPC_DM_MAP, MSG_CHAR_LIMIT, NPC_GREETING_COOLDOWN, NPC_TO_NODE
 from src.core.actions import handle_action
 from src.models import player as player_model
 from src.models import world as world_data
@@ -264,7 +264,7 @@ class GameEngine:
             news = broadcast_sys.deliver_unseen(self.conn, player["id"], limit=1)
             if news and response:
                 combined = f"[{news}] {response}"
-                if len(combined) <= 150:
+                if len(combined) <= MSG_CHAR_LIMIT:
                     response = combined
 
             if response:

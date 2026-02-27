@@ -21,6 +21,7 @@ from config import (
     DCRG_REJECTION,
     LLM_OUTPUT_CHAR_LIMIT,
     MESH_NODES,
+    MSG_CHAR_LIMIT,
     NPC_GREETINGS,
     NPC_TO_NODE,
 )
@@ -233,7 +234,7 @@ class NodeRouter:
                 )
                 greeting = backend.complete(prompt, max_tokens=100)
                 if greeting and len(greeting.strip()) > 10:
-                    return greeting.strip()[:150]
+                    return greeting.strip()[:MSG_CHAR_LIMIT]
             except Exception as e:
                 logger.warning(f"LLM greeting generation failed for {npc}: {e}")
 

@@ -165,7 +165,7 @@ def _format_tally(tally: dict[str, int]) -> str:
     parts = []
     for mode in ENDGAME_MODES:
         short = MODE_DISPLAY.get(mode, mode)
-        # Use abbreviations to fit 150 chars
+        # Use abbreviations to fit 175 chars
         abbrev = {"Retrieve & Escape": "R&E", "Raid Boss": "Raid", "Hold the Line": "HtL"}
         parts.append(f"{abbrev.get(short, short)}:{tally.get(mode, 0)}")
     return " ".join(parts)

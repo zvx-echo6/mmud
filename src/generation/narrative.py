@@ -110,7 +110,7 @@ class BackendInterface(ABC):
 
         Returns dict keyed by floor number, each value has:
         floor_name, atmosphere, narrative_beat, floor_transition.
-        All text fields <=150 chars.
+        All text fields <=175 chars.
 
         Default implementation calls self.complete() with a narrative arc prompt.
         Falls back to DummyBackend static pool on failure.
@@ -147,7 +147,7 @@ class BackendInterface(ABC):
             f"Descent arc: Floor 1 = unsettling introduction, Floors 2-4 = escalating "
             f"wrongness, Floors 5-7 = hostile and alien, Floor 8 = the source. "
             f"Every name must be DISTINCT — no two floors should feel interchangeable. "
-            f"Each field under 150 characters. "
+            f"Each field under 175 characters. "
             f"Return exactly {NUM_FLOORS} entries, one per line, format: "
             f"floor_name|atmosphere|narrative_beat|floor_transition"
         )
@@ -215,7 +215,7 @@ class BackendInterface(ABC):
     def generate_town_description(self, name: str, npc_name: str = None) -> str:
         """Generate a town room description for Floor 0.
 
-        Returns an atmospheric sensory description. Under 150 characters.
+        Returns an atmospheric sensory description. Under 175 characters.
         Falls back to DummyBackend on failure.
         """
         if npc_name:
@@ -229,13 +229,13 @@ class BackendInterface(ABC):
             prompt = (
                 f"Write a one-sentence description of '{name}' in a frontier tavern settlement. "
                 f"Context: {ctx} Sensory details — what you see, smell, hear. "
-                f"Under 150 characters. Return ONLY the description."
+                f"Under 175 characters. Return ONLY the description."
             )
         else:
             prompt = (
                 f"Write a one-sentence description of '{name}' in a worn frontier settlement "
                 f"at the edge of a dungeon. Ash-dusted, lantern-lit, crumbling but alive. "
-                f"Sensory details. Under 150 characters. Return ONLY the description."
+                f"Sensory details. Under 175 characters. Return ONLY the description."
             )
         try:
             raw = self.complete(prompt, max_tokens=80)
@@ -301,7 +301,7 @@ class BackendInterface(ABC):
 
     def generate_room_description(self, floor: int, name: str, is_vault: bool = False,
                                   vault_type: str = "", floor_theme: dict = None) -> str:
-        """Generate a full room description under 150 chars.
+        """Generate a full room description under 175 chars.
 
         Default implementation calls self.complete() with a themed prompt.
         DummyBackend overrides with template-based descriptions.
@@ -313,7 +313,7 @@ class BackendInterface(ABC):
         prompt = (
             f"Write a one-sentence dungeon room description for '{name}' on floor {floor} "
             f"themed around '{theme}'.{vault_ctx} Use sensory details (sound, smell, temperature). "
-            f"Under 150 characters. Return ONLY the description."
+            f"Under 175 characters. Return ONLY the description."
         )
         try:
             raw = self.complete(prompt, max_tokens=80)
@@ -376,7 +376,7 @@ class BackendInterface(ABC):
         """
         prompt = (
             f"Write a one-sentence bounty briefing for hunting '{monster_name}' "
-            f"on floor {floor} ({theme}). Under 150 characters. Return ONLY the text."
+            f"on floor {floor} ({theme}). Under 175 characters. Return ONLY the text."
         )
         try:
             raw = self.complete(prompt, max_tokens=80)
@@ -418,14 +418,14 @@ class BackendInterface(ABC):
         Falls back to DummyBackend on failure.
         """
         if tier == 1:
-            prompt = f"Write a vague hint about a secret on floor {floor} ({theme}). Under 150 characters."
+            prompt = f"Write a vague hint about a secret on floor {floor} ({theme}). Under 175 characters."
         elif tier == 2:
             prompt = (
                 f"Write a directional hint: something is hidden {direction} on floor {floor} "
-                f"({theme}). Under 150 characters."
+                f"({theme}). Under 175 characters."
             )
         else:
-            prompt = f"Write a specific hint pointing to {room_name} on floor {floor}. Under 150 characters."
+            prompt = f"Write a specific hint pointing to {room_name} on floor {floor}. Under 175 characters."
         prompt += " Do NOT use action verbs like 'go', 'move', 'take', 'fight'. Return ONLY the hint."
         try:
             raw = self.complete(prompt, max_tokens=80)
@@ -445,7 +445,7 @@ class BackendInterface(ABC):
         """
         prompt = (
             "Generate a short riddle and its one-word answer for a dungeon gate. "
-            "Format: RIDDLE|ANSWER. Riddle under 150 characters."
+            "Format: RIDDLE|ANSWER. Riddle under 175 characters."
         )
         try:
             raw = self.complete(prompt, max_tokens=80)
@@ -469,7 +469,7 @@ class BackendInterface(ABC):
         """
         prompt = (
             f"Write one short line of dialogue for {npc.title()}, a dungeon NPC. "
-            f"Context: {context}. Under 150 characters. Return ONLY the dialogue."
+            f"Context: {context}. Under 175 characters. Return ONLY the dialogue."
         )
         try:
             raw = self.complete(prompt, max_tokens=80)
@@ -511,7 +511,7 @@ class BackendInterface(ABC):
             f"Generate narrative text for a medieval dungeon {mode} event themed '{theme}'. "
             f"No radio jargon, no sci-fi, no modern language. "
             f"Provide 3 pipe-separated values: title (under 30 chars) | "
-            f"description (under 150 chars) | broadcast message (under 150 chars). "
+            f"description (under 175 chars) | broadcast message (under 175 chars). "
             f"Return one line: TITLE|DESCRIPTION|BROADCAST"
         )
         try:
@@ -542,7 +542,7 @@ class BackendInterface(ABC):
         prompt = (
             f"Write one short atmospheric medieval dungeon broadcast about '{theme}'. "
             f"Ominous tone. No radio jargon, no sci-fi, no modern language. "
-            f"Under 150 characters. Return ONLY the message."
+            f"Under 175 characters. Return ONLY the message."
         )
         try:
             raw = self.complete(prompt, max_tokens=80)
@@ -623,7 +623,7 @@ class BackendInterface(ABC):
             f"You are writing the opening preamble for a new epoch of the Darkcragg "
             f"Depths — a living dungeon that periodically sheds its interior and "
             f"regenerates. This event is called the Shiver. Players experience it "
-            f"through a mesh-radio text game (LoRa, 150-char messages).\n\n"
+            f"through a mesh-radio text game (LoRa, 175-char messages).\n\n"
             f"The epoch{theme_ctx}. Endgame mode: {mode_desc}. Breach type: {breach_type}.\n\n"
             f"{floor_block}"
             f"{spell_block}"
@@ -1426,7 +1426,7 @@ class DummyBackend(BackendInterface):
 
     def generate_room_description(self, floor: int, name: str, is_vault: bool = False,
                                   vault_type: str = "", floor_theme: dict = None) -> str:
-        """Generate a full room description under 150 chars."""
+        """Generate a full room description under 175 chars."""
         sensory = random.choice(_FLOOR_SENSORY.get(floor, _FLOOR_SENSORY[1]))
         if is_vault and vault_type:
             for vt, vdesc in _VAULT_TYPES:
@@ -1768,7 +1768,7 @@ class GoogleBackend(BackendInterface):
 class ValidationLayer:
     """Wraps any backend and enforces content rules.
 
-    - 150-char limit
+    - 175-char limit
     - No forbidden verbs in hint text
     - Retries on failure up to max_retries before falling back to DummyBackend
     """

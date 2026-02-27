@@ -6,7 +6,7 @@ Everything decided so far. No code, just concepts and rationale.
 
 ## Core Constraints
 
-- 150 characters per Meshtastic LoRa message (hard ceiling)
+- 175 characters per Meshtastic LoRa message (200 overflow max)
 - 30-day epoch (wipe cycle) — everything except player accounts and meta-progression resets
 - 5-30 active players on a mesh network
 - Async play — no guarantee two players are ever online simultaneously
@@ -189,7 +189,7 @@ Buy-only shops (DCSS model). No selling to shops for gold — eliminates the "ho
 
 ### Player-to-Player Economy
 
-No formal trading system — 150-char constraint makes negotiation impractical. Indirect economic interaction through:
+No formal trading system — 175-char constraint makes negotiation impractical. Indirect economic interaction through:
 - Bounty system: communal gold deposits, shared progress rewards
 - Information as currency: first discoverer of a secret gets named credit, map knowledge shared via player messages
 - Cooperative contributions: bounty participation, discovery activation, Hold the Line room clearing
@@ -232,7 +232,7 @@ Two-message pattern per round:
 1. Narrative: "Your blade bites deep! Orc staggers. -8HP. It snarls and CALLS backup!"
 2. Status: "HP:38/60 vs Orc(42/50) A)tk F)lee bash(2) drain"
 
-Each under 150 chars. Templates with variable slots — deterministic resolution, narrative flavor.
+Each under 175 chars. Templates with variable slots — deterministic resolution, narrative flavor.
 
 ---
 
@@ -324,7 +324,7 @@ Changing five elements per floor creates distinct feel:
 
 ### Room Descriptions
 
-150-char template: `{Name}. {One sensory detail with active verb}. {Threat/item hint}. [{Exits}]`
+175-char template: `{Name}. {One sensory detail with active verb}. {Threat/item hint}. [{Exits}]`
 
 First visit gets full description. Revisits get abbreviated: name + threats + exits.
 
@@ -817,7 +817,7 @@ n/s/e/w (movement), a (attack), l (look), i (inventory), f (fight), h (help), st
 
 ### Context-Sensitive Help
 
-`H` shows available commands. `H <cmd>` gives specific command help. All fits 150 chars.
+`H` shows available commands. `H <cmd>` gives specific command help. All fits 175 chars.
 
 ---
 
@@ -826,7 +826,7 @@ n/s/e/w (movement), a (attack), l (look), i (inventory), f (fight), h (help), st
 ### Batch Generation at Epoch Start, Never at Runtime
 
 At world creation, a batch job generates all text content:
-- Room description variants (2-3 per room, under 150 chars)
+- Room description variants (2-3 per room, under 175 chars)
 - NPC personality cards and dialogue snippets (20 per NPC)
 - Riddle text around verified answer words
 - Quest/bounty briefing text
@@ -838,7 +838,7 @@ At world creation, a batch job generates all text content:
 - Breach narrative skin (see below)
 - Floor boss mechanic skins (flavor text for each rolled mechanic per floor)
 - Raid boss mechanic skins (flavor text for rolled mechanics, phase transition broadcasts)
-- Validation pass confirms all outputs under 150 chars
+- Validation pass confirms all outputs under 175 chars
 
 Runtime uses pure template substitution and database lookup. Zero LLM latency during gameplay. Combat uses pre-generated templates with variable slots.
 
@@ -855,17 +855,17 @@ The LLM re-skins fixed mechanical scaffolding with fresh flavor each epoch. It n
 2. Theme seed picked from a curated list of 20-30 themes per mode (or LLM picks one that hasn't been used recently on this server).
 3. LLM receives a structured prompt per skin:
 
-**Endgame mode skin prompt:** "This epoch's Hold the Line mode is themed around [reclaiming a flooded mine]. Generate: mode title (under 30 chars), mode description (under 150 chars), 8 broadcast templates with {variable} slots, 3 barkeep briefing lines, names for the 3-4 checkpoints per floor."
+**Endgame mode skin prompt:** "This epoch's Hold the Line mode is themed around [reclaiming a flooded mine]. Generate: mode title (under 30 chars), mode description (under 175 chars), 8 broadcast templates with {variable} slots, 3 barkeep briefing lines, names for the 3-4 checkpoints per floor."
 
-**Breach skin prompt:** "This Breach is The Emergence themed around [a crystal hive queen]. Generate: Breach zone name (under 30 chars), 5-8 room descriptions (under 150 chars each), mini-boss title, 4 broadcast templates with {variable} slots, loot flavor text for 3 unique items."
+**Breach skin prompt:** "This Breach is The Emergence themed around [a crystal hive queen]. Generate: Breach zone name (under 30 chars), 5-8 room descriptions (under 175 chars each), mini-boss title, 4 broadcast templates with {variable} slots, loot flavor text for 3 unique items."
 
-**Validation:** Every output is checked for 150-char compliance and presence of required {variable} slots. Failures get re-generated. The theme list prevents repeat skins within a configurable window (e.g., no theme reuse within 6 epochs).
+**Validation:** Every output is checked for 175-char compliance and presence of required {variable} slots. Failures get re-generated. The theme list prevents repeat skins within a configurable window (e.g., no theme reuse within 6 epochs).
 
 ### Discovery Room Descriptions — Two-Pass Hint System
 
 The hardest generation task: hinting at secrets without giving them away.
 
-**Pass 1:** Generate the normal room description with no secret awareness. Standard atmospheric text following the writing rules (active verbs, sensory hierarchy, 150-char limit).
+**Pass 1:** Generate the normal room description with no secret awareness. Standard atmospheric text following the writing rules (active verbs, sensory hierarchy, 175-char limit).
 
 **Pass 2:** Take the Pass 1 description and inject one environmental detail that references the secret. The strict rule: **the hint must describe something observable but never suggest an action.**
 
@@ -976,7 +976,7 @@ She has been the same age for as long as anyone can remember.
 
 The "zero LLM at runtime" rule has one exception: talking to NPCs in the Last Ember. Walking up to Grist and having an actual conversation, asking Maren about her scar, trying to get Whisper to speak plainly — these interactions use a live LLM call.
 
-The 150-character limit IS the NPC's personality. Grist is terse by nature. Maren doesn't waste words. Whisper speaks in fragments. Torval talks fast. The constraint is the flavor.
+The 175-character limit IS the NPC's personality. Grist is terse by nature. Maren doesn't waste words. Whisper speaks in fragments. Torval talks fast. The constraint is the flavor.
 
 **Network Architecture — NPCs as Mesh Nodes:**
 
@@ -1018,7 +1018,7 @@ Players don't issue a `talk` command — they DM the NPC's node directly. The ga
 **System prompt per NPC includes:**
 - Full backstory and personality card
 - Current game state injection: active bounties, recent deaths, Breach status, epoch day, floor control percentages, raid boss HP — whatever is relevant. The NPC *knows what's happening.*
-- Hard rules: respond in character, NEVER break character, response MUST be under 150 characters, never reveal exact secret locations or puzzle solutions (hints only), never acknowledge being an AI, never discuss anything outside the game world.
+- Hard rules: respond in character, NEVER break character, response MUST be under 175 characters, never reveal exact secret locations or puzzle solutions (hints only), never acknowledge being an AI, never discuss anything outside the game world.
 
 **What each NPC brings:**
 - **Grist** — gossip and world state. Knows everything from broadcast logs. Ask about another player and he'll tell you what they've been up to. Dry, factual, slightly unsettling in how much he knows.
@@ -1065,7 +1065,7 @@ One rotating tip per session, progressing from basic (days 1-5) to intermediate 
 
 On a 45-60 second radio round-trip, guessing a command and getting "Unknown command" is unacceptable. Every interaction point should make available commands visible.
 
-**First connect message:** Include core commands explicitly. Not "type H for help" — actually list them. `Move:N/S/E/W Fight:F Look:L Flee:FL Stats:ST Help:H` fits in 150 chars and gives a new player everything for their first session.
+**First connect message:** Include core commands explicitly. Not "type H for help" — actually list them. `Move:N/S/E/W Fight:F Look:L Flee:FL Stats:ST Help:H` fits in 175 chars and gives a new player everything for their first session.
 
 **Smart error responses:** Never just "Unknown command." Always suggest valid commands based on current player state:
 - In town: `Unknown. Try: BAR SHOP HEAL BANK TRAIN ENTER H(elp)`
@@ -1073,7 +1073,7 @@ On a 45-60 second radio round-trip, guessing a command and getting "Unknown comm
 - In combat: `Unknown. Try: F(ight) FL(ee) STATS`
 - Dead: `Unknown. You're dead. Type RESPAWN.`
 
-**Context-sensitive help (H command):** `H` alone shows commands available in current state. `H <cmd>` gives specific help. All fits 150 chars. Help output changes based on player level — only shows unlocked commands.
+**Context-sensitive help (H command):** `H` alone shows commands available in current state. `H <cmd>` gives specific help. All fits 175 chars. Help output changes based on player level — only shows unlocked commands.
 
 **Barkeep nudges:** When a player visits Grist but hasn't used a system yet, the recap appends a tip: "Tip: try BOUNTY to see active hunts" or "Tip: use MSG to leave notes in rooms." One tip per visit, rotating through unused systems. Stops once the player has tried everything.
 
@@ -1108,7 +1108,7 @@ On a 45-60 second radio round-trip, guessing a command and getting "Unknown comm
 - Server-wide discovery buffs: 24h duration, all stack, no cap. Async action budget is the natural limiter.
 - Bounty pool: ~40 per epoch, phased in 3 tiers across 30 days (15 early / 15 mid / 10 endgame)
 - Completed bounties' replacement monsters drop normal loot, not bounty loot. Room stays farmable, bounty reward stays special.
-- Narrative skins: LLM re-skins fixed mechanics from curated theme lists. Never invents mechanics. All outputs validated for 150-char compliance.
+- Narrative skins: LLM re-skins fixed mechanics from curated theme lists. Never invents mechanics. All outputs validated for 175-char compliance.
 - Discovery hints: two-pass generation. Pass 1 = normal room. Pass 2 = inject one observable detail. No action verbs allowed in hints.
 - Barkeep hints: stateless, don't narrow over time. Knowledge rewards knowledge — player specificity earns hint specificity. 3 pre-generated tiers per secret.
 - HtL checkpoints: clear room cluster within one regen window, then kill floor boss. No simultaneous hold, no patrolling.

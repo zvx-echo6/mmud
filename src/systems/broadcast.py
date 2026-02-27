@@ -8,7 +8,7 @@ import sqlite3
 from datetime import datetime, timezone
 from typing import Optional
 
-from config import BROADCAST_CHAR_LIMIT
+from config import BROADCAST_CHAR_LIMIT, MSG_CHAR_LIMIT
 
 
 def create_broadcast(
@@ -23,7 +23,7 @@ def create_broadcast(
     Args:
         conn: Database connection.
         tier: 1 (immediate) or 2 (batched into recap).
-        message: Broadcast text (should be under 150 chars).
+        message: Broadcast text (should be under 175 chars).
         targeted: If True, only deliver to players matching target_condition.
         target_condition: JSON condition string for targeted broadcasts.
 
@@ -121,9 +121,9 @@ def deliver_unseen(
     if remaining > 0:
         result += f" (+{remaining} more at barkeep)"
 
-    # Truncate to 150 if needed
-    if len(result) > 150:
-        result = result[:147] + "..."
+    # Truncate to MSG_CHAR_LIMIT if needed
+    if len(result) > MSG_CHAR_LIMIT:
+        result = result[:MSG_CHAR_LIMIT - 3] + "..."
     return result
 
 
@@ -132,7 +132,7 @@ def generate_recap(
 ) -> list[str]:
     """Generate a barkeep recap of all missed broadcasts.
 
-    Groups broadcasts and produces 1-3 messages of up to 150 chars each.
+    Groups broadcasts and produces 1-3 messages of up to 175 chars each.
     Marks all recapped broadcasts as seen.
 
     Returns:
@@ -188,11 +188,11 @@ def generate_recap(
         for b in recent:
             recap_parts.append(b["message"])
 
-    # Ensure each part is under 150 chars
+    # Ensure each part is under 175 chars
     result = []
     for part in recap_parts[:3]:
-        if len(part) > 150:
-            part = part[:147] + "..."
+        if len(part) > MSG_CHAR_LIMIT:
+            part = part[:MSG_CHAR_LIMIT - 3] + "..."
         result.append(part)
 
     return result

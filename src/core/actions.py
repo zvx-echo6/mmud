@@ -194,19 +194,20 @@ def _smart_error(player: dict) -> str:
 def action_look(conn: sqlite3.Connection, player: dict, args: list[str]) -> str:
     """Look at the current room or town."""
     if player["state"] == "town":
-        # Known town locations use static descriptions directly (avoids
-        # fmt_room overhead that would push long descriptions past 150 chars)
-        loc = player.get("town_location")
-        if loc and loc in TOWN_DESCRIPTIONS:
-            return fmt(TOWN_DESCRIPTIONS[loc])
-        # No town_location set — check if room has an NPC we can map
         room = world_data.get_room(conn, player["room_id"]) if player.get("room_id") else None
-        if room and room.get("npc_name") and room["npc_name"] in TOWN_DESCRIPTIONS:
-            return fmt(TOWN_DESCRIPTIONS[room["npc_name"]])
         if room:
             exits = world_data.get_room_exits(conn, room["id"])
             exit_dirs = [e["direction"] for e in exits]
-            return fmt_room(room["name"], room["description"], exit_dirs)
+            loc = player.get("town_location")
+            if loc and loc in TOWN_DESCRIPTIONS:
+                desc = TOWN_DESCRIPTIONS[loc]
+            else:
+                desc = room["description"]
+            return fmt_room(room["name"], desc, exit_dirs)
+        # Fallback for pre-migration players without room_id
+        loc = player.get("town_location")
+        if loc and loc in TOWN_DESCRIPTIONS:
+            return fmt(TOWN_DESCRIPTIONS[loc])
         return fmt(TOWN_DESCRIPTIONS["tavern"])
 
     if player["state"] == "dead":

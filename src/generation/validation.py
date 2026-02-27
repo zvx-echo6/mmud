@@ -3,7 +3,7 @@ Post-generation validation pass for MMUD.
 Checks all generated content meets the game's constraints.
 
 Validates:
-  - All text fields under 150 characters
+  - All text fields under 175 characters
   - No forbidden verbs in hint text
   - No unresolved template variables ({variable})
   - Room descriptions exist for all rooms

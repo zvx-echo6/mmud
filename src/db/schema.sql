@@ -146,8 +146,8 @@ CREATE TABLE IF NOT EXISTS rooms (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     floor INTEGER NOT NULL,
     name TEXT NOT NULL,                 -- Unique memorable name
-    description TEXT NOT NULL,          -- Full description (≤150 chars)
-    description_short TEXT NOT NULL,    -- Revisit abbreviated (≤150 chars)
+    description TEXT NOT NULL,          -- Full description (≤175 chars)
+    description_short TEXT NOT NULL,    -- Revisit abbreviated (≤175 chars)
     is_hub INTEGER DEFAULT 0,
     is_checkpoint INTEGER DEFAULT 0,
     is_stairway INTEGER DEFAULT 0,     -- Connects to next floor
@@ -262,7 +262,7 @@ CREATE TABLE IF NOT EXISTS discovery_buffs (
 CREATE TABLE IF NOT EXISTS bounties (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     type TEXT NOT NULL,                 -- kill, explore, deliver, slay_count
-    description TEXT NOT NULL,          -- ≤150 chars
+    description TEXT NOT NULL,          -- ≤175 chars
     target_monster_id INTEGER REFERENCES monsters(id),
     target_value INTEGER NOT NULL,      -- HP total, room count, gold amount, kill count
     current_value INTEGER DEFAULT 0,    -- Progress toward target
@@ -414,7 +414,7 @@ CREATE TABLE IF NOT EXISTS broadcasts (
     tier INTEGER NOT NULL,              -- 1, 2
     targeted INTEGER DEFAULT 0,         -- 1 = conditional delivery
     target_condition TEXT,              -- JSON for targeted broadcast conditions
-    message TEXT NOT NULL,              -- ≤150 chars
+    message TEXT NOT NULL,              -- ≤175 chars
     dcrg_sent INTEGER DEFAULT 0,       -- 1 = already sent via DCRG node
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
@@ -447,7 +447,7 @@ CREATE TABLE IF NOT EXISTS narrative_skins (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     target TEXT NOT NULL,               -- endgame_mode, breach, floor_boss_1, etc.
     skin_type TEXT NOT NULL,            -- title, description, broadcast_template, briefing
-    content TEXT NOT NULL,              -- ≤150 chars
+    content TEXT NOT NULL,              -- ≤175 chars
     variable_slots TEXT                 -- JSON list of {variable} names in template
 );
 
@@ -455,7 +455,7 @@ CREATE TABLE IF NOT EXISTS npc_dialogue (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     npc TEXT NOT NULL,                  -- grist, maren, torval, whisper
     context TEXT NOT NULL,              -- greeting, hint, recap, token_spend, etc.
-    dialogue TEXT NOT NULL,             -- ≤150 chars
+    dialogue TEXT NOT NULL,             -- ≤175 chars
     used INTEGER DEFAULT 0             -- Track usage to avoid repetition
 );
 

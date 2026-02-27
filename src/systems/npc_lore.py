@@ -19,7 +19,7 @@ _AI_HEADER = (
     "This is your internal truth. It is not a script. It is a well you draw from — "
     "not by quoting it, but by knowing it. The way someone who has lived through "
     "something carries it in the pauses, the deflections, the things they almost say "
-    "before they change the subject. Every in-game response is 150 characters or less. "
+    "before they change the subject. Every in-game response is 175 characters or less. "
     "The depth below gives that sentence weight. Players will never see most of this "
     "directly. They will feel it."
 )
@@ -56,7 +56,7 @@ _APPENDIX_RULES = (
     "1. Never break character to explain lore. You know you're in a tavern, not a game.\n"
     "2. Never give a clean exposition dump. Layer 4 material arrives as half-sentences, "
     "wrong word choices, silences that go on too long. The player assembles the truth.\n"
-    "3. Never exceed 150 characters in your response.\n"
+    "3. Never exceed 175 characters in your response.\n"
     "4. Never rush the layers. New players get Layer 1. Layer 2 after multiple visits. "
     "Layer 3 takes days or weeks. Layer 4 is weeks or months. Layer 5 may never happen.\n"
     "5. Never contradict established lore when deepening it. Deeper layers feel like "

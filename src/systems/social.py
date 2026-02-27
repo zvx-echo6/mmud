@@ -6,7 +6,7 @@ Player messages (15-char room graffiti), mail, who list.
 import sqlite3
 from datetime import datetime, timezone
 
-from config import PLAYER_MSG_CHAR_LIMIT
+from config import MSG_CHAR_LIMIT, PLAYER_MSG_CHAR_LIMIT
 
 
 # ── Player Messages ─────────────────────────────────────────────────────────
@@ -71,7 +71,7 @@ def format_room_messages(messages: list[dict]) -> str:
         return ""
 
     parts = []
-    for m in messages[:2]:  # Max 2 to keep under 150 chars
+    for m in messages[:2]:  # Max 2 to keep under 175 chars
         votes = f"(+{m['helpful_votes']})" if m["helpful_votes"] > 0 else ""
         parts.append(f"'{m['message']}'-{m['name']}{votes}")
 
@@ -169,7 +169,7 @@ def send_mail(
     conn.execute(
         """INSERT INTO mail (from_player_id, to_player_id, message, sent_at)
            VALUES (?, ?, ?, ?)""",
-        (from_id, recipient["id"], message[:150], now),
+        (from_id, recipient["id"], message[:MSG_CHAR_LIMIT], now),
     )
     conn.commit()
     return True, f"Mail sent to {recipient['name']}."

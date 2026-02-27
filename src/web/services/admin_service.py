@@ -6,6 +6,7 @@ import logging
 import sqlite3
 from datetime import datetime, timezone
 
+from config import MSG_CHAR_LIMIT
 from src.web.services.gamedb import get_db, get_rw_db
 
 logger = logging.getLogger(__name__)
@@ -168,8 +169,8 @@ def force_breach(admin):
 def send_broadcast(admin, message, tier=1):
     """Send a manual broadcast."""
     db = get_rw_db()
-    if len(message) > 150:
-        message = message[:150]
+    if len(message) > MSG_CHAR_LIMIT:
+        message = message[:MSG_CHAR_LIMIT]
     db.execute(
         "INSERT INTO broadcasts (tier, message) VALUES (?, ?)",
         (tier, message),

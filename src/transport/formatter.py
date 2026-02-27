@@ -1,6 +1,6 @@
 """
 Response formatter for MMUD.
-Every outbound message MUST fit in 150 characters.
+Every outbound message MUST fit in 175 characters.
 This module is the last gate before send.
 """
 

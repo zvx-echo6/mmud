@@ -92,7 +92,7 @@ class MeshTransport:
 
         Args:
             dest_id: Destination node ID.
-            text: Message text (must be <= 150 chars).
+            text: Message text (must be <= 175 chars).
         """
         if not self._interface:
             logger.error("Not connected — cannot send DM")
@@ -108,7 +108,7 @@ class MeshTransport:
         """Send a broadcast message to a channel.
 
         Args:
-            text: Message text (must be <= 150 chars).
+            text: Message text (must be <= 175 chars).
             channel: Channel index (defaults to configured channel).
         """
         if not self._interface:

@@ -379,7 +379,7 @@ def _insert_room(conn: sqlite3.Connection, floor: int, name: str, desc: str,
                  reveal_gold: int = 0, reveal_lore: str = "",
                  npc_name: Optional[str] = None) -> int:
     """Insert a room and return its ID."""
-    # Enforce 150-char limit
+    # Enforce 175-char limit
     desc = desc[:LLM_OUTPUT_CHAR_LIMIT]
     desc_short = desc_short[:LLM_OUTPUT_CHAR_LIMIT]
 

@@ -8,7 +8,7 @@ during design — check docs/planned.md for rationale before changing.
 # CORE CONSTRAINTS
 # =============================================================================
 
-MSG_CHAR_LIMIT = 150          # Meshtastic LoRa hard ceiling
+MSG_CHAR_LIMIT = 175          # Meshtastic LoRa target (200 overflow max)
 EPOCH_DAYS = 30               # Full wipe cycle length
 BREACH_DAY = 15               # Mid-epoch event trigger
 
@@ -464,7 +464,7 @@ ENDGAME_MODES = ["retrieve_and_escape", "raid_boss", "hold_the_line"]
 THEME_REUSE_COOLDOWN_EPOCHS = 6
 
 # LLM validation
-LLM_OUTPUT_CHAR_LIMIT = 150   # Same as MSG_CHAR_LIMIT — all generated text must fit
+LLM_OUTPUT_CHAR_LIMIT = 175   # Same as MSG_CHAR_LIMIT — all generated text must fit
 HINT_FORBIDDEN_VERBS = [
     "examine", "push", "pull", "open", "move",
     "look behind", "try", "investigate", "check",
