@@ -482,12 +482,12 @@ class TestTownLocationTracking(unittest.TestCase):
         resp = self.engine.process_message("!abc123", "TestPlayer", "rumor")
         self.assertIn("Whisper", resp)
 
-    def test_leave_from_npc_to_bar(self):
-        """LEAVE from NPC goes back to bar."""
+    def test_leave_from_npc_to_tavern(self):
+        """LEAVE from NPC goes back to tavern."""
         self.engine.process_message("!abc123", "TestPlayer", "bar")
         self.engine.process_message("!abc123", "TestPlayer", "healer")
         resp = self.engine.process_message("!abc123", "TestPlayer", "leave")
-        self.assertIn("Grist", resp)
+        self.assertIn("Last Ember", resp)
 
     def test_npc_from_exterior_works(self):
         """NPC approach works from any town position (no bar gate)."""
@@ -498,16 +498,16 @@ class TestTownLocationTracking(unittest.TestCase):
         resp = self.engine.process_message("!abc123", "TestPlayer", "rumor")
         self.assertIn("Whisper", resp)
 
-    def test_leave_from_bar_returns_bar(self):
-        """LEAVE from bar stays at bar."""
+    def test_leave_from_bar_returns_to_tavern(self):
+        """LEAVE from bar returns to tavern."""
         self.engine.process_message("!abc123", "TestPlayer", "bar")
         resp = self.engine.process_message("!abc123", "TestPlayer", "leave")
-        self.assertIn("Grist", resp)
+        self.assertIn("Last Ember", resp)
 
-    def test_leave_from_exterior_goes_to_bar(self):
-        """LEAVE from exterior goes to bar."""
+    def test_leave_from_exterior_goes_to_tavern(self):
+        """LEAVE from exterior goes to tavern."""
         resp = self.engine.process_message("!abc123", "TestPlayer", "leave")
-        self.assertIn("Grist", resp)
+        self.assertIn("Last Ember", resp)
 
     def test_look_shows_bar(self):
         """LOOK at bar shows bar description."""

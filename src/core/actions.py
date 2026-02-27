@@ -568,8 +568,8 @@ def action_leave(
 ) -> str:
     """Leave current location. In town: navigate back. In dungeon: return to town."""
     if player["state"] == "town":
-        _sync_town_position(conn, player["id"], "bar")
-        return fmt(TOWN_DESCRIPTIONS["bar"])
+        _sync_town_position(conn, player["id"], "tavern")
+        return fmt(TOWN_DESCRIPTIONS["tavern"])
 
     if player["state"] == "combat":
         return fmt("You're in combat! FLEE first.")
