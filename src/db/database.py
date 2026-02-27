@@ -33,6 +33,9 @@ def get_db(db_path: str = "mmud.db") -> sqlite3.Connection:
     if not exists:
         init_schema(conn)
 
+    # Idempotent migrations for existing databases
+    _apply_migrations(conn)
+
     return conn
 
 
@@ -41,6 +44,16 @@ def init_schema(conn: sqlite3.Connection) -> None:
     schema_sql = SCHEMA_PATH.read_text()
     conn.executescript(schema_sql)
     conn.commit()
+
+
+def _apply_migrations(conn: sqlite3.Connection) -> None:
+    """Apply idempotent schema migrations for existing databases."""
+    # Migration 015: last_tick_date column on epoch table
+    try:
+        conn.execute("SELECT last_tick_date FROM epoch LIMIT 0")
+    except Exception:
+        conn.execute("ALTER TABLE epoch ADD COLUMN last_tick_date TEXT DEFAULT NULL")
+        conn.commit()
 
 
 def reset_epoch_tables(conn: sqlite3.Connection) -> None:
