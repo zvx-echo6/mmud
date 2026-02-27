@@ -3,7 +3,14 @@
 {% block title %}The Last Ember{% endblock %}
 
 {% block nav %}
-  <!-- Dashboard uses tavern header instead of nav -->
+  <nav class="nav-bar">
+    <a class="nav-home active" href="{{ url_for('public.index') }}">The Last Ember</a>
+    <span class="nav-sep">·</span>
+    <a class="nav-link" href="{{ url_for('public.chronicle') }}">Chronicle</a>
+    <a class="nav-link" href="{{ url_for('public.howto') }}">How to Play</a>
+    <a class="nav-link" href="{{ url_for('public.join') }}">Join</a>
+  </nav>
+
   <header class="tavern-header">
     <div class="tavern-sigil"></div>
     <h1 class="tavern-name">The Last Ember</h1>
@@ -300,7 +307,7 @@
 {% block footer %}
   <div class="tavern-footer">
     <div class="footer-mesh">
-      meshMUD · LoRa text adventure · <a href="{{ url_for('public.howto') }}">how to play</a> · <a href="{{ url_for('public.join') }}">join</a>
+      meshMUD · LoRa text adventure
     </div>
     <a class="admin-link" href="{{ url_for('admin.login') }}">
       <span class="admin-lock">🔒</span>
