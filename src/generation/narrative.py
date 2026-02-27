@@ -568,13 +568,15 @@ class BackendInterface(ABC):
         if spell_names:
             spell_ctx = f"This epoch's spells: {', '.join(spell_names)}."
 
+        floor_block = f"Floor layout:\n{floor_desc}\n\n" if floor_desc else ""
+        spell_block = f"{spell_ctx}\n\n" if spell_ctx else ""
         prompt = (
             f"You are writing the opening preamble for a new epoch of a mesh-radio "
             f"text dungeon called the Darkcragg Depths. This is a 30-day cycle where "
             f"5-30 players explore an 8-floor dungeon via LoRa radio messages.\n\n"
             f"The epoch{theme_ctx}. Endgame mode: {mode_desc}. Breach type: {breach_type}.\n\n"
-            f"{'Floor layout:\\n' + floor_desc + chr(10) + chr(10) if floor_desc else ''}"
-            f"{spell_ctx + chr(10) + chr(10) if spell_ctx else ''}"
+            f"{floor_block}"
+            f"{spell_block}"
             f"Write 5-10 paragraphs of atmospheric prose for the tavern dashboard. "
             f"Cover these beats in order:\n"
             f"1. THE SHIVER — the dungeon has regenerated. Describe the physical sensation. "
