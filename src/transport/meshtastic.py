@@ -5,6 +5,9 @@ Supports both serial (USB) and TCP connections.
 
 Outbound messages are queued and sent with inter-message delays
 to respect LoRa half-duplex timing (LONG_FAST ~1.5s per message).
+
+Connection health is monitored via periodic heartbeat. Dead connections
+trigger automatic reconnect with exponential backoff.
 """
 
 import logging
@@ -35,11 +38,19 @@ class MeshTransport:
 
     Outbound messages are queued and sent by a background thread
     with SEND_INTERVAL spacing to avoid overwhelming the radio.
+
+    A health monitor thread periodically checks the connection and
+    triggers auto-reconnect on failure.
     """
 
     # Minimum seconds between sends. LONG_FAST airtime ~1.5s per message
     # plus ACK window. 3 seconds is safe for back-to-back responses.
     SEND_INTERVAL = 3.0
+
+    # Health monitor settings
+    HEARTBEAT_INTERVAL = 30.0   # Seconds between connection health checks
+    RECONNECT_DELAY = 5.0       # Seconds to wait before each reconnect attempt
+    MAX_RECONNECT_ATTEMPTS = 10
 
     def __init__(self, connection_string: str, channel: int = 0):
         """Initialize transport.
@@ -54,13 +65,38 @@ class MeshTransport:
         self._interface = None
         self._my_node_id: Optional[str] = None
         self._on_message: Optional[Callable] = None
+        self._connected: bool = False
         self._send_queue: queue.Queue = queue.Queue()
         self._send_thread: Optional[threading.Thread] = None
+        self._health_thread: Optional[threading.Thread] = None
         self._stop_event = threading.Event()
+        self._reconnect_lock = threading.Lock()
         self._last_send_time: float = 0.0
+        self._subscribed: bool = False
 
     def connect(self) -> None:
         """Connect to the Meshtastic device."""
+        self._establish_connection()
+
+        # Start send queue thread
+        self._stop_event.clear()
+        self._send_thread = threading.Thread(
+            target=self._send_loop,
+            name=f"mesh-send-{self._conn_str}",
+            daemon=True,
+        )
+        self._send_thread.start()
+
+        # Start health monitor thread
+        self._health_thread = threading.Thread(
+            target=self._health_loop,
+            name=f"mesh-health-{self._conn_str}",
+            daemon=True,
+        )
+        self._health_thread.start()
+
+    def _establish_connection(self) -> None:
+        """Create the Meshtastic interface and subscribe to messages."""
         import meshtastic
         import meshtastic.serial_interface
         import meshtastic.tcp_interface
@@ -85,17 +121,13 @@ class MeshTransport:
         self._my_node_id = node_info.get("user", {}).get("id", "")
         logger.info(f"Connected as {self._my_node_id}")
 
-        # Subscribe to incoming messages
-        pub.subscribe(self._handle_packet, "meshtastic.receive.text")
+        # Subscribe to incoming messages (only once — pubsub deduplicates
+        # by listener identity, but we guard explicitly to be safe)
+        if not self._subscribed:
+            pub.subscribe(self._handle_packet, "meshtastic.receive.text")
+            self._subscribed = True
 
-        # Start send queue thread
-        self._stop_event.clear()
-        self._send_thread = threading.Thread(
-            target=self._send_loop,
-            name=f"mesh-send-{self._conn_str}",
-            daemon=True,
-        )
-        self._send_thread.start()
+        self._connected = True
 
     def disconnect(self) -> None:
         """Disconnect from the device."""
@@ -103,8 +135,15 @@ class MeshTransport:
         if self._send_thread:
             self._send_thread.join(timeout=5)
             self._send_thread = None
+        if self._health_thread:
+            self._health_thread.join(timeout=5)
+            self._health_thread = None
+        self._connected = False
         if self._interface:
-            self._interface.close()
+            try:
+                self._interface.close()
+            except Exception:
+                pass
             self._interface = None
             logger.info("Disconnected from Meshtastic device")
 
@@ -123,7 +162,7 @@ class MeshTransport:
             dest_id: Destination node ID.
             text: Message text (must be <= 175 chars).
         """
-        if not self._interface:
+        if not self._connected:
             logger.error("Not connected — cannot send DM")
             return
         self._send_queue.put(("dm", dest_id, text))
@@ -135,7 +174,7 @@ class MeshTransport:
             text: Message text (must be <= 175 chars).
             channel: Channel index (defaults to configured channel).
         """
-        if not self._interface:
+        if not self._connected:
             logger.error("Not connected — cannot send broadcast")
             return
         ch = channel if channel is not None else self._channel
@@ -145,6 +184,11 @@ class MeshTransport:
     def send_queue_depth(self) -> int:
         """Current number of messages waiting to send."""
         return self._send_queue.qsize()
+
+    @property
+    def connected(self) -> bool:
+        """Whether the transport believes it has a live connection."""
+        return self._connected
 
     @property
     def my_node_id(self) -> Optional[str]:
@@ -243,6 +287,101 @@ class MeshTransport:
         self._interface.localNode.writeConfig("lora")
         logger.info(f"LoRa config updated: {kwargs}")
 
+    # ── Connection Health & Reconnect ──────────────────────────────────────
+
+    def _health_loop(self) -> None:
+        """Background thread: periodically check connection, reconnect if dead."""
+        while not self._stop_event.is_set():
+            self._stop_event.wait(self.HEARTBEAT_INTERVAL)
+            if self._stop_event.is_set():
+                break
+
+            if not self._connected or not self._interface:
+                self._attempt_reconnect()
+                continue
+
+            try:
+                self._interface.getMyNodeInfo()
+            except Exception as e:
+                logger.error(f"Connection health check failed: {e}")
+                self._connected = False
+                self._attempt_reconnect()
+
+    def _attempt_reconnect(self) -> bool:
+        """Tear down dead connection and re-establish.
+
+        Uses a lock to prevent concurrent reconnect from health thread
+        and send thread. Returns True on success.
+        """
+        if not self._reconnect_lock.acquire(blocking=False):
+            return self._connected  # Another thread is already reconnecting
+
+        try:
+            for attempt in range(1, self.MAX_RECONNECT_ATTEMPTS + 1):
+                if self._stop_event.is_set():
+                    return False
+
+                logger.info(
+                    f"Reconnect attempt {attempt}/{self.MAX_RECONNECT_ATTEMPTS}"
+                    f" for {self._conn_str}"
+                )
+
+                # Tear down old interface
+                try:
+                    if self._interface:
+                        self._interface.close()
+                except Exception:
+                    pass
+                self._interface = None
+                self._connected = False
+
+                self._stop_event.wait(self.RECONNECT_DELAY)
+                if self._stop_event.is_set():
+                    return False
+
+                try:
+                    self._establish_connection()
+                    logger.info(
+                        f"Reconnected to {self._conn_str} as {self._my_node_id}"
+                    )
+                    return True
+                except Exception as e:
+                    logger.warning(f"Reconnect attempt {attempt} failed: {e}")
+
+            logger.error(
+                f"Failed to reconnect after {self.MAX_RECONNECT_ATTEMPTS} attempts"
+            )
+            return False
+        finally:
+            self._reconnect_lock.release()
+
+    def _safe_send(self, send_fn) -> bool:
+        """Execute a send function, reconnect on failure, retry once.
+
+        Args:
+            send_fn: Callable that performs the actual sendText().
+
+        Returns:
+            True if the message was sent successfully.
+        """
+        for attempt in range(2):
+            if not self._connected or not self._interface:
+                if not self._attempt_reconnect():
+                    return False
+
+            try:
+                send_fn()
+                return True
+            except Exception as e:
+                logger.warning(f"Send failed (attempt {attempt + 1}): {e}")
+                self._connected = False
+                if attempt == 0:
+                    self._attempt_reconnect()
+
+        return False
+
+    # ── Send Queue ─────────────────────────────────────────────────────────
+
     def _send_loop(self) -> None:
         """Background thread: process send queue with inter-message delay."""
         while not self._stop_event.is_set():
@@ -264,35 +403,28 @@ class MeshTransport:
                 if self._stop_event.is_set():
                     break
 
-            # Send with one retry on failure
-            success = False
-            for attempt in range(2):
-                try:
-                    if msg_type == "dm":
-                        logger.debug(f"DM to {target}: {text[:50]}...")
-                        self._interface.sendText(
-                            text=text,
-                            destinationId=target,
-                            wantAck=True,
-                        )
-                    else:
-                        logger.debug(f"Broadcast ch{target}: {text[:50]}...")
-                        self._interface.sendText(
-                            text=text,
-                            channelIndex=target,
-                        )
-                    self._last_send_time = time.time()
-                    success = True
-                    break
-                except Exception as e:
-                    logger.warning(f"Send failed (attempt {attempt + 1}): {e}")
-                    if attempt == 0:
-                        time.sleep(1.0)
+            # Send with connection recovery
+            if msg_type == "dm":
+                success = self._safe_send(
+                    lambda t=target, x=text: self._interface.sendText(
+                        text=x, destinationId=t, wantAck=True
+                    )
+                )
+            else:
+                success = self._safe_send(
+                    lambda t=target, x=text: self._interface.sendText(
+                        text=x, channelIndex=t
+                    )
+                )
 
-            if not success:
-                logger.error(f"Message dropped after retries: {text[:60]}...")
+            if success:
+                self._last_send_time = time.time()
+            else:
+                logger.error(f"Message dropped after reconnect: {text[:60]}...")
 
             self._send_queue.task_done()
+
+    # ── Inbound ────────────────────────────────────────────────────────────
 
     def _handle_packet(self, packet: dict, interface=None) -> None:
         """Handle an incoming text packet from the Meshtastic device."""

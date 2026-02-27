@@ -1,4 +1,4 @@
-"""Tests for MeshTransport send queue."""
+"""Tests for MeshTransport send queue, health monitor, and auto-reconnect."""
 
 import queue
 import sys
@@ -16,6 +16,7 @@ def _make_transport():
     """Create a MeshTransport with a fake interface (no real device)."""
     t = MeshTransport("fake:4403")
     t._interface = MagicMock()
+    t._connected = True
     return t
 
 
@@ -33,6 +34,9 @@ def _stop_send_loop(t):
     t._stop_event.set()
     if t._send_thread:
         t._send_thread.join(timeout=5)
+
+
+# ── Send Queue Tests ───────────────────────────────────────────────────────
 
 
 def test_send_dm_queues_message():
@@ -62,14 +66,16 @@ def test_send_broadcast_uses_default_channel():
     """send_broadcast() without explicit channel uses configured default."""
     t = MeshTransport("fake:4403", channel=5)
     t._interface = MagicMock()
+    t._connected = True
     t.send_broadcast("test")
     _, target, _ = t._send_queue.get_nowait()
     assert target == 5
 
 
-def test_send_dm_no_interface():
-    """send_dm() with no interface should not queue."""
+def test_send_dm_not_connected():
+    """send_dm() when not connected should not queue."""
     t = MeshTransport("fake:4403")
+    # _connected defaults to False
     t.send_dm("!abcd1234", "hello")
     assert t.send_queue_depth == 0
 
@@ -109,7 +115,6 @@ def test_send_loop_paces_messages():
     t = _make_transport()
     t.SEND_INTERVAL = 0.2  # Short interval for testing
     send_times = []
-    original_sendText = t._interface.sendText
 
     def recording_send(**kwargs):
         send_times.append(time.monotonic())
@@ -132,52 +137,23 @@ def test_send_loop_paces_messages():
         _stop_send_loop(t)
 
 
-def test_send_loop_retries_on_failure():
-    """Failed send should retry once then log error."""
-    t = _make_transport()
-    t.SEND_INTERVAL = 0.0
-    t._interface.sendText = MagicMock(side_effect=RuntimeError("serial error"))
-    _start_send_loop(t)
-    try:
-        t._send_queue.put(("dm", "!a", "fail"))
-        t._send_queue.join()
-        # Should have been called twice (initial + 1 retry)
-        assert t._interface.sendText.call_count == 2
-    finally:
-        _stop_send_loop(t)
-
-
-def test_send_loop_succeeds_on_retry():
-    """If first attempt fails but second succeeds, message is delivered."""
-    t = _make_transport()
-    t.SEND_INTERVAL = 0.0
-    call_count = [0]
-
-    def flaky_send(**kwargs):
-        call_count[0] += 1
-        if call_count[0] == 1:
-            raise RuntimeError("transient error")
-        # Second call succeeds
-
-    t._interface.sendText = flaky_send
-    _start_send_loop(t)
-    try:
-        t._send_queue.put(("dm", "!a", "retry"))
-        t._send_queue.join()
-        assert call_count[0] == 2
-    finally:
-        _stop_send_loop(t)
-
-
-def test_disconnect_stops_send_thread():
-    """disconnect() should stop the send loop thread."""
+def test_disconnect_stops_threads():
+    """disconnect() should stop both send and health threads."""
     t = _make_transport()
     t.SEND_INTERVAL = 0.0
     _start_send_loop(t)
+    # Also start health thread
+    t._health_thread = threading.Thread(
+        target=t._health_loop, name="test-health", daemon=True
+    )
+    t._health_thread.start()
     assert t._send_thread.is_alive()
+    assert t._health_thread.is_alive()
     t.disconnect()
     assert t._send_thread is None
+    assert t._health_thread is None
     assert t._interface is None
+    assert not t._connected
 
 
 def test_queue_depth_property():
@@ -189,16 +165,313 @@ def test_queue_depth_property():
     assert t.send_queue_depth == 2
 
 
+def test_connected_property():
+    """connected property should reflect connection state."""
+    t = MeshTransport("fake:4403")
+    assert not t.connected
+    t._connected = True
+    assert t.connected
+
+
+# ── Safe Send Tests ────────────────────────────────────────────────────────
+
+
+def test_safe_send_success():
+    """_safe_send returns True when send succeeds."""
+    t = _make_transport()
+    result = t._safe_send(lambda: None)
+    assert result is True
+
+
+def test_safe_send_retries_once():
+    """_safe_send retries once on failure then returns False."""
+    t = _make_transport()
+    # Disable reconnect by making it fail fast
+    t.MAX_RECONNECT_ATTEMPTS = 0
+    call_count = [0]
+
+    def always_fail():
+        call_count[0] += 1
+        raise RuntimeError("dead socket")
+
+    result = t._safe_send(always_fail)
+    assert result is False
+    # Called once, failed, reconnect fails (0 attempts), second call skipped
+    assert call_count[0] >= 1
+
+
+def test_safe_send_succeeds_on_retry():
+    """_safe_send succeeds if second attempt works after reconnect."""
+    t = _make_transport()
+    call_count = [0]
+
+    def flaky():
+        call_count[0] += 1
+        if call_count[0] == 1:
+            raise RuntimeError("transient")
+        # Second call succeeds
+
+    # Mock _attempt_reconnect to just set _connected back
+    t._attempt_reconnect = lambda: setattr(t, '_connected', True) or True
+    result = t._safe_send(flaky)
+    assert result is True
+    assert call_count[0] == 2
+
+
+def test_safe_send_when_disconnected_triggers_reconnect():
+    """_safe_send with _connected=False should attempt reconnect."""
+    t = _make_transport()
+    t._connected = False
+    reconnect_called = [False]
+
+    def mock_reconnect():
+        reconnect_called[0] = True
+        t._connected = True
+        t._interface = MagicMock()
+        return True
+
+    t._attempt_reconnect = mock_reconnect
+    result = t._safe_send(lambda: None)
+    assert reconnect_called[0]
+    assert result is True
+
+
+# ── Reconnect Tests ────────────────────────────────────────────────────────
+
+
+def test_attempt_reconnect_success():
+    """_attempt_reconnect should call _establish_connection."""
+    t = _make_transport()
+    t._connected = False
+    t.RECONNECT_DELAY = 0.0  # No delay in tests
+
+    establish_called = [False]
+    original_establish = t._establish_connection
+
+    def mock_establish():
+        establish_called[0] = True
+        t._interface = MagicMock()
+        t._my_node_id = "!test1234"
+        t._connected = True
+
+    t._establish_connection = mock_establish
+    result = t._attempt_reconnect()
+    assert result is True
+    assert establish_called[0]
+    assert t._connected
+
+
+def test_attempt_reconnect_retries_up_to_max():
+    """_attempt_reconnect retries MAX_RECONNECT_ATTEMPTS times."""
+    t = _make_transport()
+    t._connected = False
+    t.RECONNECT_DELAY = 0.0
+    t.MAX_RECONNECT_ATTEMPTS = 3
+    attempt_count = [0]
+
+    def fail_establish():
+        attempt_count[0] += 1
+        raise RuntimeError("connection refused")
+
+    t._establish_connection = fail_establish
+    result = t._attempt_reconnect()
+    assert result is False
+    assert attempt_count[0] == 3
+
+
+def test_attempt_reconnect_closes_old_interface():
+    """_attempt_reconnect should close the old interface before reconnecting."""
+    t = _make_transport()
+    old_interface = t._interface
+    t._connected = False
+    t.RECONNECT_DELAY = 0.0
+
+    def mock_establish():
+        t._interface = MagicMock()
+        t._my_node_id = "!new1234"
+        t._connected = True
+
+    t._establish_connection = mock_establish
+    t._attempt_reconnect()
+    old_interface.close.assert_called_once()
+
+
+def test_reconnect_lock_prevents_concurrent():
+    """Only one thread should reconnect at a time."""
+    t = _make_transport()
+    t._connected = False
+    t.RECONNECT_DELAY = 0.1
+    t.MAX_RECONNECT_ATTEMPTS = 2
+    concurrent_count = [0]
+    max_concurrent = [0]
+
+    original_establish = t._establish_connection
+
+    def slow_establish():
+        concurrent_count[0] += 1
+        max_concurrent[0] = max(max_concurrent[0], concurrent_count[0])
+        time.sleep(0.05)
+        concurrent_count[0] -= 1
+        t._interface = MagicMock()
+        t._my_node_id = "!test"
+        t._connected = True
+
+    t._establish_connection = slow_establish
+
+    # Two threads try to reconnect simultaneously
+    t1 = threading.Thread(target=t._attempt_reconnect)
+    t2 = threading.Thread(target=t._attempt_reconnect)
+    t1.start()
+    t2.start()
+    t1.join(timeout=5)
+    t2.join(timeout=5)
+
+    # Only one thread should have been inside _establish_connection at a time
+    assert max_concurrent[0] <= 1
+
+
+# ── Health Monitor Tests ───────────────────────────────────────────────────
+
+
+def test_health_check_marks_disconnected_on_failure():
+    """Health check failure should set _connected = False."""
+    t = _make_transport()
+    t.HEARTBEAT_INTERVAL = 0.05
+    t.RECONNECT_DELAY = 0.0
+    t.MAX_RECONNECT_ATTEMPTS = 0  # Don't actually reconnect
+    assert t._connected
+
+    # Make getMyNodeInfo raise
+    t._interface.getMyNodeInfo.side_effect = RuntimeError("TCP dead")
+
+    # Start health loop
+    t._stop_event.clear()
+    t._health_thread = threading.Thread(
+        target=t._health_loop, name="test-health", daemon=True
+    )
+    t._health_thread.start()
+
+    # Wait for one health check cycle
+    time.sleep(0.2)
+
+    t._stop_event.set()
+    t._health_thread.join(timeout=5)
+
+    assert not t._connected
+
+
+def test_health_check_triggers_reconnect():
+    """Health check failure should trigger _attempt_reconnect."""
+    t = _make_transport()
+    t.HEARTBEAT_INTERVAL = 0.05
+    t.RECONNECT_DELAY = 0.0
+    reconnect_called = [False]
+
+    # Make health check fail
+    t._interface.getMyNodeInfo.side_effect = RuntimeError("dead")
+
+    def mock_reconnect():
+        reconnect_called[0] = True
+        t._connected = True
+        t._interface = MagicMock()
+        return True
+
+    t._attempt_reconnect = mock_reconnect
+
+    t._stop_event.clear()
+    t._health_thread = threading.Thread(
+        target=t._health_loop, name="test-health", daemon=True
+    )
+    t._health_thread.start()
+
+    time.sleep(0.2)
+    t._stop_event.set()
+    t._health_thread.join(timeout=5)
+
+    assert reconnect_called[0]
+
+
+# ── Send Loop + Reconnect Integration ─────────────────────────────────────
+
+
+def test_send_loop_reconnects_on_send_failure():
+    """Send loop should reconnect and retry when sendText raises."""
+    t = _make_transport()
+    t.SEND_INTERVAL = 0.0
+    t.RECONNECT_DELAY = 0.0
+    send_results = []
+    call_count = [0]
+
+    def flaky_send(**kwargs):
+        call_count[0] += 1
+        if call_count[0] == 1:
+            raise RuntimeError("TCP reset")
+        send_results.append(kwargs)
+
+    t._interface.sendText = flaky_send
+
+    # Mock reconnect to restore _connected
+    def mock_reconnect():
+        t._connected = True
+        return True
+
+    t._attempt_reconnect = mock_reconnect
+
+    _start_send_loop(t)
+    try:
+        t._send_queue.put(("dm", "!a", "test"))
+        t._send_queue.join()
+        # First call failed, reconnect, second call succeeded
+        assert len(send_results) == 1
+        assert send_results[0]["text"] == "test"
+    finally:
+        _stop_send_loop(t)
+
+
+def test_send_loop_drops_message_when_reconnect_fails():
+    """If reconnect fails, message is dropped (not retried forever)."""
+    t = _make_transport()
+    t.SEND_INTERVAL = 0.0
+    t.RECONNECT_DELAY = 0.0
+    t.MAX_RECONNECT_ATTEMPTS = 1
+
+    # sendText always fails
+    t._interface.sendText = MagicMock(side_effect=RuntimeError("dead"))
+
+    # establish_connection always fails
+    t._establish_connection = MagicMock(side_effect=RuntimeError("refused"))
+
+    _start_send_loop(t)
+    try:
+        t._send_queue.put(("dm", "!a", "lost"))
+        t._send_queue.join()
+        # Message was processed (not stuck in queue)
+        assert t.send_queue_depth == 0
+    finally:
+        _stop_send_loop(t)
+
+
 if __name__ == "__main__":
     test_send_dm_queues_message()
     test_send_broadcast_queues_message()
     test_send_broadcast_uses_default_channel()
-    test_send_dm_no_interface()
+    test_send_dm_not_connected()
     test_send_loop_processes_dm()
     test_send_loop_processes_broadcast()
     test_send_loop_paces_messages()
-    test_send_loop_retries_on_failure()
-    test_send_loop_succeeds_on_retry()
-    test_disconnect_stops_send_thread()
+    test_disconnect_stops_threads()
     test_queue_depth_property()
-    print("All send queue tests passed!")
+    test_connected_property()
+    test_safe_send_success()
+    test_safe_send_retries_once()
+    test_safe_send_succeeds_on_retry()
+    test_safe_send_when_disconnected_triggers_reconnect()
+    test_attempt_reconnect_success()
+    test_attempt_reconnect_retries_up_to_max()
+    test_attempt_reconnect_closes_old_interface()
+    test_reconnect_lock_prevents_concurrent()
+    test_health_check_marks_disconnected_on_failure()
+    test_health_check_triggers_reconnect()
+    test_send_loop_reconnects_on_send_failure()
+    test_send_loop_drops_message_when_reconnect_fails()
+    print("All transport tests passed!")
