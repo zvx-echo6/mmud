@@ -26,6 +26,7 @@ def get_rw_db():
         g.rw_db = sqlite3.connect(db_path)
         g.rw_db.row_factory = sqlite3.Row
         g.rw_db.execute("PRAGMA journal_mode=WAL")
+        g.rw_db.execute("PRAGMA busy_timeout=5000")
     return g.rw_db
 
 

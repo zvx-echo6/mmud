@@ -105,6 +105,9 @@ def _run_generation(db_path: str, epoch_number: int,
 
     try:
         conn = get_db(db_path)
+        # Generation does many sequential writes; give it a long timeout
+        # so the game engine's brief write locks don't cause "database is locked"
+        conn.execute("PRAGMA busy_timeout=30000")
         backend = get_backend(db_path=db_path)
         backend_name = type(backend).__name__
 
@@ -219,7 +222,7 @@ def _run_generation(db_path: str, epoch_number: int,
         try:
             epoch_row = conn.execute("SELECT * FROM epoch WHERE id = 1").fetchone()
             narrative_theme = epoch_row["narrative_theme"] if epoch_row else ""
-            epoch_name = epoch_row["epoch_name"] if epoch_row else ""
+            epoch_name = ""  # No epoch_name column in schema; param kept for API compat
             announcements = backend.generate_epoch_announcements(
                 endgame_mode, breach_type, narrative_theme or "", epoch_name or "",
             )
