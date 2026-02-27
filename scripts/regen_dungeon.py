@@ -27,9 +27,12 @@ from src.generation.worldgen import generate_town, generate_world
 
 
 # Tables that hold dungeon content (safe to wipe without losing player state)
+# Order matters: children before parents (FK constraints)
 DUNGEON_TABLES = [
     "bounty_contributors", "bounties",
     "discovery_buffs", "secret_progress", "secrets",
+    "player_reveals", "htl_checkpoints",
+    "raid_boss", "rne_state",
     "monsters", "room_exits", "rooms", "items",
     "floor_themes", "floor_progress",
     "breach",
