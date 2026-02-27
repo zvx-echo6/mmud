@@ -16,6 +16,9 @@ def get_dashboard_data():
         p.strip() for p in preamble_raw.split("\n\n") if p.strip()
     ] if preamble_raw else []
 
+    # Floor reveal — only unlocked floors
+    visible_floors, total_floors = gamedb.get_floor_themes_public()
+
     data = {
         "epoch": epoch,
         "breach": breach,
@@ -24,7 +27,8 @@ def get_dashboard_data():
         "bounties": gamedb.get_bounties(),
         "secrets": gamedb.get_secrets_status(),
         "player_count": gamedb.get_player_count(),
-        "floor_themes": gamedb.get_floor_themes_public(),
+        "floor_themes": visible_floors,
+        "total_floors": total_floors,
         "mode": mode,
         "mode_status": None,
         "preamble": preamble_paragraphs,

@@ -532,6 +532,31 @@ class BackendInterface(ABC):
             logger.warning(f"Atmospheric broadcast generation failed: {e}")
         return DummyBackend().generate_atmospheric_broadcast(theme)
 
+
+    @staticmethod
+    def _clean_preamble(raw: str) -> str:
+        """Strip markdown artifacts and radio jargon from LLM preamble output."""
+        text = raw.strip()
+        # Radio jargon prefixes that some models add
+        jargon_prefixes = (
+            "*static", "warning:", "signal lost", "transmission",
+            "---", "***", "///",
+        )
+        lines = []
+        for line in text.split('\n'):
+            stripped = line.strip()
+            # Skip markdown headers
+            if stripped.startswith('#'):
+                continue
+            # Skip bold-only lines (markdown section labels)
+            if stripped.startswith('**') and stripped.endswith('**'):
+                continue
+            # Skip radio jargon lines
+            if stripped.lower().startswith(jargon_prefixes):
+                continue
+            lines.append(line)
+        return '\n'.join(lines).strip()
+
     def generate_epoch_preamble(self, endgame_mode: str, breach_type: str,
                                narrative_theme: str = "",
                                floor_themes: dict = None,
@@ -571,50 +596,47 @@ class BackendInterface(ABC):
         floor_block = f"Floor layout:\n{floor_desc}\n\n" if floor_desc else ""
         spell_block = f"{spell_ctx}\n\n" if spell_ctx else ""
         prompt = (
-            f"You are writing the opening preamble for a new epoch of a mesh-radio "
-            f"text dungeon called the Darkcragg Depths. This is a 30-day cycle where "
-            f"5-30 players explore an 8-floor dungeon via LoRa radio messages.\n\n"
+            f"You are writing the opening preamble for a new epoch of the Darkcragg "
+            f"Depths — a living dungeon that periodically sheds its interior and "
+            f"regenerates. This event is called the Shiver. Players experience it "
+            f"through a mesh-radio text game (LoRa, 150-char messages).\n\n"
             f"The epoch{theme_ctx}. Endgame mode: {mode_desc}. Breach type: {breach_type}.\n\n"
             f"{floor_block}"
             f"{spell_block}"
-            f"Write 5-10 paragraphs of atmospheric prose for the tavern dashboard. "
+            f"Write 5-7 paragraphs of prose for the tavern dashboard. "
             f"Cover these beats in order:\n"
-            f"1. THE SHIVER — the dungeon has regenerated. Describe the physical sensation. "
-            f"Ground tremors, air pressure changes, dust falling from tavern rafters.\n"
-            f"2. EPOCH IDENTITY — what makes this cycle different. Reference the theme, "
-            f"the floor names, what scouts have reported from below.\n"
-            f"3. THE TOWN — the Last Ember tavern right now. Sensory: smoke, amber light, "
-            f"the sound of Grist's bar, murmured conversations. Who's already here.\n"
-            f"4. NPC REACTIONS — Grist pouring drinks and writing in his ledger. "
-            f"Maren checking supplies. Torval pricing new gear. Whisper saying something "
-            f"cryptic from the corner.\n"
-            f"5. THE DESCENT — what the stairs feel like. Cold air rising from below. "
-            f"The first floor's atmosphere leaking upward.\n"
-            f"6. THE INVITATION — close with a quiet hook. The stairs are open. "
-            f"Not a command, not a rallying cry. Just a fact.\n\n"
+            f"1. THE SHIVER — the dungeon has regenerated. This is a physical, "
+            f"visceral event. An earthquake with intent. The stone moves. The air "
+            f"pressure drops. Bottles rattle. Lanterns dim. Describe what the people "
+            f"in the tavern FELT — not what they think it means.\n"
+            f"2. NPC FEAR — how each NPC reacted during the Shiver. Grist stopped "
+            f"pouring. Maren counted her supplies again. Torval checked the locks. "
+            f"Whisper said something unsettling. These are people who have survived "
+            f"this before. They are not panicking. They are preparing.\n"
+            f"3. THE SETTLING — the tremor stops. The quiet that follows. The "
+            f"particular quality of silence when stone has finished rearranging "
+            f"itself. Dust hanging in the air. A crack in the wall that wasn't there "
+            f"yesterday.\n"
+            f"4. THE OPENING — the stairwell. Cold air rising from below. It smells "
+            f"different now. Wetter. Colder. Something underneath the mineral smell "
+            f"that nobody names. The first few steps visible in torchlight, worn "
+            f"smooth by boots. Beyond the light, darkness.\n"
+            f"5. THE INVITATION — one line. The stairs are open. A fact, not a "
+            f"command.\n\n"
             f"RULES:\n"
             f"- Pure prose. No headers, no markdown, no bullet points, no labels.\n"
-            f"- Sensory and grounded — sound, smell, temperature, texture.\n"
-            f"- Dark fantasy tone. Worn, atmospheric, understated.\n"
+            f"- Horror-adjacent, not heroic. Dread, not adventure.\n"
+            f"- Sensory and grounded — sound, smell, temperature, texture, pressure.\n"
             f"- Reference NPCs by name: Grist, Maren, Torval, Whisper.\n"
             f"- No exclamation marks. No questions directed at the reader.\n"
+            f"- Do NOT mention floor names, spell names, or game mechanics.\n"
+            f"- Do NOT describe the dungeon layout or what is below.\n"
             f"- Each paragraph is 2-4 sentences.\n"
             f"- Return ONLY the prose paragraphs separated by blank lines."
         )
         try:
             raw = self.complete(prompt, max_tokens=2000)
-            # Clean up: strip markdown artifacts, ensure paragraph breaks
-            text = raw.strip()
-            # Remove any markdown headers the LLM might have added
-            lines = []
-            for line in text.split('\n'):
-                stripped = line.strip()
-                if stripped.startswith('#'):
-                    continue
-                if stripped.startswith('**') and stripped.endswith('**'):
-                    continue
-                lines.append(line)
-            text = '\n'.join(lines).strip()
+            text = self._clean_preamble(raw)
             if text and len(text) > 100:
                 return text
         except Exception as e:
@@ -1538,34 +1560,33 @@ class DummyBackend(BackendInterface):
                                spell_names: list = None) -> str:
         """Static preamble for DummyBackend."""
         return (
-            "It came in the small hours, the way it always does. A tremor that started "
-            "below the cellars and worked its way up through the stone until the bottles "
-            "behind the bar rattled and Grist's ledger slid half an inch to the left. "
-            "The lanterns dimmed. The fire popped. Then silence — the particular silence "
-            "that means the Darkcragg has shed its skin and grown a new one.\n\n"
-            "The scouts who went down at first light came back pale and quiet. Eight floors, "
-            "same as before, but nothing where they left it. New corridors where walls used "
-            "to be. Old rooms turned inside out. The air rising from the stairwell smells "
-            "different — colder, wetter, with something underneath that nobody wants to name.\n\n"
-            "The Last Ember is full tonight. Smoke hangs in layers above the bar. Grist "
-            "pours without being asked, his hand steady, his eyes on the door. The ledger "
-            "is open to a fresh page. He writes the date at the top and waits for names to "
-            "fill in below it.\n\n"
-            "Maren is in her corner, checking supplies — clean linens, sharp tools, the herbs "
-            "that stop bleeding and the ones that stop pain. She doesn't look up when new "
-            "arrivals come in. She already knows how many bandages she'll need. Torval has "
-            "laid out fresh stock on the counter: blades still bright from the forge, leather "
-            "that hasn't been scored yet. His prices are chalked on the wall. They're fair. "
-            "They won't stay that way.\n\n"
-            "Whisper sits where Whisper always sits — the corner where the lamplight doesn't "
-            "quite reach. A finger traces patterns on the table that might be a map or might "
-            "be nothing. \"Different this time,\" the voice says, to no one in particular. "
-            "\"The bones of it have shifted.\"\n\n"
-            "The stairwell door is open. Cold air drifts up from below, carrying the smell "
-            "of wet stone and old iron. The first few steps are visible in the torchlight — "
-            "worn smooth by all the boots that have gone down and the fewer that came back up. "
-            "Beyond the light, the stairs curve into darkness.\n\n"
-            "The stairs are open. They always are."
+            "It started below the cellars. A sound too low to hear — felt instead "
+            "in the teeth, in the joints of the fingers, in the place behind the "
+            "eyes where headaches live. The bottles behind the bar clinked against "
+            "each other once. The fire flattened. The air pressure dropped so fast "
+            "that ears popped across the room. Then the floor moved.\n\n"
+            "Not an earthquake. Earthquakes don't choose a direction. This rolled "
+            "from below, a single wave through solid stone, and when it passed the "
+            "building groaned in a voice that buildings should not have. Dust sifted "
+            "from between the ceiling beams. A crack opened in the wall behind the "
+            "bar — thin as a hair, running floor to ceiling. It hadn't been there "
+            "a moment ago.\n\n"
+            "Grist stopped pouring mid-glass. Maren put down the bandage she was "
+            "rolling and counted the jars on her shelf — twice. Torval checked the "
+            "iron bolt on his storeroom door, then checked it again. In the corner "
+            "where the lamplight doesn't reach, Whisper pressed one palm flat against "
+            "the wall and held it there for a long time. \"It's rearranging,\" the "
+            "voice said. \"The bones of it are moving.\"\n\n"
+            "Then it stopped. The silence after was worse than the tremor — thick "
+            "and pressurized, the silence of stone settling into a shape it has "
+            "chosen. Dust hung motionless in the air. The crack in the wall did not "
+            "close.\n\n"
+            "The stairwell door is open. Cold air drifts up from below, carrying "
+            "the smell of wet rock and something else — something organic, faintly "
+            "sweet, like fruit left too long in a closed room. The first few steps "
+            "are visible in the torchlight, worn smooth. Beyond the light, the stairs "
+            "curve into a darkness that feels deeper than it did thirty days ago.\n\n"
+            "The stairs are open."
         )
 
     def generate_epoch_announcements(self, endgame_mode: str,

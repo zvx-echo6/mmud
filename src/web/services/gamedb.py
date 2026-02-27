@@ -390,9 +390,24 @@ def get_player_count():
 # ═══ FLOOR THEMES ═══
 
 def get_floor_themes_public():
-    """Floor themes for the public dashboard descent section."""
+    """Floor themes for the public dashboard — only unlocked floors.
+
+    Floor 1 is always visible. Subsequent floors are revealed when ANY
+    player has killed the boss on the previous floor.
+    """
     db = get_db()
+    # Find the highest floor where any player has killed the boss
+    row = db.execute(
+        "SELECT MAX(floor) as highest FROM floor_progress WHERE boss_killed = 1"
+    ).fetchone()
+    highest_cleared = row["highest"] if row and row["highest"] else 0
+    # Show floors up to highest_cleared + 1 (floor 1 always visible)
+    max_visible = max(1, highest_cleared + 1)
     rows = db.execute(
-        "SELECT floor, floor_name, atmosphere FROM floor_themes ORDER BY floor"
+        "SELECT floor, floor_name, atmosphere FROM floor_themes "
+        "WHERE floor <= ? ORDER BY floor",
+        (max_visible,),
     ).fetchall()
-    return [dict(r) for r in rows]
+    total = db.execute("SELECT COUNT(*) as cnt FROM floor_themes").fetchone()
+    total_floors = total["cnt"] if total else 8
+    return [dict(r) for r in rows], total_floors

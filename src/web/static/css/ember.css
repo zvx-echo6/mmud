@@ -526,6 +526,16 @@ body::before {
   line-height: 1.4;
 }
 
+.descent-locked {
+  padding: 10px 18px;
+  font-family: 'Crimson Text', serif;
+  font-size: 13px;
+  font-style: italic;
+  color: var(--text-ghost);
+  text-align: center;
+  border-top: 1px solid rgba(90,82,68,0.15);
+}
+
 @media (max-width: 600px) {
   .epoch-id-stats { gap: 10px; }
   .epoch-id-sep { display: none; }

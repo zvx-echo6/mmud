@@ -123,6 +123,11 @@
       </div>
     </div>
     {% endfor %}
+    {% if floor_themes|length < total_floors %}
+    <div class="descent-locked">
+      {{ total_floors - floor_themes|length }} floor{{ 's' if total_floors - floor_themes|length != 1 }} sealed. Kill the boss to descend.
+    </div>
+    {% endif %}
   </div>
   {% endif %}
 

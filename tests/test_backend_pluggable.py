@@ -452,3 +452,34 @@ def test_preamble_stored_in_epoch():
     assert row["preamble"] == preamble
     assert len(row["preamble"]) > 100
     conn.close()
+
+
+def test_preamble_strips_radio_jargon():
+    """Preamble cleanup strips radio jargon lines from LLM output."""
+    text = (
+        "*static crackles*\n"
+        "The ground shuddered at dawn. Dust fell from the rafters.\n\n"
+        "Warning: transmission unstable\n"
+        "Grist poured without being asked, his hand steady.\n\n"
+        "Signal lost...\n"
+        "The stairs are open."
+    )
+    b = EchoBackend(text)
+    preamble = b.generate_epoch_preamble("hold_the_line", "heist")
+    assert "*static" not in preamble
+    assert "Warning:" not in preamble
+    assert "Signal lost" not in preamble
+    assert "The ground shuddered" in preamble
+    assert "Grist poured" in preamble
+    assert "The stairs are open" in preamble
+
+
+def test_dummy_preamble_no_floor_names():
+    """DummyBackend preamble should not reveal any floor names."""
+    from config import FLOOR_THEMES
+    b = DummyBackend()
+    preamble = b.generate_epoch_preamble("hold_the_line", "heist")
+    for floor_name in FLOOR_THEMES.values():
+        assert floor_name not in preamble, (
+            f"Preamble should not contain floor name '{floor_name}'"
+        )
