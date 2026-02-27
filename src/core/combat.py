@@ -36,7 +36,7 @@ class FleeResult:
 def calc_damage(attacker_pow: int, defender_def: int) -> int:
     """Calculate damage from one attack.
 
-    Base damage = attacker POW - defender DEF/2, minimum 1.
+    Base damage = attacker POW - defender DEF/3, minimum 1.
     Random variance of +/- 20%.
 
     Args:
@@ -46,7 +46,7 @@ def calc_damage(attacker_pow: int, defender_def: int) -> int:
     Returns:
         Damage dealt (always >= 1).
     """
-    base = max(1, attacker_pow - defender_def // 2)
+    base = max(1, attacker_pow - defender_def // 3)
     variance = random.uniform(0.8, 1.2)
     return max(1, math.floor(base * variance))
 
@@ -161,9 +161,9 @@ def attempt_flee(
             narrative=f"You escape from {monster_name}!",
         )
 
-    # Failed flee — take a hit
+    # Failed flee — take a hit (can't kill; player survives at 1 HP)
     damage = calc_damage(monster_pow, player_def)
-    new_hp = max(0, player_hp - damage)
+    new_hp = max(1, player_hp - damage)
 
     return FleeResult(
         success=False,

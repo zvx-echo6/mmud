@@ -127,10 +127,10 @@ def test_flee_failure_takes_damage():
     assert found_failure, "Should have found at least one flee failure"
 
 
-def test_flee_can_kill():
-    """Failed flee with 1 HP should kill."""
+def test_flee_cannot_kill():
+    """Failed flee at 1 HP should leave player alive at 1 HP (flee can't kill)."""
     random.seed(0)
-    found_death = False
+    found_fail = False
     for _ in range(200):
         result = attempt_flee(
             player_spd=1, player_hp=1,
@@ -138,11 +138,11 @@ def test_flee_can_kill():
             monster_name="Dragon",
         )
         if not result.success:
-            found_death = True
-            assert result.player_dead
-            assert result.player_hp == 0
+            found_fail = True
+            assert not result.player_dead
+            assert result.player_hp == 1
             break
-    assert found_death
+    assert found_fail
 
 
 if __name__ == "__main__":
@@ -156,5 +156,5 @@ if __name__ == "__main__":
     test_resolve_round_has_narrative()
     test_flee_success()
     test_flee_failure_takes_damage()
-    test_flee_can_kill()
+    test_flee_cannot_kill()
     print("All combat tests passed!")

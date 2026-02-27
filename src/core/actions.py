@@ -194,18 +194,16 @@ def _smart_error(player: dict) -> str:
 def action_look(conn: sqlite3.Connection, player: dict, args: list[str]) -> str:
     """Look at the current room or town."""
     if player["state"] == "town":
+        # Known town locations use static descriptions directly (avoids
+        # fmt_room overhead that would push long descriptions past 150 chars)
+        loc = player.get("town_location")
+        if loc and loc in TOWN_DESCRIPTIONS:
+            return fmt(TOWN_DESCRIPTIONS[loc])
         room = world_data.get_room(conn, player["room_id"]) if player.get("room_id") else None
         if room:
             exits = world_data.get_room_exits(conn, room["id"])
             exit_dirs = [e["direction"] for e in exits]
-            # Use town_location (not room npc_name) to pick description —
-            # bar and grist share the same room but need different text
-            loc = player.get("town_location")
-            if loc and loc in TOWN_DESCRIPTIONS:
-                desc = TOWN_DESCRIPTIONS[loc]
-            else:
-                desc = room["description"]
-            return fmt_room(room["name"], desc, exit_dirs)
+            return fmt_room(room["name"], room["description"], exit_dirs)
         # Fallback for pre-migration players without room_id
         loc = player.get("town_location")
         if loc and loc in TOWN_DESCRIPTIONS:
@@ -311,6 +309,7 @@ def action_move(conn: sqlite3.Connection, player: dict, args: list[str]) -> str:
             if MONSTER_RETREAT_ON_CLEARED and floor_cleared:
                 desc = transition + f" A {monster['name']} retreats deeper."
                 return fmt_room(room["name"], desc, exit_dirs)
+            world_mgr.enter_combat(conn, player["id"], monster["id"])
             desc = transition + f" {monster['name']} blocks your path!"
             return fmt_room(room["name"], desc, exit_dirs)
         return fmt_room(room["name"], transition, exit_dirs)
@@ -321,6 +320,7 @@ def action_move(conn: sqlite3.Connection, player: dict, args: list[str]) -> str:
         if MONSTER_RETREAT_ON_CLEARED and floor_cleared:
             desc = room["description_short"] + f" A {monster['name']} retreats deeper."
             return fmt_room(room["name"], desc, exit_dirs)
+        world_mgr.enter_combat(conn, player["id"], monster["id"])
         desc = room["description_short"] + f" {monster['name']} blocks your path!"
         return fmt_room(room["name"], desc, exit_dirs)
 

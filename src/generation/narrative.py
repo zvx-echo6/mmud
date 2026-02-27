@@ -508,7 +508,8 @@ class BackendInterface(ABC):
         Falls back to DummyBackend on failure.
         """
         prompt = (
-            f"Generate narrative text for a dungeon {mode} event themed '{theme}'. "
+            f"Generate narrative text for a medieval dungeon {mode} event themed '{theme}'. "
+            f"No radio jargon, no sci-fi, no modern language. "
             f"Provide 3 pipe-separated values: title (under 30 chars) | "
             f"description (under 150 chars) | broadcast message (under 150 chars). "
             f"Return one line: TITLE|DESCRIPTION|BROADCAST"
@@ -520,11 +521,11 @@ class BackendInterface(ABC):
                 parts = [p.strip() for p in line.split('|')]
                 if len(parts) >= 3:
                     return {
-                        "title": parts[0][:30],
-                        "description": parts[1][:LLM_OUTPUT_CHAR_LIMIT],
+                        "title": self._clean_preamble(parts[0])[:30],
+                        "description": self._clean_preamble(parts[1])[:LLM_OUTPUT_CHAR_LIMIT],
                         "broadcasts": [
-                            parts[2][:LLM_OUTPUT_CHAR_LIMIT],
-                            parts[2][:LLM_OUTPUT_CHAR_LIMIT],
+                            self._clean_preamble(parts[2])[:LLM_OUTPUT_CHAR_LIMIT],
+                            self._clean_preamble(parts[2])[:LLM_OUTPUT_CHAR_LIMIT],
                         ],
                     }
         except Exception as e:
@@ -539,12 +540,14 @@ class BackendInterface(ABC):
         Falls back to DummyBackend on failure.
         """
         prompt = (
-            f"Write one short atmospheric dungeon broadcast message about '{theme}'. "
-            f"Ominous tone. Under 150 characters. Return ONLY the message."
+            f"Write one short atmospheric medieval dungeon broadcast about '{theme}'. "
+            f"Ominous tone. No radio jargon, no sci-fi, no modern language. "
+            f"Under 150 characters. Return ONLY the message."
         )
         try:
             raw = self.complete(prompt, max_tokens=80)
             text = raw.strip().strip('"\'').split('\n')[0].strip()
+            text = self._clean_preamble(text)
             if text:
                 return text[:LLM_OUTPUT_CHAR_LIMIT]
         except Exception as e:
@@ -560,6 +563,8 @@ class BackendInterface(ABC):
         jargon_prefixes = (
             "*static", "warning:", "signal lost", "transmission",
             "---", "***", "///",
+            "attention:", "alert:", "broadcast:", "incoming:",
+            "[static", "[signal", "[warning",
         )
         lines = []
         for line in text.split('\n'):
@@ -716,6 +721,7 @@ class BackendInterface(ABC):
                 cleaned = line.lstrip('0123456789.)- ').strip()
                 if not cleaned:
                     cleaned = line.strip()
+                cleaned = self._clean_preamble(cleaned)
                 if len(cleaned) > BROADCAST_CHAR_LIMIT:
                     cleaned = cleaned[:BROADCAST_CHAR_LIMIT - 3].rsplit(' ', 1)[0] + '...'
                 announcements.append(cleaned)
