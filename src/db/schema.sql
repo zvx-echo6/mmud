@@ -70,7 +70,8 @@ CREATE TABLE IF NOT EXISTS epoch (
     day_number INTEGER DEFAULT 1,
     spell_names TEXT DEFAULT '',       -- Comma-separated spell names (3 per epoch, ≤20 chars each)
     announcements TEXT DEFAULT '',     -- JSON array of 3 epoch announcement strings
-    preamble TEXT DEFAULT ''           -- Rich prose preamble for dashboard header (web-only)
+    preamble TEXT DEFAULT '',          -- Rich prose preamble for dashboard header (web-only)
+    last_tick_date TEXT DEFAULT NULL    -- ISO date of last day tick (wall-clock, America/Boise)
 );
 
 CREATE TABLE IF NOT EXISTS floor_themes (

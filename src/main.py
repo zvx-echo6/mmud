@@ -32,7 +32,16 @@ import sys
 import threading
 import time
 
-from config import BROADCAST_DRAIN_INTERVAL, MESH_NODES, MESSAGE_LOG_RETENTION_DAYS
+from datetime import datetime
+from zoneinfo import ZoneInfo
+
+from config import (
+    BROADCAST_DRAIN_INTERVAL,
+    DAYTICK_HOUR,
+    DAYTICK_TIMEZONE,
+    MESH_NODES,
+    MESSAGE_LOG_RETENTION_DAYS,
+)
 from src.web import create_app
 from src.web import config as web_config
 from src.core.engine import GameEngine
@@ -138,25 +147,60 @@ def _load_node_configs_from_db(conn) -> dict:
     return active_nodes
 
 
-def _check_day_tick(conn, last_day: int) -> int:
-    """Check if the epoch day has advanced and run the day tick if needed.
+def _check_day_tick(conn, last_tick_date: str) -> str:
+    """Check if a wall-clock day tick is due and run it if needed.
 
-    Returns the current day number. Logs the daytick event and prunes old logs.
+    Fires the day tick when:
+      - today (America/Boise) > last_tick_date, AND
+      - current hour >= DAYTICK_HOUR (10 AM), OR
+      - last_tick_date is more than 1 day behind (catch-up)
+
+    Catches up one day at a time if multiple days were missed (e.g. server
+    was down for 3 days → fires 3 ticks across successive 5-second cycles).
+
+    Args:
+        conn: Database connection.
+        last_tick_date: ISO date string (YYYY-MM-DD) of the last tick.
+
+    Returns:
+        Updated last_tick_date string.
     """
+    from datetime import date, timedelta
     from src.models.epoch import get_epoch
 
     try:
         epoch = get_epoch(conn)
         if not epoch:
-            return last_day
+            return last_tick_date
 
-        current_day = epoch["day_number"]
-        if current_day == last_day:
-            return last_day
+        tz = ZoneInfo(DAYTICK_TIMEZONE)
+        now = datetime.now(tz)
+        today = now.date()
+        last_date = date.fromisoformat(last_tick_date)
 
-        # Day has changed — run the tick
+        # Already ticked today or in the future (clock skew) — nothing to do
+        if last_date >= today:
+            return last_tick_date
+
+        yesterday = today - timedelta(days=1)
+
+        if last_date == yesterday:
+            # Last tick was yesterday — only fire if it's past DAYTICK_HOUR
+            if now.hour < DAYTICK_HOUR:
+                return last_tick_date
+            # It's past 10 AM — fire today's tick
+            next_date = today
+        else:
+            # Last tick is 2+ days old — catch up one day at a time
+            # (fires regardless of hour to catch up quickly)
+            next_date = last_date + timedelta(days=1)
+            # But don't advance past today
+            if next_date > today:
+                next_date = today
+
+        # Fire one tick
         stats = run_day_tick(conn)
-        new_day = stats.get("new_day", current_day)
+        new_day = stats.get("new_day", epoch["day_number"])
 
         log_message(
             conn, "EMBR", "system", f"Day tick: day {new_day}", "daytick",
@@ -167,11 +211,11 @@ def _check_day_tick(conn, last_day: int) -> int:
         # Prune old logs once per day tick
         prune_old_logs(conn, MESSAGE_LOG_RETENTION_DAYS)
 
-        return new_day
+        return next_date.isoformat()
 
     except Exception as e:
         logger.error(f"Day tick error: {e}", exc_info=True)
-        return last_day
+        return last_tick_date
 
 
 def _run_drain_loop(drain: BroadcastDrain, interval: float, stop_event: threading.Event) -> None:
@@ -285,10 +329,17 @@ def main():
         drain_thread.start()
         logger.info("Broadcast drain started")
 
-    # Track current day for day tick detection
+    # Track last tick date for wall-clock day tick detection
     from src.models.epoch import get_epoch
+    from datetime import date, timedelta
     epoch = get_epoch(conn)
-    current_day = epoch["day_number"] if epoch else 0
+    if epoch and epoch["last_tick_date"]:
+        last_tick_date = epoch["last_tick_date"]
+    else:
+        # No tick recorded yet — default to yesterday so the first check
+        # at or after DAYTICK_HOUR will fire immediately
+        tz = ZoneInfo(DAYTICK_TIMEZONE)
+        last_tick_date = (date.today() - timedelta(days=1)).isoformat()
 
     # Sync discovered node info to DB for the web dashboard
     if active_nodes:
@@ -322,8 +373,8 @@ def main():
         while not stop_event.is_set():
             # Periodic session cleanup
             npc_handler.sessions.cleanup()
-            # Check for day tick
-            current_day = _check_day_tick(conn, current_day)
+            # Check for wall-clock day tick
+            last_tick_date = _check_day_tick(conn, last_tick_date)
             stop_event.wait(5)
     finally:
         _shutdown(router, conn, drain_thread, stop_event)

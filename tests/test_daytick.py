@@ -6,17 +6,22 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import sqlite3
+from datetime import datetime
+from unittest.mock import patch
+from zoneinfo import ZoneInfo
 
 from config import (
     BARD_TOKEN_CAP,
     BOUNTY_ACTIVE_MAX,
     BREACH_DAY,
+    DAYTICK_TIMEZONE,
     DUNGEON_ACTIONS_PER_DAY,
     EPOCH_DAYS,
     SOCIAL_ACTIONS_PER_DAY,
     SPECIAL_ACTIONS_PER_DAY,
 )
 from src.db.database import init_schema
+from src.main import _check_day_tick
 from src.models.epoch import get_epoch
 from src.systems.daytick import run_day_tick
 
@@ -269,3 +274,134 @@ def test_no_epoch_returns_error():
     init_schema(conn)
     stats = run_day_tick(conn)
     assert "error" in stats
+
+
+# ── Wall-clock day tick (_check_day_tick) ──
+
+
+def _mock_now(year, month, day, hour, minute=0):
+    """Create a timezone-aware datetime for mocking."""
+    return datetime(year, month, day, hour, minute, tzinfo=ZoneInfo(DAYTICK_TIMEZONE))
+
+
+def test_wallclock_tick_fires_after_10am():
+    """Tick fires when date is past last_tick_date and hour >= 10."""
+    conn = _make_db(day=5)
+    # Simulate: last tick was yesterday, it's now 10:30 AM today
+    with patch("src.main.datetime") as mock_dt:
+        mock_dt.now.return_value = _mock_now(2026, 3, 2, 10, 30)
+        mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
+        result = _check_day_tick(conn, "2026-03-01")
+
+    assert result == "2026-03-02"
+    epoch = get_epoch(conn)
+    assert epoch["day_number"] == 6  # Advanced from 5 to 6
+
+
+def test_wallclock_tick_does_not_fire_before_10am():
+    """Tick does NOT fire when hour < 10, even if date advanced."""
+    conn = _make_db(day=5)
+    # Simulate: last tick was yesterday, it's now 9:00 AM today
+    with patch("src.main.datetime") as mock_dt:
+        mock_dt.now.return_value = _mock_now(2026, 3, 2, 9, 0)
+        mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
+        result = _check_day_tick(conn, "2026-03-01")
+
+    assert result == "2026-03-01"  # Unchanged — didn't tick
+    epoch = get_epoch(conn)
+    assert epoch["day_number"] == 5  # Still day 5
+
+
+def test_wallclock_tick_idempotent_same_day():
+    """Tick does NOT double-fire on same day (idempotent on restart)."""
+    conn = _make_db(day=5)
+    # First tick: advances to day 6
+    with patch("src.main.datetime") as mock_dt:
+        mock_dt.now.return_value = _mock_now(2026, 3, 2, 11, 0)
+        mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
+        result = _check_day_tick(conn, "2026-03-01")
+    assert result == "2026-03-02"
+    assert get_epoch(conn)["day_number"] == 6
+
+    # Second check same day: should NOT fire again
+    with patch("src.main.datetime") as mock_dt:
+        mock_dt.now.return_value = _mock_now(2026, 3, 2, 14, 0)
+        mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
+        result2 = _check_day_tick(conn, "2026-03-02")
+    assert result2 == "2026-03-02"  # Unchanged
+    assert get_epoch(conn)["day_number"] == 6  # Still day 6
+
+
+def test_wallclock_multi_day_catchup():
+    """Server down 3 days: fires one tick per check cycle until caught up."""
+    conn = _make_db(day=5)
+    # Simulate: last tick was 3 days ago, it's now 11 AM
+    with patch("src.main.datetime") as mock_dt:
+        mock_dt.now.return_value = _mock_now(2026, 3, 5, 11, 0)
+        mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
+
+        # First check: catches up one day (March 2 → March 3)
+        result1 = _check_day_tick(conn, "2026-03-02")
+        assert result1 == "2026-03-03"
+        assert get_epoch(conn)["day_number"] == 6
+
+        # Second check: catches up another day (March 3 → March 4)
+        result2 = _check_day_tick(conn, result1)
+        assert result2 == "2026-03-04"
+        assert get_epoch(conn)["day_number"] == 7
+
+        # Third check: catches up to today (March 4 → March 5)
+        result3 = _check_day_tick(conn, result2)
+        assert result3 == "2026-03-05"
+        assert get_epoch(conn)["day_number"] == 8
+
+        # Fourth check: already caught up, no tick
+        result4 = _check_day_tick(conn, result3)
+        assert result4 == "2026-03-05"
+        assert get_epoch(conn)["day_number"] == 8
+
+
+def test_wallclock_no_epoch_returns_unchanged():
+    """_check_day_tick returns last_tick_date unchanged when no epoch exists."""
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA foreign_keys=ON")
+    init_schema(conn)
+    result = _check_day_tick(conn, "2026-03-01")
+    assert result == "2026-03-01"
+
+
+def test_wallclock_catchup_before_10am():
+    """Multi-day catch-up before 10 AM: ticks up to yesterday, waits for 10 AM today."""
+    conn = _make_db(day=5)
+    # Last tick 3 days ago, it's 8 AM now (March 5)
+    # So last tick was March 2, today is March 5
+    with patch("src.main.datetime") as mock_dt:
+        mock_dt.now.return_value = _mock_now(2026, 3, 5, 8, 0)
+        mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
+
+        # First check: catch up March 2 → March 3
+        result1 = _check_day_tick(conn, "2026-03-02")
+        assert result1 == "2026-03-03"
+        assert get_epoch(conn)["day_number"] == 6
+
+        # Second check: catch up March 3 → March 4 (yesterday)
+        result2 = _check_day_tick(conn, result1)
+        assert result2 == "2026-03-04"
+        assert get_epoch(conn)["day_number"] == 7
+
+        # Third check: last tick is March 4 (yesterday), before 10 AM — wait
+        result3 = _check_day_tick(conn, result2)
+        assert result3 == "2026-03-04"  # Still yesterday — waiting for 10 AM
+        assert get_epoch(conn)["day_number"] == 7  # No additional tick
+
+
+def test_advance_day_sets_last_tick_date():
+    """advance_day() records the current date in last_tick_date."""
+    conn = _make_db(day=5)
+    from src.models.epoch import advance_day
+    advance_day(conn)
+    epoch = get_epoch(conn)
+    assert epoch["last_tick_date"] is not None
+    # Should be a valid date string
+    datetime.strptime(epoch["last_tick_date"], "%Y-%m-%d")

@@ -94,6 +94,12 @@ def reset_epoch_tables(conn: sqlite3.Connection) -> None:
     except Exception:
         conn.execute("ALTER TABLE accounts ADD COLUMN password_hash TEXT DEFAULT ''")
 
+    # Ensure last_tick_date column exists (migration 015)
+    try:
+        conn.execute("SELECT last_tick_date FROM epoch LIMIT 0")
+    except Exception:
+        conn.execute("ALTER TABLE epoch ADD COLUMN last_tick_date TEXT DEFAULT NULL")
+
     epoch_tables = [
         "broadcast_seen", "broadcasts", "player_messages", "mail",
         "epoch_votes", "npc_journals", "npc_dialogue", "narrative_skins",

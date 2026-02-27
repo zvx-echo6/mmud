@@ -11,6 +11,8 @@ during design — check docs/planned.md for rationale before changing.
 MSG_CHAR_LIMIT = 175          # Meshtastic LoRa target (200 overflow max)
 EPOCH_DAYS = 30               # Full wipe cycle length
 BREACH_DAY = 15               # Mid-epoch event trigger
+DAYTICK_HOUR = 10             # Wall-clock hour for daily reset (America/Boise)
+DAYTICK_TIMEZONE = "America/Boise"
 
 # =============================================================================
 # DAILY ACTION BUDGET

@@ -6,8 +6,9 @@ Tracks current epoch number, day, mode, and breach state.
 import sqlite3
 from datetime import datetime, timedelta, timezone
 from typing import Optional
+from zoneinfo import ZoneInfo
 
-from config import EPOCH_DAYS
+from config import DAYTICK_TIMEZONE, EPOCH_DAYS
 
 
 def create_epoch(
@@ -53,9 +54,11 @@ def get_epoch(conn: sqlite3.Connection) -> Optional[dict]:
 
 
 def advance_day(conn: sqlite3.Connection) -> int:
-    """Advance the epoch day counter. Returns the new day number."""
+    """Advance the epoch day counter and record the tick date. Returns the new day number."""
+    today = datetime.now(ZoneInfo(DAYTICK_TIMEZONE)).strftime("%Y-%m-%d")
     conn.execute(
-        "UPDATE epoch SET day_number = day_number + 1 WHERE id = 1"
+        "UPDATE epoch SET day_number = day_number + 1, last_tick_date = ? WHERE id = 1",
+        (today,),
     )
     conn.commit()
     epoch = get_epoch(conn)
