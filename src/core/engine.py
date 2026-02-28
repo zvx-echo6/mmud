@@ -341,7 +341,7 @@ class GameEngine:
             return fmt(
                 f"Welcome {state['name']} the {cls.title()}! "
                 f"POW:{stats['POW']} DEF:{stats['DEF']} SPD:{stats['SPD']} "
-                f"Move:N/S/E/W Fight:F Look:L Stats:ST Help:H"
+                f"Move:N/S/E/W Fight:F Flee:FL Look:L Stats:ST Help:H"
             )
 
         # Should never reach here — clean up

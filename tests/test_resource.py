@@ -329,7 +329,7 @@ def test_help_combat_warrior():
     conn.commit()
     p = get_player(conn, p["id"])
     result = handle_action(conn, dict(p), "help", [])
-    assert "CHARGE" in result
+    assert "CH(arge)" in result
 
 
 def test_help_combat_rogue():
@@ -339,7 +339,7 @@ def test_help_combat_rogue():
     conn.commit()
     p = get_player(conn, p["id"])
     result = handle_action(conn, dict(p), "help", [])
-    assert "SNEAK" in result
+    assert "SN(eak)" in result
 
 
 def test_help_combat_caster():
@@ -349,7 +349,7 @@ def test_help_combat_caster():
     conn.commit()
     p = get_player(conn, p["id"])
     result = handle_action(conn, dict(p), "help", [])
-    assert "CAST" in result
+    assert "CA(st)" in result
 
 
 def test_help_town_shows_rest():

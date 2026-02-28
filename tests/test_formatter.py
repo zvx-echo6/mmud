@@ -75,6 +75,24 @@ def test_fmt_combat_status():
     result = fmt_combat_status(38, 60, "Orc", 42, 50)
     assert "HP:38/60" in result
     assert "Orc" in result
+    assert "F)ight" in result
+    assert "FL)ee" in result
+    assert len(result) <= MSG_CHAR_LIMIT
+
+
+def test_fmt_combat_status_with_class():
+    result = fmt_combat_status(38, 60, "Orc", 42, 50, player_class="warrior")
+    assert "CH)rg" in result
+    assert "F)ight" in result
+    assert "FL)ee" in result
+    assert len(result) <= MSG_CHAR_LIMIT
+
+    result = fmt_combat_status(38, 60, "Orc", 42, 50, player_class="rogue")
+    assert "SN)eak" in result
+    assert len(result) <= MSG_CHAR_LIMIT
+
+    result = fmt_combat_status(38, 60, "Orc", 42, 50, player_class="caster")
+    assert "CA)st" in result
     assert len(result) <= MSG_CHAR_LIMIT
 
 
@@ -108,6 +126,7 @@ if __name__ == "__main__":
     test_fmt_room()
     test_fmt_room_truncation()
     test_fmt_combat_status()
+    test_fmt_combat_status_with_class()
     test_fmt_death()
     test_fmt_stats()
     print("All formatter tests passed!")

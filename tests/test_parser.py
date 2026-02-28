@@ -69,6 +69,12 @@ def test_flee():
     result = parse("run")
     assert result.command == "flee"
 
+    result = parse("fl")
+    assert result.command == "flee"
+
+    result = parse("FL")
+    assert result.command == "flee"
+
 
 def test_go_direction():
     result = parse("go north")
@@ -80,6 +86,26 @@ def test_examine():
     result = parse("x wall")
     assert result.command == "examine"
     assert result.args == ["wall"]
+
+
+def test_class_ability_aliases():
+    result = parse("ch")
+    assert result.command == "charge"
+
+    result = parse("CH")
+    assert result.command == "charge"
+
+    result = parse("sn")
+    assert result.command == "sneak"
+
+    result = parse("SN")
+    assert result.command == "sneak"
+
+    result = parse("ca")
+    assert result.command == "cast"
+
+    result = parse("CA")
+    assert result.command == "cast"
 
 
 def test_unknown_command():
@@ -110,6 +136,7 @@ if __name__ == "__main__":
     test_inventory_alias()
     test_help_alias()
     test_flee()
+    test_class_ability_aliases()
     test_go_direction()
     test_examine()
     test_unknown_command()

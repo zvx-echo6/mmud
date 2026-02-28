@@ -107,6 +107,12 @@ def _activate_floor_boss(conn: sqlite3.Connection, monster: dict) -> int:
     return hp
 
 
+def _combat_hint(player_class: str) -> str:
+    """Return compact combat command hints including class ability."""
+    ability_hints = {"warrior": " CH)rg", "rogue": " SN)eak", "caster": " CA)st"}
+    return "F)ight FL)ee" + ability_hints.get(player_class, "")
+
+
 def _monster_tag(monster: dict) -> str:
     """Return a [BOSS] or [BOUNTY] prefix for encounter text, or empty string."""
     if monster.get("is_floor_boss"):
@@ -211,12 +217,14 @@ def _sync_town_position(
 def _smart_error(player: dict) -> str:
     """State-specific error with valid command suggestions."""
     state = player.get("state", "town")
+    ability_hints = {"warrior": " CH)rg", "rogue": " SN)eak", "caster": " CA)st"}
+    hint = ability_hints.get(player.get("class", ""), "")
     if state == "town":
         return fmt("Unknown. Try: L(ook) BAR ENTER SHOP HEAL H(elp)")
     if state == "dungeon":
-        return fmt("Unknown. Try: F(ight) FL(ee) L(ook) N/S/E/W H(elp)")
+        return fmt(f"Unknown. Try: F(ight) FL(ee){hint} L(ook) N/S/E/W H(elp)")
     if state == "combat":
-        return fmt("Unknown. Try: F(ight) FL(ee) STATS")
+        return fmt(f"Unknown. Try: F(ight) FL(ee){hint} STATS")
     if state == "dead":
         return fmt("Unknown. You're dead. Type RESPAWN.")
     return fmt("Unknown. Type H for help.")
@@ -255,7 +263,8 @@ def action_look(conn: sqlite3.Connection, player: dict, args: list[str]) -> str:
     monster = world_data.get_room_monster(conn, player["room_id"])
     if monster:
         tag = _monster_tag(monster)
-        monster_info = f" {tag}{monster['name']} lurks here!"
+        hint = _combat_hint(player["class"])
+        monster_info = f" {tag}{monster['name']} lurks here! {hint}"
         desc = room["description_short"] + monster_info
     else:
         desc = room["description"]
@@ -347,7 +356,8 @@ def action_move(conn: sqlite3.Connection, player: dict, args: list[str]) -> str:
                 monster = world_data.get_monster(conn, monster["id"])
             world_mgr.enter_combat(conn, player["id"], monster["id"])
             tag = _monster_tag(monster)
-            desc = transition + f" {tag}{monster['name']} blocks your path!"
+            hint = _combat_hint(player["class"])
+            desc = transition + f" {tag}{monster['name']} blocks your path! {hint}"
             return fmt_room(room["name"], desc, exit_dirs)
         return fmt_room(room["name"], transition, exit_dirs)
 
@@ -363,7 +373,8 @@ def action_move(conn: sqlite3.Connection, player: dict, args: list[str]) -> str:
             monster = world_data.get_monster(conn, monster["id"])
         world_mgr.enter_combat(conn, player["id"], monster["id"])
         tag = _monster_tag(monster)
-        desc = room["description_short"] + f" {tag}{monster['name']} blocks your path!"
+        hint = _combat_hint(player["class"])
+        desc = room["description_short"] + f" {tag}{monster['name']} blocks your path! {hint}"
         return fmt_room(room["name"], desc, exit_dirs)
 
     return fmt_room(room["name"], room["description_short"], exit_dirs)
@@ -490,6 +501,7 @@ def action_fight(conn: sqlite3.Connection, player: dict, args: list[str]) -> str
     status = fmt_combat_status(
         result.player_hp, player["hp_max"],
         monster["name"], result.monster_hp, monster["hp_max"],
+        player_class=player["class"],
     )
     return fmt(f"{narrative} {status}")
 
@@ -644,14 +656,14 @@ def action_leave(
 
 def action_help(conn: sqlite3.Connection, player: dict, args: list[str]) -> str:
     """Show available commands."""
-    ability_hints = {"warrior": " CHARGE", "rogue": " SNEAK", "caster": " CAST"}
+    ability_hints = {"warrior": " CH(arge)", "rogue": " SN(eak)", "caster": " CA(st)"}
     hint = ability_hints.get(player["class"], "")
     if player["state"] == "town":
         return fmt("N/S/E/W ENTER SHOP HEAL BANK EX TOK BOUNTY MAIL WHO TRAIN REST HELP")
     if player["state"] == "combat":
-        return fmt(f"FIGHT(F) FLEE{hint} STATS LOOK HELP")
+        return fmt(f"FIGHT(F) FL(ee){hint} STATS LOOK HELP")
     if player["state"] == "dungeon":
-        return fmt(f"N/S/E/W LOOK(L) FIGHT(F) FLEE{hint} RETURN STATS(ST) INV(I) HELP")
+        return fmt(f"N/S/E/W LOOK(L) FIGHT(F) FL(ee){hint} EX RETURN STATS(ST) INV(I) HELP")
     return fmt("LOOK STATS HELP")
 
 

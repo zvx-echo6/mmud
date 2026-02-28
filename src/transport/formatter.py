@@ -81,10 +81,11 @@ def fmt_combat_narrative(text: str) -> str:
 def fmt_combat_status(
     player_hp: int, player_hp_max: int,
     monster_name: str, monster_hp: int, monster_hp_max: int,
+    player_class: str = "",
 ) -> str:
     """Format combat status line.
 
-    Template: HP:{current}/{max} vs {Monster}({hp}/{max}) A)tk F)lee
+    Template: HP:{current}/{max} vs {Monster}({hp}/{max}) F)ight FL)ee [ability]
 
     Args:
         player_hp: Player's current HP.
@@ -92,14 +93,17 @@ def fmt_combat_status(
         monster_name: Monster name.
         monster_hp: Monster's current HP.
         monster_hp_max: Monster's max HP.
+        player_class: Player class for ability hint (warrior/rogue/caster).
 
     Returns:
         Formatted status string.
     """
+    ability_hints = {"warrior": " CH)rg", "rogue": " SN)eak", "caster": " CA)st"}
+    hint = ability_hints.get(player_class, "")
     status = (
         f"HP:{player_hp}/{player_hp_max} "
         f"vs {monster_name}({monster_hp}/{monster_hp_max}) "
-        f"A)tk F)lee"
+        f"F)ight FL)ee{hint}"
     )
     return fmt(status)
 

@@ -36,7 +36,7 @@ ALIASES = {
     # Help
     "h": "help", "?": "help",
     # Flee
-    "run": "flee",
+    "run": "flee", "fl": "flee",
     # Who
     "w": "who",  # Note: 'w' for west takes priority; 'who' must be typed out
     # Shorthand
@@ -51,7 +51,7 @@ ALIASES = {
     "bounties": "bounty",
     "msg": "message",
     # Class abilities
-    "charge": "charge", "sneak": "sneak", "cast": "cast",
+    "charge": "charge", "ch": "charge", "sneak": "sneak", "sn": "sneak", "cast": "cast", "ca": "cast",
     "rest": "rest",
     # Character auth
     "join": "join", "register": "join", "create": "join", "new": "join",
