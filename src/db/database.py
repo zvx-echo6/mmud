@@ -55,6 +55,16 @@ def _apply_migrations(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE epoch ADD COLUMN last_tick_date TEXT DEFAULT NULL")
         conn.commit()
 
+    # Migration 016: town_board table
+    conn.execute("""CREATE TABLE IF NOT EXISTS town_board (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        player_id INTEGER NOT NULL REFERENCES players(id),
+        message TEXT NOT NULL,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )""")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_town_board_created ON town_board(created_at)")
+    conn.commit()
+
 
 def reset_epoch_tables(conn: sqlite3.Connection) -> None:
     """Drop and recreate epoch-scoped tables for a new wipe cycle.
@@ -114,7 +124,7 @@ def reset_epoch_tables(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE epoch ADD COLUMN last_tick_date TEXT DEFAULT NULL")
 
     epoch_tables = [
-        "broadcast_seen", "broadcasts", "player_messages", "mail",
+        "broadcast_seen", "broadcasts", "player_messages", "mail", "town_board",
         "epoch_votes", "npc_journals", "npc_dialogue", "narrative_skins",
         "breach", "htl_checkpoints",
         "escape_participants", "escape_run",

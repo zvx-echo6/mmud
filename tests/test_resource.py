@@ -65,7 +65,7 @@ def test_caster_created_correctly():
     conn = _make_db()
     p = _make_player(conn, "caster", "Merlin", "!caster1")
     assert p["class"] == "caster"
-    assert p["hp"] == 35
+    assert p["hp"] == 30
     assert p["pow"] == 4
     assert p["def"] == 1
     assert p["spd"] == 2
@@ -86,8 +86,8 @@ def test_warrior_created_correctly():
     conn = _make_db()
     p = _make_player(conn, "warrior", "Tank", "!war99")
     assert p["class"] == "warrior"
-    assert p["hp"] == 60
-    assert p["pow"] == 2
+    assert p["hp"] == 70
+    assert p["pow"] == 3
     assert p["def"] == 4
     assert p["spd"] == 1
 

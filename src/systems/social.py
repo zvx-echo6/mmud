@@ -1,12 +1,12 @@
 """
 Social systems for MMUD.
-Player messages (15-char room graffiti), mail, who list.
+Player messages (15-char room graffiti), town bulletin board, who list.
 """
 
 import sqlite3
 from datetime import datetime, timezone
 
-from config import MSG_CHAR_LIMIT, PLAYER_MSG_CHAR_LIMIT
+from config import BOARD_LIST_COUNT, BOARD_POST_CHAR_LIMIT, MSG_CHAR_LIMIT, PLAYER_MSG_CHAR_LIMIT
 
 
 # ── Player Messages ─────────────────────────────────────────────────────────
@@ -102,77 +102,127 @@ def vote_helpful(
     return True, f"Marked '{msg['message']}' by {msg['name']} as helpful."
 
 
-# ── Mail System ─────────────────────────────────────────────────────────────
+# ── Town Bulletin Board ────────────────────────────────────────────────────
 
 
-def get_inbox(conn: sqlite3.Connection, player_id: int) -> tuple[int, int]:
-    """Get inbox stats: (unread_count, total_count)."""
-    row = conn.execute(
-        """SELECT
-           COUNT(*) as total,
-           SUM(CASE WHEN read = 0 THEN 1 ELSE 0 END) as unread
-           FROM mail WHERE to_player_id = ?""",
-        (player_id,),
-    ).fetchone()
-    return (row["unread"] or 0, row["total"] or 0)
-
-
-def read_oldest_unread(
-    conn: sqlite3.Connection, player_id: int
+def post_to_board(
+    conn: sqlite3.Connection, player_id: int, player_name: str, message: str
 ) -> tuple[bool, str]:
-    """Read the oldest unread mail.
+    """Post a message to the town bulletin board.
+
+    Truncates to BOARD_POST_CHAR_LIMIT (140 chars). Costs 1 social action.
 
     Returns:
-        (success, message_content)
+        (success, response_message)
     """
+    if not message or not message.strip():
+        return False, "POST <text> to write on the board."
+
+    text = message.strip()[:BOARD_POST_CHAR_LIMIT]
+    now = datetime.now(timezone.utc).isoformat()
+    conn.execute(
+        "INSERT INTO town_board (player_id, message, created_at) VALUES (?, ?, ?)",
+        (player_id, text, now),
+    )
+    conn.commit()
+    return True, f"Posted to board: '{text[:40]}{'...' if len(text) > 40 else ''}'"
+
+
+def get_board_posts(
+    conn: sqlite3.Connection, limit: int = BOARD_LIST_COUNT, offset: int = 0
+) -> list[dict]:
+    """Get board posts with player names, ascending by id.
+
+    Args:
+        limit: Max posts to return.
+        offset: Number of rows to skip from the start.
+
+    Returns:
+        List of dicts with id, player_name, message, created_at.
+    """
+    rows = conn.execute(
+        """SELECT tb.id, tb.message, tb.created_at, p.name as player_name
+           FROM town_board tb
+           JOIN players p ON tb.player_id = p.id
+           ORDER BY tb.id ASC
+           LIMIT ? OFFSET ?""",
+        (limit, offset),
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def get_board_post(
+    conn: sqlite3.Connection, post_number: int
+) -> tuple[bool, str]:
+    """Get a single post by its sequential number (1-based, oldest = #1).
+
+    Returns:
+        (success, formatted_post_string)
+    """
+    if post_number < 1:
+        return False, "Invalid post number."
+
+    # Post number N = the Nth row when ordered by id ASC (0-indexed offset = N-1)
     row = conn.execute(
-        """SELECT m.id, m.message, p.name as from_name
-           FROM mail m
-           JOIN players p ON m.from_player_id = p.id
-           WHERE m.to_player_id = ? AND m.read = 0
-           ORDER BY m.sent_at ASC LIMIT 1""",
-        (player_id,),
+        """SELECT tb.id, tb.message, tb.created_at, p.name as player_name
+           FROM town_board tb
+           JOIN players p ON tb.player_id = p.id
+           ORDER BY tb.id ASC
+           LIMIT 1 OFFSET ?""",
+        (post_number - 1,),
     ).fetchone()
 
     if not row:
-        return False, "No unread mail."
+        return False, f"Post #{post_number} not found."
 
-    conn.execute("UPDATE mail SET read = 1 WHERE id = ?", (row["id"],))
-    conn.commit()
-    return True, f"From {row['from_name']}: {row['message']}"
+    # Calculate epoch day from created_at
+    day_str = ""
+    try:
+        created = datetime.fromisoformat(row["created_at"].replace("Z", "+00:00"))
+        day_str = f"D{created.day}"
+    except Exception:
+        day_str = ""
+
+    return True, f"#{post_number} {row['player_name']} ({day_str}): {row['message']}"
 
 
-def send_mail(
-    conn: sqlite3.Connection, from_id: int, to_name: str, message: str
-) -> tuple[bool, str]:
-    """Send mail to another player. Costs 1 social action.
+def get_board_count(conn: sqlite3.Connection) -> int:
+    """Get total number of posts on the board."""
+    row = conn.execute("SELECT COUNT(*) as cnt FROM town_board").fetchone()
+    return row["cnt"] if row else 0
+
+
+def format_board_listing(
+    posts: list[dict], start_num: int, total: int
+) -> str:
+    """Format board posts for compact mesh display.
+
+    Template: Board S-E/T: N.Name:preview N.Name:preview ...
+
+    Args:
+        posts: List of post dicts from get_board_posts.
+        start_num: The 1-based number of the first post in the list.
+        total: Total post count.
 
     Returns:
-        (success, message)
+        Formatted string fitting 175-char target.
     """
-    if not message.strip():
-        return False, "MAIL <player> <message>"
+    if not posts:
+        return "Board is empty. POST <text> to write."
 
-    # Find recipient by name
-    recipient = conn.execute(
-        "SELECT id, name FROM players WHERE LOWER(name) = LOWER(?)",
-        (to_name.strip(),),
-    ).fetchone()
+    end_num = start_num + len(posts) - 1
+    header = f"Board {start_num}-{end_num}/{total}: "
 
-    if not recipient:
-        return False, f"Player '{to_name}' not found."
+    entries = []
+    for i, p in enumerate(posts):
+        num = start_num + i
+        name = p["player_name"][:6]
+        # Truncate message preview to keep compact
+        preview = p["message"][:20]
+        entries.append(f"{num}.{name}:{preview}")
 
-    if recipient["id"] == from_id:
-        return False, "Can't mail yourself."
-
-    now = datetime.now(timezone.utc).isoformat()
-    conn.execute(
-        """INSERT INTO mail (from_player_id, to_player_id, message, sent_at)
-           VALUES (?, ?, ?, ?)""",
-        (from_id, recipient["id"], message[:MSG_CHAR_LIMIT], now),
-    )
-    conn.commit()
-    return True, f"Mail sent to {recipient['name']}."
+    result = header + " ".join(entries)
+    return result
 
 
 # ── Who List ────────────────────────────────────────────────────────────────

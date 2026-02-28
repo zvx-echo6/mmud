@@ -49,7 +49,7 @@ def _create_test_db(day_number=5) -> sqlite3.Connection:
         """INSERT INTO players (id, account_id, name, class, hp, hp_max, pow, def, spd,
            state, level, gold_carried, floor, combat_monster_id, bard_tokens, gold_banked,
            last_login)
-           VALUES (1, 1, 'LoreSeeker', 'caster', 35, 35, 3, 2, 4,
+           VALUES (1, 1, 'LoreSeeker', 'caster', 30, 30, 3, 2, 4,
                    'town', 5, 100, 0, NULL, 0, 50,
                    '2026-01-05T00:00:00')"""
     )

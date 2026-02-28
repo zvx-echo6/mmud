@@ -232,9 +232,14 @@ def _generate_floor(
                 # Linear chain within branch
                 fwd, bwd = _branch_directions()
 
-            _insert_exit(conn, prev_room_id, room_id, fwd)
-            _insert_exit(conn, room_id, prev_room_id, bwd)
-            stats["exits"] += 2
+            if _insert_exit_pair(conn, prev_room_id, room_id, fwd, bwd):
+                stats["exits"] += 2
+            else:
+                # Direction taken — try all other direction pairs
+                for alt_fwd, alt_bwd in [("n", "s"), ("s", "n"), ("e", "w"), ("w", "e")]:
+                    if _insert_exit_pair(conn, prev_room_id, room_id, alt_fwd, alt_bwd):
+                        stats["exits"] += 2
+                        break
 
             prev_room_id = room_id
 
@@ -261,9 +266,8 @@ def _generate_floor(
                 (r1, r2),
             ).fetchone()
             if not existing:
-                _insert_exit(conn, r1, r2, "e")
-                _insert_exit(conn, r2, r1, "w")
-                stats["exits"] += 2
+                if _insert_exit_pair(conn, r1, r2, "e", "w"):
+                    stats["exits"] += 2
 
     # ── Inject vault rooms ──
     non_hub_rooms = [rid for rid in all_room_ids if rid != hub_id]
@@ -290,10 +294,13 @@ def _generate_floor(
         all_room_ids.append(room_id)
         vault_room_ids.append(room_id)
 
-        # Connect vault to parent
-        _insert_exit(conn, parent_id, room_id, _random_dir())
-        _insert_exit(conn, room_id, parent_id, _opposite_dir(_random_dir()))
-        stats["exits"] += 2
+        # Connect vault to parent — try directions until one works
+        dirs = ["n", "s", "e", "w"]
+        random.shuffle(dirs)
+        for d in dirs:
+            if _insert_exit_pair(conn, parent_id, room_id, d, _opposite_dir(d)):
+                stats["exits"] += 2
+                break
 
     # ── Place traps guarding vault rooms ──
     trap_targets = random.sample(vault_room_ids, min(num_traps, len(vault_room_ids)))
@@ -400,6 +407,28 @@ def _insert_exit(conn: sqlite3.Connection, from_id: int, to_id: int, direction: 
         "INSERT INTO room_exits (from_room_id, to_room_id, direction) VALUES (?, ?, ?)",
         (from_id, to_id, direction),
     )
+
+
+def _has_exit(conn: sqlite3.Connection, from_id: int, direction: str) -> bool:
+    """Check if a room already has an exit in the given direction."""
+    return conn.execute(
+        "SELECT 1 FROM room_exits WHERE from_room_id = ? AND direction = ?",
+        (from_id, direction),
+    ).fetchone() is not None
+
+
+def _insert_exit_pair(
+    conn: sqlite3.Connection, from_id: int, to_id: int, fwd: str, bwd: str
+) -> bool:
+    """Insert a bidirectional exit pair. Only inserts if BOTH directions are free.
+
+    Returns True if the pair was inserted, False if either direction was taken.
+    """
+    if _has_exit(conn, from_id, fwd) or _has_exit(conn, to_id, bwd):
+        return False
+    _insert_exit(conn, from_id, to_id, fwd)
+    _insert_exit(conn, to_id, from_id, bwd)
+    return True
 
 
 def _insert_monster(conn: sqlite3.Connection, room_id: int, tier: int,

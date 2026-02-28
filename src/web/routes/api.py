@@ -67,6 +67,14 @@ def mode():
     return jsonify({"mode": m, "data": None})
 
 
+@bp.route("/board")
+def board():
+    """Town bulletin board posts."""
+    limit = min(int(request.args.get("limit", 15)), 50)
+    data = gamedb.get_town_board(limit=limit)
+    return jsonify(data)
+
+
 @bp.route("/leaderboard")
 def leaderboard():
     """Current leaderboard data."""

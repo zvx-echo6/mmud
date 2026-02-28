@@ -104,6 +104,28 @@
       .catch(() => {});
   }
 
+  // ═══ BOARD POLLING ═══
+  function pollBoard() {
+    fetch('/api/board?limit=15')
+      .then(r => r.json())
+      .then(data => {
+        const container = document.getElementById('town-board');
+        if (!container) return;
+        if (!data || !data.length) {
+          container.innerHTML = '<div style="color:var(--text-ghost);font-style:italic;font-size:13px;">No posts yet. Use POST in-game to write.</div>';
+          return;
+        }
+        container.innerHTML = data.map(p => `
+          <div class="board-post-entry">
+            <span class="bp-name">${escapeHtml(p.player_name)}</span>
+            <span class="bp-text">${escapeHtml(p.message)}</span>
+            <span class="bp-time">${timeAgo(p.created_at)}</span>
+          </div>
+        `).join('');
+      })
+      .catch(() => {});
+  }
+
   // ═══ ESCAPE HTML ═══
   function escapeHtml(str) {
     const div = document.createElement('div');
@@ -226,6 +248,7 @@
     if (document.getElementById('epoch-day')) {
       setInterval(pollStatus, statusInterval);
       setInterval(pollBroadcasts, broadcastInterval);
+      setInterval(pollBoard, statusInterval);
     }
   }
 

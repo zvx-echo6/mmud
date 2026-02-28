@@ -1,4 +1,4 @@
-"""Tests for social systems: player messages, mail, who list, action handlers."""
+"""Tests for social systems: player messages, town board, who list, action handlers."""
 
 import sys
 from pathlib import Path
@@ -7,7 +7,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import sqlite3
 
-from config import MSG_CHAR_LIMIT, PLAYER_MSG_CHAR_LIMIT
+from config import BOARD_POST_CHAR_LIMIT, MSG_CHAR_LIMIT, PLAYER_MSG_CHAR_LIMIT
 from src.core.engine import GameEngine
 from src.db.database import init_schema
 from src.systems import social as social_sys
@@ -164,71 +164,98 @@ def test_vote_helpful_increments():
     assert row["helpful_votes"] == 2
 
 
-# ── Mail System ──
+# ── Town Bulletin Board ──
 
 
-def test_send_mail():
+def test_post_to_board():
     conn = make_test_db()
-    ok, msg = social_sys.send_mail(conn, 1, "Sidekick", "hello friend")
+    ok, msg = social_sys.post_to_board(conn, 1, "Hero", "boss weak to magic")
     assert ok
-    assert "Mail sent" in msg
+    assert "Posted" in msg
     assert len(msg) <= MSG_CHAR_LIMIT
 
 
-def test_send_mail_unknown_player():
+def test_post_to_board_empty():
     conn = make_test_db()
-    ok, msg = social_sys.send_mail(conn, 1, "Nobody", "hi")
+    ok, msg = social_sys.post_to_board(conn, 1, "Hero", "")
+    assert not ok
+
+
+def test_post_to_board_truncates():
+    conn = make_test_db()
+    long_msg = "A" * 200
+    ok, msg = social_sys.post_to_board(conn, 1, "Hero", long_msg)
+    assert ok
+    row = conn.execute("SELECT message FROM town_board WHERE player_id = 1").fetchone()
+    assert len(row["message"]) <= BOARD_POST_CHAR_LIMIT
+
+
+def test_get_board_posts():
+    conn = make_test_db()
+    social_sys.post_to_board(conn, 1, "Hero", "first post")
+    social_sys.post_to_board(conn, 2, "Sidekick", "second post")
+    posts = social_sys.get_board_posts(conn)
+    assert len(posts) == 2
+    assert posts[0]["player_name"] == "Hero"
+    assert posts[1]["player_name"] == "Sidekick"
+
+
+def test_get_board_post_by_number():
+    conn = make_test_db()
+    social_sys.post_to_board(conn, 1, "Hero", "first post")
+    social_sys.post_to_board(conn, 2, "Sidekick", "second post")
+    ok, msg = social_sys.get_board_post(conn, 1)
+    assert ok
+    assert "#1" in msg
+    assert "Hero" in msg
+    assert "first post" in msg
+    assert len(msg) <= MSG_CHAR_LIMIT
+
+
+def test_get_board_post_invalid_number():
+    conn = make_test_db()
+    ok, msg = social_sys.get_board_post(conn, 999)
     assert not ok
     assert "not found" in msg
 
 
-def test_send_mail_self():
+def test_get_board_post_zero():
     conn = make_test_db()
-    ok, msg = social_sys.send_mail(conn, 1, "Hero", "talking to myself")
-    assert not ok
-    assert "yourself" in msg.lower()
-
-
-def test_send_mail_empty():
-    conn = make_test_db()
-    ok, msg = social_sys.send_mail(conn, 1, "Sidekick", "   ")
+    ok, msg = social_sys.get_board_post(conn, 0)
     assert not ok
 
 
-def test_inbox_stats():
+def test_get_board_count():
     conn = make_test_db()
-    social_sys.send_mail(conn, 1, "Sidekick", "msg 1")
-    social_sys.send_mail(conn, 1, "Sidekick", "msg 2")
-    unread, total = social_sys.get_inbox(conn, 2)
-    assert unread == 2
-    assert total == 2
+    assert social_sys.get_board_count(conn) == 0
+    social_sys.post_to_board(conn, 1, "Hero", "test")
+    assert social_sys.get_board_count(conn) == 1
 
 
-def test_read_oldest_unread():
+def test_format_board_listing():
     conn = make_test_db()
-    social_sys.send_mail(conn, 1, "Sidekick", "first")
-    social_sys.send_mail(conn, 1, "Sidekick", "second")
-    ok, msg = social_sys.read_oldest_unread(conn, 2)
-    assert ok
-    assert "first" in msg
-    assert "Hero" in msg
-    assert len(msg) <= MSG_CHAR_LIMIT
+    social_sys.post_to_board(conn, 1, "Hero", "boss weak")
+    social_sys.post_to_board(conn, 2, "Sidekick", "need help")
+    posts = social_sys.get_board_posts(conn)
+    text = social_sys.format_board_listing(posts, 1, 2)
+    assert "Board 1-2/2" in text
+    assert "Hero" in text
+    assert "boss weak" in text
 
 
-def test_read_marks_as_read():
+def test_format_board_listing_empty():
+    text = social_sys.format_board_listing([], 1, 0)
+    assert "empty" in text.lower()
+
+
+def test_board_pagination_offset():
     conn = make_test_db()
-    social_sys.send_mail(conn, 1, "Sidekick", "only one")
-    social_sys.read_oldest_unread(conn, 2)
-    unread, total = social_sys.get_inbox(conn, 2)
-    assert unread == 0
-    assert total == 1
-
-
-def test_read_no_unread():
-    conn = make_test_db()
-    ok, msg = social_sys.read_oldest_unread(conn, 1)
-    assert not ok
-    assert "No unread" in msg
+    for i in range(10):
+        social_sys.post_to_board(conn, 1, "Hero", f"post {i+1}")
+    # Get posts starting at #6 (offset 5)
+    posts = social_sys.get_board_posts(conn, limit=5, offset=5)
+    assert len(posts) == 5
+    assert "post 6" in posts[0]["message"]
 
 
 # ── Who List ──
@@ -282,11 +309,11 @@ def test_engine_who_command():
     assert len(resp) <= MSG_CHAR_LIMIT
 
 
-def test_engine_mail_inbox():
+def test_engine_mail_redirect():
     conn, engine = _make_engine_db()
     resp = engine.process_message("!abc", "Hero", "mail")
     assert resp is not None
-    assert "Mail" in resp or "unread" in resp
+    assert "gone" in resp.lower() or "BOARD" in resp
     assert len(resp) <= MSG_CHAR_LIMIT
 
 
@@ -312,19 +339,80 @@ def test_engine_msg_costs_social_action():
     assert p["social_actions_remaining"] == 1  # Was 2, now 1
 
 
-def test_engine_mail_send_costs_social_action():
+def test_engine_board_command():
     conn, engine = _make_engine_db()
-    engine.process_message("!abc", "Hero", "mail Sidekick hello there")
+    # Set player to town first
+    conn.execute("UPDATE players SET state = 'town', floor = 0 WHERE id = 1")
+    conn.commit()
+    resp = engine.process_message("!abc", "Hero", "board")
+    assert resp is not None
+    assert "empty" in resp.lower() or "Board" in resp
+    assert len(resp) <= MSG_CHAR_LIMIT
+
+
+def test_engine_bb_alias():
+    conn, engine = _make_engine_db()
+    conn.execute("UPDATE players SET state = 'town', floor = 0 WHERE id = 1")
+    conn.commit()
+    resp = engine.process_message("!abc", "Hero", "bb")
+    assert resp is not None
+    assert "empty" in resp.lower() or "Board" in resp
+    assert len(resp) <= MSG_CHAR_LIMIT
+
+
+def test_engine_board_with_start():
+    conn, engine = _make_engine_db()
+    conn.execute("UPDATE players SET state = 'town', floor = 0 WHERE id = 1")
+    conn.commit()
+    # Add some posts
+    for i in range(8):
+        social_sys.post_to_board(conn, 1, "Hero", f"post {i+1}")
+    resp = engine.process_message("!abc", "Hero", "board 1")
+    assert resp is not None
+    assert "Board 1-" in resp
+    assert len(resp) <= MSG_CHAR_LIMIT
+
+
+def test_engine_post_writes():
+    conn, engine = _make_engine_db()
+    conn.execute("UPDATE players SET state = 'town', floor = 0 WHERE id = 1")
+    conn.commit()
+    resp = engine.process_message("!abc", "Hero", "post boss is weak to magic")
+    assert resp is not None
+    assert "Posted" in resp
+    assert social_sys.get_board_count(conn) == 1
+    assert len(resp) <= MSG_CHAR_LIMIT
+
+
+def test_engine_post_costs_social_action():
+    conn, engine = _make_engine_db()
+    conn.execute("UPDATE players SET state = 'town', floor = 0 WHERE id = 1")
+    conn.commit()
+    engine.process_message("!abc", "Hero", "post tips and tricks")
     p = conn.execute("SELECT social_actions_remaining FROM players WHERE id = 1").fetchone()
-    assert p["social_actions_remaining"] == 1
+    assert p["social_actions_remaining"] == 1  # Was 2, now 1
 
 
-def test_engine_read_command():
+def test_engine_read_post():
     conn, engine = _make_engine_db()
-    social_sys.send_mail(conn, 2, "Hero", "test mail")
+    conn.execute("UPDATE players SET state = 'town', floor = 0 WHERE id = 1")
+    conn.commit()
+    social_sys.post_to_board(conn, 1, "Hero", "floor 3 clear")
+    resp = engine.process_message("!abc", "Hero", "read 1")
+    assert resp is not None
+    assert "#1" in resp
+    assert "floor 3 clear" in resp
+    assert len(resp) <= MSG_CHAR_LIMIT
+
+
+def test_engine_read_no_args():
+    conn, engine = _make_engine_db()
+    conn.execute("UPDATE players SET state = 'town', floor = 0 WHERE id = 1")
+    conn.commit()
     resp = engine.process_message("!abc", "Hero", "read")
     assert resp is not None
-    assert "test mail" in resp or "Sidekick" in resp
+    # Should behave like BOARD (empty board)
+    assert "empty" in resp.lower() or "Board" in resp
     assert len(resp) <= MSG_CHAR_LIMIT
 
 
@@ -338,11 +426,14 @@ def test_engine_helpful_in_town():
 
 
 def test_all_responses_under_150():
-    """Meta-test: verify all social command responses are under 150 chars."""
+    """Meta-test: verify all social command responses are under 175 chars."""
     conn, engine = _make_engine_db()
+    # Set player to town for board/post commands
+    conn.execute("UPDATE players SET state = 'town', floor = 0 WHERE id = 1")
+    conn.commit()
     commands = [
-        "who", "mail", "bounty", "read", "helpful",
-        "mail Sidekick hi there", "msg beware",
+        "who", "mail", "bounty", "board", "read", "helpful",
+        "post hello world", "msg beware",
     ]
     for cmd in commands:
         resp = engine.process_message("!abc", "Hero", cmd)

@@ -55,21 +55,26 @@ def fmt_multi(text: str) -> list[str]:
     return messages
 
 
-def fmt_room(name: str, desc: str, exits: list[str]) -> str:
+def fmt_room(name: str, desc: str, exits: list[str], hints: list[str] = None) -> str:
     """Format a room description.
 
-    Template: {Name}. {Description}. [{Exits}]
+    Template: {Name}. {Description}. [Dead end. ]{Exits}[ hints]
 
     Args:
         name: Room name.
         desc: Room sensory description.
         exits: List of exit directions (e.g., ["n", "s", "e"]).
+        hints: Optional list of command hints (e.g., ["EX", "CH"]).
 
     Returns:
         Formatted room string, truncated if needed.
     """
-    exit_str = ",".join(exits)
-    full = f"{name}. {desc} [{exit_str}]"
+    deduped = list(dict.fromkeys(exits))
+    parts = ",".join(deduped)
+    if hints:
+        parts += " " + " ".join(hints)
+    prefix = "Dead end. " if len(deduped) == 1 else ""
+    full = f"{name}. {desc} {prefix}[{parts}]"
     return fmt(full)
 
 

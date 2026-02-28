@@ -410,6 +410,14 @@ CREATE TABLE IF NOT EXISTS mail (
     sent_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS town_board (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    player_id INTEGER NOT NULL REFERENCES players(id),
+    message TEXT NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_town_board_created ON town_board(created_at);
+
 CREATE TABLE IF NOT EXISTS broadcasts (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     tier INTEGER NOT NULL,              -- 1, 2

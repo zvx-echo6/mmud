@@ -71,9 +71,50 @@ def test_fmt_room_truncation():
     assert result.endswith("...")
 
 
+def test_fmt_room_dedup_exits():
+    """Duplicate exits are deduplicated."""
+    result = fmt_room("Vault", "Glittering gold.", ["n", "n", "s"])
+    assert "[n,s]" in result
+    assert len(result) <= MSG_CHAR_LIMIT
+
+
+def test_fmt_room_with_hints():
+    """Hints appear after exits inside brackets."""
+    result = fmt_room("Hall", "Dusty.", ["n", "s", "e"], hints=["EX", "CH"])
+    assert "[n,s,e EX CH]" in result
+    assert len(result) <= MSG_CHAR_LIMIT
+
+
+def test_fmt_room_dead_end():
+    """Single-exit room shows 'Dead end.' prefix."""
+    result = fmt_room("Alcove", "A cramped alcove.", ["s"], hints=["EX", "SN"])
+    assert "Dead end." in result
+    assert "[s EX SN]" in result
+    assert len(result) <= MSG_CHAR_LIMIT
+
+
+def test_fmt_room_dead_end_no_hints():
+    """Dead end works without hints too."""
+    result = fmt_room("Alcove", "A cramped alcove.", ["s"])
+    assert "Dead end." in result
+    assert "[s]" in result
+
+
+def test_fmt_room_multi_exit_no_dead_end():
+    """Multi-exit rooms do NOT show 'Dead end.'"""
+    result = fmt_room("Hall", "Wide.", ["n", "s"])
+    assert "Dead end." not in result
+
+
+def test_fmt_room_dedup_preserves_order():
+    """Dedup preserves first-seen order."""
+    result = fmt_room("Room", "Desc.", ["e", "n", "e", "s", "n"])
+    assert "[e,n,s]" in result
+
+
 def test_fmt_combat_status():
-    result = fmt_combat_status(38, 60, "Orc", 42, 50)
-    assert "HP:38/60" in result
+    result = fmt_combat_status(38, 70, "Orc", 42, 50)
+    assert "HP:38/70" in result
     assert "Orc" in result
     assert "F)ight" in result
     assert "FL)ee" in result
@@ -81,17 +122,17 @@ def test_fmt_combat_status():
 
 
 def test_fmt_combat_status_with_class():
-    result = fmt_combat_status(38, 60, "Orc", 42, 50, player_class="warrior")
+    result = fmt_combat_status(38, 70, "Orc", 42, 50, player_class="warrior")
     assert "CH)rg" in result
     assert "F)ight" in result
     assert "FL)ee" in result
     assert len(result) <= MSG_CHAR_LIMIT
 
-    result = fmt_combat_status(38, 60, "Orc", 42, 50, player_class="rogue")
+    result = fmt_combat_status(38, 70, "Orc", 42, 50, player_class="rogue")
     assert "SN)eak" in result
     assert len(result) <= MSG_CHAR_LIMIT
 
-    result = fmt_combat_status(38, 60, "Orc", 42, 50, player_class="caster")
+    result = fmt_combat_status(38, 70, "Orc", 42, 50, player_class="caster")
     assert "CA)st" in result
     assert len(result) <= MSG_CHAR_LIMIT
 
@@ -106,7 +147,7 @@ def test_fmt_death():
 def test_fmt_stats():
     result = fmt_stats(
         name="Kael", cls="warrior", level=5,
-        hp=38, hp_max=60,
+        hp=38, hp_max=70,
         pow_=8, def_=6, spd=4,
         gold=150, xp=2500, actions=8,
     )

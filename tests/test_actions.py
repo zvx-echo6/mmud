@@ -460,6 +460,82 @@ def test_full_combat_zero_actions():
     assert len(resp) <= MSG_CHAR_LIMIT
 
 
+def test_enter_dungeon_shows_hints_warrior():
+    """ENTER dungeon shows EX and CH hints for warrior."""
+    conn = make_test_db()
+    engine = GameEngine(conn)
+    register_player(engine, cls="w")
+
+    resp = engine.process_message("!test1234", "Tester", "enter")
+    assert "EX" in resp
+    assert "CH" in resp
+    assert len(resp) <= MSG_CHAR_LIMIT
+
+
+def test_enter_dungeon_shows_hints_rogue():
+    """ENTER dungeon shows EX and SN hints for rogue."""
+    conn = make_test_db()
+    engine = GameEngine(conn)
+    register_player(engine, cls="r")
+
+    resp = engine.process_message("!test1234", "Tester", "enter")
+    assert "EX" in resp
+    assert "SN" in resp
+    assert len(resp) <= MSG_CHAR_LIMIT
+
+
+def test_enter_dungeon_shows_hints_caster():
+    """ENTER dungeon shows EX and CA hints for caster."""
+    conn = make_test_db()
+    engine = GameEngine(conn)
+    register_player(engine, cls="c")
+
+    resp = engine.process_message("!test1234", "Tester", "enter")
+    assert "EX" in resp
+    assert "CA" in resp
+    assert len(resp) <= MSG_CHAR_LIMIT
+
+
+def test_move_clear_room_shows_hints():
+    """Moving to a clear dungeon room shows EX + class hint."""
+    conn = make_test_db()
+    engine = GameEngine(conn)
+    register_player(engine, cls="w")
+
+    engine.process_message("!test1234", "Tester", "enter")
+    resp = engine.process_message("!test1234", "Tester", "e")
+    assert "Empty Hall" in resp
+    assert "EX" in resp
+    assert "CH" in resp
+    assert len(resp) <= MSG_CHAR_LIMIT
+
+
+def test_move_dead_end_shows_indicator():
+    """Moving to a single-exit room shows Dead end indicator."""
+    conn = make_test_db()
+    engine = GameEngine(conn)
+    register_player(engine, cls="r")
+
+    engine.process_message("!test1234", "Tester", "enter")
+    # Room 3 (Empty Hall) has only [w] — dead end
+    resp = engine.process_message("!test1234", "Tester", "e")
+    assert "Dead end." in resp
+    assert len(resp) <= MSG_CHAR_LIMIT
+
+
+def test_monster_encounter_no_room_hints():
+    """Monster encounter shows combat hints, not room hints."""
+    conn = make_test_db()
+    engine = GameEngine(conn)
+    register_player(engine, cls="w")
+
+    engine.process_message("!test1234", "Tester", "enter")
+    resp = engine.process_message("!test1234", "Tester", "n")
+    # Should have combat hints, not EX
+    assert "F)ight" in resp or "blocks" in resp.lower()
+    assert len(resp) <= MSG_CHAR_LIMIT
+
+
 if __name__ == "__main__":
     test_new_player_registration()
     test_look_in_town()
@@ -483,4 +559,10 @@ if __name__ == "__main__":
     test_retreat_alias()
     test_return_deep_floor_narrative()
     test_full_combat_zero_actions()
+    test_enter_dungeon_shows_hints_warrior()
+    test_enter_dungeon_shows_hints_rogue()
+    test_enter_dungeon_shows_hints_caster()
+    test_move_clear_room_shows_hints()
+    test_move_dead_end_shows_indicator()
+    test_monster_encounter_no_room_hints()
     print("All action tests passed!")

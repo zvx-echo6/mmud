@@ -50,6 +50,7 @@ ALIASES = {
     "tok": "token",
     "bounties": "bounty",
     "msg": "message",
+    "bb": "board",
     # Class abilities
     "charge": "charge", "ch": "charge", "sneak": "sneak", "sn": "sneak", "cast": "cast", "ca": "cast",
     "rest": "rest",

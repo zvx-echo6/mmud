@@ -388,6 +388,22 @@ def get_player_count():
     return row["cnt"] if row else 0
 
 
+# ═══ TOWN BOARD ═══
+
+def get_town_board(limit=15):
+    """Recent town board posts, newest first."""
+    db = get_db()
+    rows = db.execute(
+        """SELECT tb.id, tb.message, tb.created_at, p.name as player_name
+           FROM town_board tb
+           JOIN players p ON tb.player_id = p.id
+           ORDER BY tb.id DESC
+           LIMIT ?""",
+        (limit,),
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
 # ═══ FLOOR THEMES ═══
 
 def get_floor_themes_public():

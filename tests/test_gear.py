@@ -216,8 +216,8 @@ def test_stats_display_shows_effective():
     economy.equip_item(conn, player["id"], "rusty sword")
 
     resp = engine.process_message("!test1234", "Tester", "stats")
-    # Warrior base POW is 2, +2 from sword = 4
-    assert "POW:4" in resp
+    # Warrior base POW is 3, +2 from sword = 5
+    assert "POW:5" in resp
     assert len(resp) <= MSG_CHAR_LIMIT
 
 

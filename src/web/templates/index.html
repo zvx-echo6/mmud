@@ -233,6 +233,25 @@
       </div>
     </div>
 
+    {# ── TOWN BOARD ── #}
+    <div class="board-panel">
+      <div class="panel-header">
+        <span class="panel-title">Town Board</span>
+        <span class="panel-icon">📋</span>
+      </div>
+      <div class="panel-body" id="town-board">
+        {% for post in board_posts %}
+        <div class="board-post-entry">
+          <span class="bp-name">{{ post.player_name }}</span>
+          <span class="bp-text">{{ post.message }}</span>
+          <span class="bp-time">{{ post.created_at }}</span>
+        </div>
+        {% else %}
+        <div style="color:var(--text-ghost);font-style:italic;font-size:13px;">No posts yet. Use POST in-game to write.</div>
+        {% endfor %}
+      </div>
+    </div>
+
     {# ── MODE STATUS ── #}
     <div class="board-panel">
       <div class="panel-header">

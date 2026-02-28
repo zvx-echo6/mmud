@@ -233,3 +233,15 @@ def test_vault_rooms_have_exits():
             (v["id"],),
         ).fetchone()
         assert exits["cnt"] > 0, f"Vault {v['id']} has no exits"
+
+
+def test_no_duplicate_exits_per_room():
+    """No room should have duplicate exits in the same direction."""
+    conn, stats = _generate()
+    rooms = conn.execute("SELECT id FROM rooms").fetchall()
+    for r in rooms:
+        exits = conn.execute(
+            "SELECT direction, COUNT(*) as cnt FROM room_exits WHERE from_room_id = ? GROUP BY direction HAVING cnt > 1",
+            (r["id"],),
+        ).fetchall()
+        assert len(exits) == 0, f"Room {r['id']} has duplicate exit directions: {[e['direction'] for e in exits]}"

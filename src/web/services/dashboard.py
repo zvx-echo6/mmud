@@ -25,6 +25,7 @@ def get_dashboard_data():
         "leaderboard": gamedb.get_leaderboard(limit=10),
         "broadcasts": gamedb.get_broadcasts(limit=20),
         "bounties": gamedb.get_bounties(),
+        "board_posts": gamedb.get_town_board(limit=15),
         "secrets": gamedb.get_secrets_status(),
         "player_count": gamedb.get_player_count(),
         "floor_themes": visible_floors,

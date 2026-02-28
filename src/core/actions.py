@@ -10,6 +10,7 @@ from typing import Optional
 
 from config import (
     BARD_TOKEN_CAP,
+    BOARD_LIST_COUNT,
     CAST_DAMAGE_MULT,
     CAST_RESOURCE_COST,
     CHARGE_DAMAGE_MULT,
@@ -59,7 +60,8 @@ FREE_ACTIONS = {
     "look", "stats", "inventory", "help", "who", "rest", "examine",
     "shop", "buy", "sell", "heal", "bank", "deposit", "withdraw",
     "barkeep", "token", "spend", "train", "equip", "unequip", "drop",
-    "enter", "return", "leave", "bounty", "read", "helpful", "message", "mail",
+    "enter", "return", "leave", "bounty", "board", "read", "helpful", "message",
+    "post", "mail",
     "grist", "healer", "merchant", "rumor",
     "logout",
 }
@@ -105,6 +107,19 @@ def _activate_floor_boss(conn: sqlite3.Connection, monster: dict) -> int:
     )
     conn.commit()
     return hp
+
+
+def _room_hints(player_class: str) -> list[str]:
+    """Return contextual command hints for room display brackets.
+
+    Every room shows EX (examine) plus the player's own class ability shortcut.
+    """
+    ability = {"warrior": "CH", "rogue": "SN", "caster": "CA"}
+    hints = ["EX"]
+    ab = ability.get(player_class)
+    if ab:
+        hints.append(ab)
+    return hints
 
 
 def _combat_hint(player_class: str) -> str:
@@ -158,9 +173,11 @@ def handle_action(
         "token": action_token,
         "spend": action_spend,
         "bounty": action_bounty,
+        "board": action_board,
         "read": action_read,
         "helpful": action_helpful,
         "message": action_message,
+        "post": action_post,
         "mail": action_mail,
         "who": action_who,
         # Examine (town secrets + dungeon)
@@ -242,7 +259,7 @@ def action_look(conn: sqlite3.Connection, player: dict, args: list[str]) -> str:
                 desc = TOWN_DESCRIPTIONS[loc]
             else:
                 desc = room["description"]
-            return fmt_room(room["name"], desc, exit_dirs)
+            return fmt_room(room["name"], desc, exit_dirs, _room_hints(player["class"]))
         # Fallback for pre-migration players without room_id
         loc = player.get("town_location")
         if loc and loc in TOWN_DESCRIPTIONS:
@@ -266,8 +283,10 @@ def action_look(conn: sqlite3.Connection, player: dict, args: list[str]) -> str:
         hint = _combat_hint(player["class"])
         monster_info = f" {tag}{monster['name']} lurks here! {hint}"
         desc = room["description_short"] + monster_info
-    else:
-        desc = room["description"]
+        # Monster encounter — combat hints already shown, no room hints
+        return fmt_room(room["name"], desc, exit_dirs)
+
+    desc = room["description"]
 
     # Append player messages
     msgs = social_sys.get_room_messages(conn, player["room_id"], player["id"])
@@ -275,7 +294,7 @@ def action_look(conn: sqlite3.Connection, player: dict, args: list[str]) -> str:
     if msg_str:
         desc = desc + " " + msg_str
 
-    return fmt_room(room["name"], desc, exit_dirs)
+    return fmt_room(room["name"], desc, exit_dirs, _room_hints(player["class"]))
 
 
 def action_move(conn: sqlite3.Connection, player: dict, args: list[str]) -> str:
@@ -314,7 +333,7 @@ def action_move(conn: sqlite3.Connection, player: dict, args: list[str]) -> str:
             player_model.update_state(conn, player["id"], town_location=npc)
         else:
             player_model.update_state(conn, player["id"], town_location=None)
-        return fmt_room(room["name"], room["description_short"], exit_dirs)
+        return fmt_room(room["name"], room["description_short"], exit_dirs, _room_hints(player["class"]))
 
     # Auto-record floor boss visit if boss is dead in this room
     dead_boss = conn.execute(
@@ -349,7 +368,7 @@ def action_move(conn: sqlite3.Connection, player: dict, args: list[str]) -> str:
         if monster:
             if MONSTER_RETREAT_ON_CLEARED and floor_cleared:
                 desc = transition + f" A {monster['name']} retreats deeper."
-                return fmt_room(room["name"], desc, exit_dirs)
+                return fmt_room(room["name"], desc, exit_dirs, _room_hints(player["class"]))
             # Activate floor boss on first encounter (hp=0 at generation)
             if monster.get("is_floor_boss") and monster["hp"] <= 0:
                 _activate_floor_boss(conn, monster)
@@ -359,14 +378,14 @@ def action_move(conn: sqlite3.Connection, player: dict, args: list[str]) -> str:
             hint = _combat_hint(player["class"])
             desc = transition + f" {tag}{monster['name']} blocks your path! {hint}"
             return fmt_room(room["name"], desc, exit_dirs)
-        return fmt_room(room["name"], transition, exit_dirs)
+        return fmt_room(room["name"], transition, exit_dirs, _room_hints(player["class"]))
 
     # Dungeon: check for monster
     monster = world_data.get_room_monster(conn, room["id"])
     if monster:
         if MONSTER_RETREAT_ON_CLEARED and floor_cleared:
             desc = room["description_short"] + f" A {monster['name']} retreats deeper."
-            return fmt_room(room["name"], desc, exit_dirs)
+            return fmt_room(room["name"], desc, exit_dirs, _room_hints(player["class"]))
         # Activate floor boss on first encounter (hp=0 at generation)
         if monster.get("is_floor_boss") and monster["hp"] <= 0:
             _activate_floor_boss(conn, monster)
@@ -377,7 +396,7 @@ def action_move(conn: sqlite3.Connection, player: dict, args: list[str]) -> str:
         desc = room["description_short"] + f" {tag}{monster['name']} blocks your path! {hint}"
         return fmt_room(room["name"], desc, exit_dirs)
 
-    return fmt_room(room["name"], room["description_short"], exit_dirs)
+    return fmt_room(room["name"], room["description_short"], exit_dirs, _room_hints(player["class"]))
 
 
 def action_fight(conn: sqlite3.Connection, player: dict, args: list[str]) -> str:
@@ -595,9 +614,10 @@ def action_enter_dungeon(
     # Show floor transition text if available
     floor = target_floor if target_floor > 0 else 1
     transition = world_mgr._get_floor_transition(conn, floor)
+    hints = _room_hints(player["class"])
     if transition:
-        return fmt_room(room["name"], transition, exit_dirs)
-    return fmt_room(room["name"], room["description"], exit_dirs)
+        return fmt_room(room["name"], transition, exit_dirs, hints)
+    return fmt_room(room["name"], room["description"], exit_dirs, hints)
 
 
 def action_return(
@@ -659,7 +679,7 @@ def action_help(conn: sqlite3.Connection, player: dict, args: list[str]) -> str:
     ability_hints = {"warrior": " CH(arge)", "rogue": " SN(eak)", "caster": " CA(st)"}
     hint = ability_hints.get(player["class"], "")
     if player["state"] == "town":
-        return fmt("N/S/E/W ENTER SHOP HEAL BANK EX TOK BOUNTY MAIL WHO TRAIN REST HELP")
+        return fmt("N/S/E/W ENTER SHOP HEAL BANK EX TOK BOUNTY BOARD WHO TRAIN REST HELP")
     if player["state"] == "combat":
         return fmt(f"FIGHT(F) FL(ee){hint} STATS LOOK HELP")
     if player["state"] == "dungeon":
@@ -918,9 +938,46 @@ def action_bounty(conn: sqlite3.Connection, player: dict, args: list[str]) -> st
     return fmt(bounty_sys.format_bounty_list(conn))
 
 
+def action_board(conn: sqlite3.Connection, player: dict, args: list[str]) -> str:
+    """Show the town bulletin board. Optional start number for pagination."""
+    if player["state"] != "town":
+        return fmt("The board is in town. Head back first.")
+
+    total = social_sys.get_board_count(conn)
+    if total == 0:
+        return fmt("Board is empty. POST <text> to write.")
+
+    # Parse optional start number
+    start = None
+    if args:
+        try:
+            start = int(args[0])
+        except ValueError:
+            pass
+
+    if start is None or start < 1:
+        # Default: show last BOARD_LIST_COUNT posts
+        start = max(1, total - BOARD_LIST_COUNT + 1)
+
+    offset = start - 1
+    posts = social_sys.get_board_posts(conn, limit=BOARD_LIST_COUNT, offset=offset)
+    return fmt(social_sys.format_board_listing(posts, start, total))
+
+
 def action_read(conn: sqlite3.Connection, player: dict, args: list[str]) -> str:
-    """Read mail or messages."""
-    ok, msg = social_sys.read_oldest_unread(conn, player["id"])
+    """Read a board post by number, or list the board if no args."""
+    if player["state"] != "town":
+        return fmt("The board is in town. Head back first.")
+
+    if not args:
+        return action_board(conn, player, args)
+
+    try:
+        post_num = int(args[0])
+    except ValueError:
+        return action_board(conn, player, args)
+
+    ok, msg = social_sys.get_board_post(conn, post_num)
     return fmt(msg)
 
 
@@ -962,23 +1019,19 @@ def action_message(conn: sqlite3.Connection, player: dict, args: list[str]) -> s
     return fmt(msg)
 
 
-def action_mail(conn: sqlite3.Connection, player: dict, args: list[str]) -> str:
-    """Send mail or check inbox. Sending costs 1 social action."""
+def action_post(conn: sqlite3.Connection, player: dict, args: list[str]) -> str:
+    """Post a message to the town bulletin board. Costs 1 social action."""
+    if player["state"] != "town":
+        return fmt("The board is in town. Head back first.")
+
     if not args:
-        unread, total = social_sys.get_inbox(conn, player["id"])
-        return fmt(f"Mail: {unread} unread / {total} total. MAIL <player> <msg> or READ")
+        return fmt("POST <text> to write on the board (140 char max).")
 
-    if len(args) == 1:
-        # Might be trying to read
-        return fmt("MAIL <player> <message> to send. READ to check mail.")
-
-    # Sending mail — costs social action
     if player["social_actions_remaining"] <= 0:
         return fmt("No social actions left today.")
 
-    to_name = args[0]
-    message = " ".join(args[1:])
-    ok, msg = social_sys.send_mail(conn, player["id"], to_name, message)
+    text = " ".join(args)
+    ok, msg = social_sys.post_to_board(conn, player["id"], player["name"], text)
     if ok:
         conn.execute(
             "UPDATE players SET social_actions_remaining = social_actions_remaining - 1 WHERE id = ?",
@@ -986,6 +1039,11 @@ def action_mail(conn: sqlite3.Connection, player: dict, args: list[str]) -> str:
         )
         conn.commit()
     return fmt(msg)
+
+
+def action_mail(conn: sqlite3.Connection, player: dict, args: list[str]) -> str:
+    """Mail is gone. Redirect to BOARD/POST."""
+    return fmt("Mail is gone. Use BOARD to read or POST <text> to write.")
 
 
 def action_who(conn: sqlite3.Connection, player: dict, args: list[str]) -> str:
@@ -1161,32 +1219,19 @@ def action_sneak(conn: sqlite3.Connection, player: dict, args: list[str]) -> str
         if not monster:
             world_mgr.exit_combat(conn, player["id"])
             return fmt("No target.")
-        if random.random() < SNEAK_BYPASS_CHANCE:
-            dmg = combat_engine.calc_damage(eff["pow"] * 2, monster["def"], attacker_level=player["level"])
-            world_data.damage_monster(conn, monster["id"], dmg)
-            new_mhp = max(0, monster["hp"] - dmg)
-            if new_mhp <= 0:
-                world_mgr.exit_combat(conn, player["id"])
-                xp = monster["xp_reward"]
-                gold = random.randint(monster["gold_reward_min"], monster["gold_reward_max"])
-                player_model.award_xp(conn, player["id"], xp)
-                player_model.award_gold(conn, player["id"], gold)
-                return fmt(f"Backstab! {monster['name']} falls! {dmg}dmg +{xp}xp +{gold}g")
+        # Backstab always lands
+        dmg = combat_engine.calc_damage(eff["pow"] * 2, monster["def"], attacker_level=player["level"])
+        world_data.damage_monster(conn, monster["id"], dmg)
+        new_mhp = max(0, monster["hp"] - dmg)
+        if new_mhp <= 0:
             world_mgr.exit_combat(conn, player["id"])
-            return fmt(f"Backstab {dmg}dmg! You slip away. {monster['name']}:{new_mhp}/{monster['hp_max']}")
-        else:
-            result = combat_engine.resolve_round(
-                eff["pow"], eff["def"], eff["spd"], player["hp"],
-                monster["pow"], monster["def"], monster["spd"], monster["hp"],
-                monster["name"], player_level=player["level"],
-            )
-            player_model.update_state(conn, player["id"], hp=result.player_hp)
-            if result.player_damage_dealt > 0:
-                world_data.damage_monster(conn, monster["id"], result.player_damage_dealt)
-            if result.player_dead:
-                losses = player_model.apply_death(conn, player["id"])
-                return fmt_death(losses["gold_lost"], losses["xp_lost"])
-            return fmt(f"Sneak failed! {result.narrative}")
+            xp = monster["xp_reward"]
+            gold = random.randint(monster["gold_reward_min"], monster["gold_reward_max"])
+            player_model.award_xp(conn, player["id"], xp)
+            player_model.award_gold(conn, player["id"], gold)
+            return fmt(f"Backstab! {monster['name']} falls! {dmg}dmg +{xp}xp +{gold}g")
+        world_mgr.exit_combat(conn, player["id"])
+        return fmt(f"Backstab {dmg}dmg! You slip away. {monster['name']}:{new_mhp}/{monster['hp_max']}")
 
     # Dungeon: sneak through room
     if not args:
@@ -1200,13 +1245,13 @@ def action_sneak(conn: sqlite3.Connection, player: dict, args: list[str]) -> str
         if random.random() < SNEAK_BYPASS_CHANCE:
             exits = world_data.get_room_exits(conn, room["id"])
             exit_dirs = [e["direction"] for e in exits]
-            return fmt_room(room["name"], f"You slip past {monster['name']} unseen.", exit_dirs)
+            return fmt_room(room["name"], f"You slip past {monster['name']} unseen.", exit_dirs, _room_hints(player["class"]))
         else:
             world_mgr.enter_combat(conn, player["id"], monster["id"])
             return fmt(f"Spotted! {monster['name']} blocks your path in {room['name']}!")
     exits = world_data.get_room_exits(conn, room["id"])
     exit_dirs = [e["direction"] for e in exits]
-    return fmt_room(room["name"], room["description_short"], exit_dirs)
+    return fmt_room(room["name"], room["description_short"], exit_dirs, _room_hints(player["class"]))
 
 
 def _get_random_spell_name(conn: sqlite3.Connection) -> str:
@@ -1234,7 +1279,7 @@ def action_cast(conn: sqlite3.Connection, player: dict, args: list[str]) -> str:
         if not monster:
             world_mgr.exit_combat(conn, player["id"])
             return fmt("No target.")
-        dmg = max(1, int(eff["pow"] * CAST_DAMAGE_MULT * random.uniform(0.8, 1.2)))
+        dmg = combat_engine.calc_damage(int(eff["pow"] * CAST_DAMAGE_MULT), monster["def"] // 2, attacker_level=player["level"])
         world_data.damage_monster(conn, monster["id"], dmg)
         new_mhp = max(0, monster["hp"] - dmg)
         # Pick spell name from epoch

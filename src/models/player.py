@@ -26,9 +26,9 @@ from config import (
 
 # Base HP by class at level 1
 BASE_HP = {
-    "warrior": 60,
+    "warrior": 70,
     "rogue": 40,
-    "caster": 35,
+    "caster": 30,
 }
 
 

@@ -720,6 +720,51 @@ body::before {
 .broadcast-log::-webkit-scrollbar-track { background: transparent; }
 .broadcast-log::-webkit-scrollbar-thumb { background: var(--smoke-light); border-radius: 2px; }
 
+/* ═══ TOWN BOARD ═══ */
+.board-post-entry {
+  padding: 7px 0;
+  border-bottom: 1px solid rgba(90,82,68,0.08);
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.board-post-entry:last-child { border-bottom: none; }
+
+.bp-name {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  color: var(--ember-glow);
+  flex-shrink: 0;
+}
+
+.bp-text {
+  font-size: 13px;
+  color: var(--text-bright);
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bp-time {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  color: var(--text-ghost);
+  flex-shrink: 0;
+}
+
+#town-board {
+  max-height: 280px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--smoke-light) transparent;
+}
+
+#town-board::-webkit-scrollbar { width: 4px; }
+#town-board::-webkit-scrollbar-track { background: transparent; }
+#town-board::-webkit-scrollbar-thumb { background: var(--smoke-light); border-radius: 2px; }
+
 /* ═══ BOUNTY BOARD ═══ */
 .bounty-card {
   padding: 12px 0;

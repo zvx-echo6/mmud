@@ -40,7 +40,7 @@ BACKPACK_SIZE = 8
 
 # Classes
 CLASSES = {
-    "warrior":  {"POW": 2, "DEF": 4, "SPD": 1},
+    "warrior":  {"POW": 3, "DEF": 4, "SPD": 1},
     "rogue":    {"POW": 3, "DEF": 3, "SPD": 3},
     "caster":   {"POW": 4, "DEF": 1, "SPD": 2},
 }
@@ -53,7 +53,7 @@ RESOURCE_REGEN_TOWN = 1
 RESOURCE_REGEN_REST = 1
 
 # Special ability constants
-CHARGE_RESOURCE_COST = 2
+CHARGE_RESOURCE_COST = 1
 CHARGE_DAMAGE_MULT = 2.0
 SNEAK_RESOURCE_COST = 1
 SNEAK_BYPASS_CHANCE = 0.85
@@ -448,6 +448,11 @@ BROADCAST_TIERS = {
 
 PLAYER_MSG_CHAR_LIMIT = 15    # Freeform, attributed, rated helpful
 PLAYER_MSG_PER_ROOM = 1       # One message per room per player
+
+# Town Bulletin Board
+BOARD_POST_CHAR_LIMIT = 140
+BOARD_LIST_COUNT = 5
+BOARD_DASHBOARD_COUNT = 15
 
 # =============================================================================
 # META-PROGRESSION (Survives Wipes)
