@@ -80,16 +80,16 @@ def test_fmt_room_dedup_exits():
 
 def test_fmt_room_with_hints():
     """Hints appear after exits inside brackets."""
-    result = fmt_room("Hall", "Dusty.", ["n", "s", "e"], hints=["EX", "CH"])
-    assert "[n,s,e EX CH]" in result
+    result = fmt_room("Hall", "Dusty.", ["n", "s", "e"], hints=["L", "CH"])
+    assert "[n,s,e L CH]" in result
     assert len(result) <= MSG_CHAR_LIMIT
 
 
 def test_fmt_room_dead_end():
     """Single-exit room shows 'Dead end.' prefix."""
-    result = fmt_room("Alcove", "A cramped alcove.", ["s"], hints=["EX", "SN"])
+    result = fmt_room("Alcove", "A cramped alcove.", ["s"], hints=["L", "SN"])
     assert "Dead end." in result
-    assert "[s EX SN]" in result
+    assert "[s L SN]" in result
     assert len(result) <= MSG_CHAR_LIMIT
 
 

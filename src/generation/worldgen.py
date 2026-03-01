@@ -540,14 +540,14 @@ def _floor_to_tier(floor: int) -> int:
 
 def _monster_hp(tier: int) -> int:
     """Calculate monster HP based on tier."""
-    base = {1: 8, 2: 25, 3: 45, 4: 70, 5: 100}
+    base = {1: 6, 2: 18, 3: 45, 4: 70, 5: 100}
     hp = base.get(tier, 15)
     return hp + random.randint(-2, 3)
 
 
 def _monster_stat(tier: int, stat: str) -> int:
     """Calculate a monster stat based on tier."""
-    base = {1: 2, 2: 4, 3: 7, 4: 9, 5: 12}
+    base = {1: 1, 2: 3, 3: 7, 4: 9, 5: 12}
     val = base.get(tier, 3)
     return max(1, val + random.randint(-1, 1))
 
@@ -559,10 +559,10 @@ def _monster_xp(tier: int) -> int:
 
 
 def _monster_gold(tier: int) -> tuple[int, int]:
-    """Calculate monster gold drop range."""
-    base_min = {1: 2, 2: 5, 3: 10, 4: 18, 5: 30}
-    base_max = {1: 8, 2: 15, 3: 25, 4: 40, 5: 60}
-    return base_min.get(tier, 2), base_max.get(tier, 8)
+    """Calculate monster gold drop range (2x base for economy balance)."""
+    base_min = {1: 4, 2: 10, 3: 20, 4: 36, 5: 60}
+    base_max = {1: 16, 2: 30, 3: 50, 4: 80, 5: 120}
+    return base_min.get(tier, 4), base_max.get(tier, 16)
 
 
 # ── Item generation ────────────────────────────────────────────────────────

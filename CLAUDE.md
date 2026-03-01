@@ -219,11 +219,11 @@ The Last Ember is a Flask web dashboard in `src/web/`. It runs in-process with t
 ### Routes
 - **Public:** `/` (dashboard), `/chronicle` (epoch history), `/howto` (class guide)
 - **API:** `/api/status`, `/api/broadcasts`, `/api/bounties`, `/api/mode`, `/api/leaderboard`
-- **Admin:** `/admin/*` (session auth), `/admin/llm` (LLM backend config)
+- **Admin:** `/admin/*` (session auth), `/admin/llm` (LLM backend config), `/admin/epoch` (epoch generation + soft regen)
 
 ## Testing
 
-- **990+ tests** — unit tests for combat math, integration tests for full action pipelines, epoch generation validation
+- **1035+ tests** — unit tests for combat math, integration tests for full action pipelines, epoch generation validation
 - No mocking the DB — use in-memory SQLite
 - `python3 -m pytest tests/ -x -v` to run all
 - Tests use `helpers.py:generate_test_epoch()` for full epoch setup
@@ -236,8 +236,13 @@ The Last Ember is a Flask web dashboard in `src/web/`. It runs in-process with t
 - **Actions are atomic.** One command in, one response out. No multi-step confirmations.
 - **Town is free.** Never charge a movement action for anything in town.
 - **Combat is free.** Fight, flee, charge, sneak, cast never cost movement actions. Only room-to-room movement (N/S/E/W) costs actions.
+- **LOOK = Search.** EXAMINE was removed. Dungeon LOOK costs 1 action and searches for secrets. Town/combat LOOK are free.
 - **RETURN always works.** Players can retreat to town from any dungeon state (not combat) regardless of remaining actions.
 - **Reveal is once per room per player.** The `player_reveals` table tracks this with a UNIQUE constraint.
+- **Boss warnings.** Pre-breach (day < 15): boss encounter shows `[BOSS HP/MaxHP]`. Post-breach: just `[BOSS]`.
+- **Post-kill exits.** After killing a monster, available exits are shown in the kill message.
+- **Unactivated bosses.** Floor bosses generate with hp=0, hp_max=0 and only activate on first combat. The dead-boss auto-record check requires `hp_max > 0` to avoid treating unactivated bosses as dead.
+- **Soft regen.** Admin can regenerate the world while keeping characters via the epoch admin page button.
 - **Docker is COPY-based, not bind-mount.** `docker compose restart` does NOT pick up code changes. Must run `docker compose build --no-cache && docker compose up -d`.
 - **No max_tokens on LLM calls.** Character limits in prompts and MSG_CHAR_LIMIT enforce output length. Never pass max_tokens — thinking models (Gemini 2.5 Flash) count thinking tokens against the limit, causing truncated responses.
 - **The design doc is the source of truth.** If code contradicts `docs/planned.md`, the code is wrong.

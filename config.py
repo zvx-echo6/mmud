@@ -30,9 +30,9 @@ BONUS_ACTION_TOKEN_COST = 2   # Bard tokens for +1 dungeon action
 MAX_LEVEL = 10
 STAT_NAMES = ["POW", "DEF", "SPD"]
 
-# XP curve tuned for 30-day epoch
-# Levels 1-4: days 1-5, Levels 5-7: days 6-14, Levels 8-10: days 15-30
-XP_PER_LEVEL = [0, 100, 250, 500, 900, 1500, 2300, 3400, 4800, 6500]
+# XP curve tuned for 30-day epoch — compressed so early levels come faster
+# Levels 1-4: days 1-3, Levels 5-7: days 4-10, Levels 8-10: days 11-30
+XP_PER_LEVEL = [0, 60, 150, 300, 550, 900, 1400, 2100, 3200, 4800]
 
 GEAR_SLOTS = ["weapon", "armor", "trinket"]
 ITEM_TIERS = 6                # Tier 6 = endgame loot drops only
@@ -180,13 +180,13 @@ DEATH_GOLD_LOSS_PERCENT = 20    # % of carried gold lost on death
 
 STAT_POINTS_PER_LEVEL = 2        # Free stat points awarded on level-up
 
-# Shop prices per tier — exponential matching LORD model
+# Shop prices per tier — 40% lower to match doubled gold income
 SHOP_PRICES = {
-    1: 65,      # Day 1
-    2: 250,     # Day 2-3
-    3: 900,     # Day 4-5
-    4: 3250,    # Day 6-8
-    5: 12500,   # Day 9-11
+    1: 40,      # Day 1
+    2: 150,     # Day 2-3
+    3: 540,     # Day 4-5
+    4: 1950,    # Day 6-8
+    5: 7500,    # Day 9-11
     # Tier 6: loot drops only, never sold
 }
 

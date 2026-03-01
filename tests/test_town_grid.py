@@ -415,11 +415,11 @@ def test_town_bank_works():
     assert len(resp) <= MSG_CHAR_LIMIT
 
 
-# ── Examine Tests ───────────────────────────────────────────────────────
+# ── Look/Search Tests ──────────────────────────────────────────────────
 
 
-def test_town_examine_finds_secret():
-    """EXAMINE in a room with an undiscovered secret finds it."""
+def test_town_look_finds_secret():
+    """LOOK in a room with an undiscovered secret finds it."""
     conn = make_town_db()
     backend = DummyBackend()
 
@@ -446,11 +446,11 @@ def test_town_examine_finds_secret():
         )
         conn.commit()
 
-        resp = engine.process_message("!test1234", "Tester", "examine")
+        resp = engine.process_message("!test1234", "Tester", "look")
         assert "Found" in resp
 
 
-def test_town_examine_awards_bard_token():
+def test_town_look_awards_bard_token():
     """Town secret discovery awards a bard token."""
     conn = make_town_db()
     backend = DummyBackend()
@@ -477,13 +477,13 @@ def test_town_examine_awards_bard_token():
         )
         conn.commit()
 
-        engine.process_message("!test1234", "Tester", "examine")
+        engine.process_message("!test1234", "Tester", "look")
 
         player = get_player(conn)
         assert player["bard_tokens"] == initial_tokens + 1
 
 
-def test_town_examine_no_gold_reward():
+def test_town_look_no_gold_reward():
     """Town secret does NOT award gold (bard token only)."""
     conn = make_town_db()
     backend = DummyBackend()
@@ -509,21 +509,22 @@ def test_town_examine_no_gold_reward():
         )
         conn.commit()
 
-        engine.process_message("!test1234", "Tester", "examine")
+        engine.process_message("!test1234", "Tester", "look")
 
         player = get_player(conn)
         assert player["gold_carried"] == initial_gold
 
 
-def test_town_examine_empty_room():
-    """EXAMINE in room without secret says nothing unusual."""
+def test_town_look_empty_room():
+    """LOOK in room without secret shows the room description."""
     conn = make_town_db()
     engine = GameEngine(conn)
     register_player(engine)
 
-    # No secrets generated — examine should find nothing
-    resp = engine.process_message("!test1234", "Tester", "examine")
-    assert "Nothing unusual" in resp
+    # No secrets generated — look should show the room
+    resp = engine.process_message("!test1234", "Tester", "look")
+    # Should show the room description, not "Nothing unusual"
+    assert "Last Ember" in resp or "[" in resp
 
 
 def test_town_descriptions_under_150():

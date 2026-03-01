@@ -461,43 +461,43 @@ def test_full_combat_zero_actions():
 
 
 def test_enter_dungeon_shows_hints_warrior():
-    """ENTER dungeon shows EX and CH hints for warrior."""
+    """ENTER dungeon shows L and CH hints for warrior."""
     conn = make_test_db()
     engine = GameEngine(conn)
     register_player(engine, cls="w")
 
     resp = engine.process_message("!test1234", "Tester", "enter")
-    assert "EX" in resp
+    assert " L " in resp or " L]" in resp or "[L" in resp
     assert "CH" in resp
     assert len(resp) <= MSG_CHAR_LIMIT
 
 
 def test_enter_dungeon_shows_hints_rogue():
-    """ENTER dungeon shows EX and SN hints for rogue."""
+    """ENTER dungeon shows L and SN hints for rogue."""
     conn = make_test_db()
     engine = GameEngine(conn)
     register_player(engine, cls="r")
 
     resp = engine.process_message("!test1234", "Tester", "enter")
-    assert "EX" in resp
+    assert " L " in resp or " L]" in resp or "[L" in resp
     assert "SN" in resp
     assert len(resp) <= MSG_CHAR_LIMIT
 
 
 def test_enter_dungeon_shows_hints_caster():
-    """ENTER dungeon shows EX and CA hints for caster."""
+    """ENTER dungeon shows L and CA hints for caster."""
     conn = make_test_db()
     engine = GameEngine(conn)
     register_player(engine, cls="c")
 
     resp = engine.process_message("!test1234", "Tester", "enter")
-    assert "EX" in resp
+    assert " L " in resp or " L]" in resp or "[L" in resp
     assert "CA" in resp
     assert len(resp) <= MSG_CHAR_LIMIT
 
 
 def test_move_clear_room_shows_hints():
-    """Moving to a clear dungeon room shows EX + class hint."""
+    """Moving to a clear dungeon room shows L + class hint."""
     conn = make_test_db()
     engine = GameEngine(conn)
     register_player(engine, cls="w")
@@ -505,7 +505,7 @@ def test_move_clear_room_shows_hints():
     engine.process_message("!test1234", "Tester", "enter")
     resp = engine.process_message("!test1234", "Tester", "e")
     assert "Empty Hall" in resp
-    assert "EX" in resp
+    assert " L " in resp or " L]" in resp or "[L" in resp
     assert "CH" in resp
     assert len(resp) <= MSG_CHAR_LIMIT
 

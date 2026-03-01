@@ -82,10 +82,10 @@ def test_go_direction():
     assert result.args == ["n"]
 
 
-def test_examine():
-    result = parse("x wall")
-    assert result.command == "examine"
-    assert result.args == ["wall"]
+def test_search_alias():
+    result = parse("search")
+    assert result.command == "look"
+    assert result.args == []
 
 
 def test_class_ability_aliases():
@@ -138,7 +138,7 @@ if __name__ == "__main__":
     test_flee()
     test_class_ability_aliases()
     test_go_direction()
-    test_examine()
+    test_search_alias()
     test_unknown_command()
     test_preserves_raw()
     test_case_insensitive()

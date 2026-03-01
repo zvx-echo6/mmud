@@ -77,6 +77,10 @@
     <button id="generate-btn" class="admin-btn gen-btn" {% if gen_running %}disabled{% endif %}>
       {% if gen_running %}Generating...{% else %}Initialize New Epoch{% endif %}
     </button>
+    <button id="soft-regen-btn" class="admin-btn" style="margin-left:8px;background:#444;border:1px solid #666;" {% if gen_running %}disabled{% endif %}
+      onclick="if(confirm('Regenerate world? Characters will be preserved but all players will be sent to town.')){startSoftRegen();}">
+      Regenerate World (Keep Characters)
+    </button>
   </div>
 
   {# ═══ GENERATION LOG ═══ #}
@@ -263,6 +267,53 @@
     html += '</div>';
     summaryEl.innerHTML = html;
     summaryEl.style.display = 'block';
+  }
+
+  function startSoftRegen() {
+    btn.disabled = true;
+    document.getElementById('soft-regen-btn').disabled = true;
+    logEl.style.display = 'block';
+    logBody.innerHTML = '';
+    summaryEl.style.display = 'none';
+    statusDot.classList.add('active');
+
+    fetch('{{ url_for("admin.epoch_soft_regen") }}', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+      body: ''
+    }).then(function(r) {
+      if (!r.ok) throw new Error('Failed: ' + r.status);
+      var source = new EventSource('{{ url_for("admin.epoch_generate_stream") }}');
+      source.onmessage = function(event) {
+        var data = JSON.parse(event.data);
+        if (data.type === 'log') {
+          var cls = '';
+          if (data.message.indexOf('COMPLETE') >= 0) cls = 'log-success';
+          if (data.message.indexOf('ERROR') >= 0) cls = 'log-error';
+          appendLog(data.message, cls);
+        }
+        if (data.type === 'complete') {
+          source.close();
+          btn.disabled = false;
+          document.getElementById('soft-regen-btn').disabled = false;
+          btn.textContent = 'Initialize New Epoch';
+          statusDot.classList.remove('active');
+          if (data.result && data.result.success) renderSummary(data.result);
+        }
+      };
+      source.onerror = function() {
+        source.close();
+        btn.disabled = false;
+        document.getElementById('soft-regen-btn').disabled = false;
+        statusDot.classList.remove('active');
+        appendLog('Connection lost.', 'log-error');
+      };
+    }).catch(function(err) {
+      btn.disabled = false;
+      document.getElementById('soft-regen-btn').disabled = false;
+      statusDot.classList.remove('active');
+      appendLog('Failed: ' + err.message, 'log-error');
+    });
   }
 
   btn.addEventListener('click', startGeneration);

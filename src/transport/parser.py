@@ -25,10 +25,8 @@ ALIASES = {
     "go": "move",
     # Combat
     "f": "fight", "a": "fight", "attack": "fight",
-    # Look
-    "l": "look",
-    # Examine
-    "x": "examine", "ex": "examine", "examine": "examine",
+    # Look / Search
+    "l": "look", "search": "look",
     # Stats
     "st": "stats",
     # Inventory

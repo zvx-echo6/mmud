@@ -453,6 +453,24 @@ def epoch_generate_stream():
     )
 
 
+@bp.route("/epoch/soft-regen", methods=["POST"])
+@login_required
+def epoch_soft_regen():
+    if epoch_service.is_running():
+        return jsonify({"error": "Generation already in progress"}), 409
+
+    db_path = web_config.DB_PATH
+    started = epoch_service.start_soft_regen(
+        db_path=db_path,
+        admin_user=session.get("admin_user", "operator"),
+    )
+
+    if not started:
+        return jsonify({"error": "Generation already in progress"}), 409
+
+    return jsonify({"status": "started", "type": "soft_regen"}), 202
+
+
 @bp.route("/epoch/advance-day", methods=["POST"])
 @login_required
 def advance_day():

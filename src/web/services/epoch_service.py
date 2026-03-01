@@ -77,6 +77,37 @@ def start_generation(db_path: str, epoch_number: int = 1,
     return True
 
 
+def start_soft_regen(db_path: str, admin_user: str = "") -> bool:
+    """Regenerate world (rooms, monsters, items) while keeping characters.
+
+    Preserves: accounts, players, node_sessions.
+    Resets: rooms, exits, monsters, items, secrets, bounties, bosses, floor data.
+    All players are returned to town with state='town'.
+    """
+    if _generation_running.is_set():
+        return False
+
+    with _generation_lock:
+        if _generation_running.is_set():
+            return False
+        _generation_running.set()
+
+    while not _generation_log.empty():
+        try:
+            _generation_log.get_nowait()
+        except queue.Empty:
+            break
+    _generation_result.clear()
+
+    thread = threading.Thread(
+        target=_run_soft_regen,
+        args=(db_path, admin_user),
+        daemon=True,
+    )
+    thread.start()
+    return True
+
+
 def _log(msg: str) -> None:
     """Emit a log line to the queue."""
     _generation_log.put(msg)
@@ -454,3 +485,165 @@ def _seed_npc_journals(conn, epoch_number):
         count += 1
     conn.commit()
     return count
+
+
+def _run_soft_regen(db_path: str, admin_user: str) -> None:
+    """Regenerate world while keeping characters intact."""
+    from src.db.database import get_db
+    from src.generation.bossgen import generate_bosses
+    from src.generation.bountygen import generate_bounties
+    from src.generation.breachgen import generate_breach
+    from src.generation.narrative import get_backend
+    from src.generation.secretgen import generate_secrets
+    from src.generation.themegen import generate_floor_themes, get_floor_themes
+    from src.generation.validation import validate_epoch
+    from src.generation.worldgen import generate_town, generate_world
+
+    start_time = time.time()
+
+    try:
+        conn = get_db(db_path)
+        conn.execute("PRAGMA busy_timeout=30000")
+        backend = get_backend(db_path=db_path)
+        backend_name = type(backend).__name__
+
+        # Get current epoch info
+        epoch_row = conn.execute("SELECT * FROM epoch WHERE id = 1").fetchone()
+        if not epoch_row:
+            _log("ERROR: No epoch found. Run a full generation first.")
+            _generation_result.update({"success": False, "error": "No epoch found"})
+            return
+        epoch_number = epoch_row["epoch_number"]
+        endgame_mode = epoch_row["endgame_mode"]
+        breach_type = epoch_row["breach_type"]
+
+        _log("=== SOFT REGEN — KEEP CHARACTERS ===")
+        _log(f"Backend: {backend_name}")
+        _log(f"Epoch #{epoch_number} (preserving)")
+
+        # Step 1: Reset world tables (NOT players, accounts, sessions)
+        step_start = time.time()
+        _log("[1/8] Clearing world data (keeping characters)...")
+        world_tables = [
+            "broadcast_seen", "broadcasts", "player_messages", "mail", "town_board",
+            "npc_journals", "npc_dialogue", "narrative_skins",
+            "breach", "htl_checkpoints",
+            "escape_participants", "escape_run",
+            "raid_boss_contributors", "raid_boss",
+            "bounty_contributors", "bounties",
+            "discovery_buffs", "secret_progress", "secrets",
+            "inventory", "monsters", "room_exits", "rooms", "items",
+            "floor_themes", "floor_progress",
+        ]
+        for table in world_tables:
+            conn.execute(f"DELETE FROM {table}")
+
+        # Reset all players to town
+        conn.execute(
+            "UPDATE players SET state = 'town', room_id = NULL, floor = 0, "
+            "combat_monster_id = NULL, town_location = 'tavern'"
+        )
+        # Reset day counter
+        conn.execute("UPDATE epoch SET day_number = 1")
+        conn.commit()
+        _log(f"[1/8] World cleared, players sent to town ({_elapsed(step_start)})")
+
+        # Step 2: Floor sub-themes
+        step_start = time.time()
+        _log("[2/8] Generating floor sub-themes...")
+        theme_stats = generate_floor_themes(conn, backend)
+        floor_themes = get_floor_themes(conn)
+        for f in sorted(floor_themes):
+            _log(f"  Floor {f}: {floor_themes[f]['floor_name']}")
+        _log(f"[2/8] Floor themes: {theme_stats['floor_themes']} ({_elapsed(step_start)})")
+
+        # Step 3: Town generation
+        step_start = time.time()
+        _log("[3/8] Generating town (Floor 0)...")
+        town_stats = generate_town(conn, backend)
+        _log(f"[3/8] Town: {town_stats['rooms']} rooms ({_elapsed(step_start)})")
+
+        # Step 4: World generation
+        step_start = time.time()
+        _log("[4/8] Generating dungeon world...")
+        world_stats = generate_world(conn, backend, floor_themes=floor_themes)
+        _log(f"[4/8] World: {world_stats['rooms']} rooms, {world_stats['monsters']} monsters ({_elapsed(step_start)})")
+
+        # Step 5: Breach zone
+        step_start = time.time()
+        _log("[5/8] Generating breach zone...")
+        breach_stats = generate_breach(conn, backend)
+        _log(f"[5/8] Breach: {breach_stats['rooms']} rooms ({_elapsed(step_start)})")
+
+        # Step 6: Secrets
+        step_start = time.time()
+        _log("[6/8] Placing secrets...")
+        secret_stats = generate_secrets(
+            conn, backend, breach_room_ids=breach_stats["breach_room_ids"],
+            floor_themes=floor_themes,
+        )
+        _log(f"[6/8] Secrets: {secret_stats['total']} ({_elapsed(step_start)})")
+
+        # Step 7: Bounties + Bosses
+        step_start = time.time()
+        _log("[7/8] Generating bounties and bosses...")
+        bounty_stats = generate_bounties(conn, backend, floor_themes=floor_themes)
+        boss_stats = generate_bosses(conn, backend, floor_themes=floor_themes)
+        _log(f"[7/8] Bounties: {bounty_stats['total']}, Bosses: {boss_stats['floor_bosses']} ({_elapsed(step_start)})")
+
+        # Step 8: Narrative + journals
+        step_start = time.time()
+        _log("[8/8] Generating narrative content...")
+        narrative_count = _generate_narrative_content(conn, backend, endgame_mode, breach_type, floor_themes)
+        journal_count = _seed_npc_journals(conn, epoch_number)
+        _log(f"[8/8] Narrative: {narrative_count['dialogue']} dialogue, journals: {journal_count} ({_elapsed(step_start)})")
+
+        # Set player room_ids to the town center
+        hub = conn.execute("SELECT id FROM rooms WHERE floor = 0 AND is_hub = 1 LIMIT 1").fetchone()
+        if hub:
+            conn.execute("UPDATE players SET room_id = ? WHERE state = 'town'", (hub["id"],))
+            conn.commit()
+
+        conn.close()
+
+        total_time = time.time() - start_time
+        total_rooms = town_stats["rooms"] + world_stats["rooms"] + breach_stats["rooms"]
+
+        _log("")
+        _log("=== SOFT REGEN COMPLETE ===")
+        _log(f"Rooms: {total_rooms}, Monsters: {world_stats['monsters']}")
+        _log(f"Characters preserved. All players in town.")
+        _log(f"Time: {total_time:.1f}s")
+
+        _generation_result.update({
+            "success": True,
+            "soft_regen": True,
+            "epoch_number": epoch_number,
+            "rooms": total_rooms,
+            "monsters": world_stats["monsters"],
+            "secrets": secret_stats["total"],
+            "bounties": bounty_stats["total"],
+            "floor_bosses": boss_stats["floor_bosses"],
+            "elapsed": round(total_time, 1),
+        })
+
+        try:
+            aconn = sqlite3.connect(db_path)
+            aconn.execute(
+                "INSERT INTO admin_log (admin, action, details) VALUES (?, ?, ?)",
+                (admin_user or "system", "soft_regen",
+                 f"epoch={epoch_number} rooms={total_rooms} time={total_time:.1f}s"),
+            )
+            aconn.commit()
+            aconn.close()
+        except Exception:
+            pass
+
+    except Exception as e:
+        logger.exception("Soft regen failed")
+        _log(f"")
+        _log(f"FATAL ERROR: {e}")
+        _generation_result.update({"success": False, "error": str(e)})
+    finally:
+        _generation_running.clear()
+        _generation_log.put(None)

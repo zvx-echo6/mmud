@@ -93,7 +93,7 @@ def test_shop_shows_items():
 
     resp = engine.process_message("!test1234", "Tester", "shop")
     assert "Rusty Sword" in resp
-    assert "65g" in resp
+    assert "40g" in resp
     assert len(resp) <= MSG_CHAR_LIMIT
 
 
