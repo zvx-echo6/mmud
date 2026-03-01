@@ -923,13 +923,13 @@ def action_heal(conn: sqlite3.Connection, player: dict, args: list[str]) -> str:
     if player["hp"] >= player["hp_max"]:
         return fmt("Already at full HP.")
 
-    # Maren's Mercy: free heal to 50% if broke and badly hurt
-    mercy_hp = player["hp_max"] // 2
-    if player["gold_carried"] <= 0 and player["hp"] < mercy_hp:
-        player_model.update_state(conn, player["id"], hp=mercy_hp)
-        return fmt(f"Maren sighs. 'No gold? Sit down.' HP restored to {mercy_hp}/{player['hp_max']}.")
-
+    # Maren's Mercy: free heal to 50% if can't afford heal and badly hurt
     cost = economy.calc_heal_cost(player)
+    mercy_hp = player["hp_max"] // 2
+    if player["gold_carried"] < cost and player["hp"] < mercy_hp:
+        player_model.update_state(conn, player["id"], hp=mercy_hp)
+        return fmt(f"Maren sighs. 'Can't pay? Sit down.' HP restored to {mercy_hp}/{player['hp_max']}.")
+
     if args and args[0].lower() == "y":
         ok, msg = economy.heal_player(conn, player["id"], player)
         return fmt(msg)

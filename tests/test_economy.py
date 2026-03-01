@@ -328,16 +328,16 @@ def test_death_loses_carried_gold_only():
 
 
 def test_marens_mercy_triggers():
-    """Maren's Mercy: free heal to 50% if broke and below 50% HP."""
+    """Maren's Mercy: free heal to 50% if can't afford heal and below 50% HP."""
     conn = make_test_db()
     engine = GameEngine(conn)
     _register(engine)
 
     player = player_model.get_player_by_session(conn, "!test1234")
     hp_max = player["hp_max"]
-    # Set to broke and badly hurt (below 50% HP)
+    # Set to badly hurt (below 50% HP) with some gold but not enough to heal
     player_model.update_state(conn, player["id"], hp=5)
-    conn.execute("UPDATE players SET gold_carried = 0 WHERE id = ?", (player["id"],))
+    conn.execute("UPDATE players SET gold_carried = 2 WHERE id = ?", (player["id"],))
     conn.commit()
 
     resp = engine.process_message("!test1234", "Tester", "heal")
@@ -347,15 +347,15 @@ def test_marens_mercy_triggers():
     assert player["hp"] == hp_max // 2
 
 
-def test_marens_mercy_not_if_has_gold():
-    """Maren's Mercy does NOT trigger if player has gold."""
+def test_marens_mercy_not_if_can_afford():
+    """Maren's Mercy does NOT trigger if player can afford the heal."""
     conn = make_test_db()
     engine = GameEngine(conn)
     _register(engine)
 
     player = player_model.get_player_by_session(conn, "!test1234")
     player_model.update_state(conn, player["id"], hp=5)
-    player_model.award_gold(conn, player["id"], 10)
+    player_model.award_gold(conn, player["id"], 500)
 
     resp = engine.process_message("!test1234", "Tester", "heal")
     assert "Maren sighs" not in resp
