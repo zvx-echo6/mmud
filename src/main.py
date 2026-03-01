@@ -230,6 +230,84 @@ def _run_drain_loop(drain: BroadcastDrain, interval: float, stop_event: threadin
         stop_event.wait(interval)
 
 
+WATCHDOG_INTERVAL = 30.0  # Seconds between health checks
+WATCHDOG_MAX_BACKOFF = 5  # Max minutes between reconnect attempts
+
+
+def _run_watchdog(
+    router: NodeRouter,
+    drain: BroadcastDrain,
+    node_configs: dict,
+    stop_event: threading.Event,
+    check_interval: float = WATCHDOG_INTERVAL,
+) -> None:
+    """Background thread: monitor connection health, auto-reconnect dead nodes.
+
+    Runs every check_interval seconds. For each registered transport:
+    1. Check is_healthy()
+    2. If unhealthy → attempt reconnect with backoff
+    3. Re-wire callbacks after successful reconnect
+    4. Re-attach DCRG to broadcast drain if needed
+    """
+    fail_counts: dict[str, int] = {}
+
+    while not stop_event.is_set():
+        stop_event.wait(check_interval)
+        if stop_event.is_set():
+            break
+
+        for name in list(router.transports.keys()):
+            transport = router.transports[name]
+
+            if transport.is_healthy():
+                if fail_counts.get(name, 0) > 0:
+                    fail_counts[name] = 0
+                continue
+
+            # Node is unhealthy
+            failures = fail_counts.get(name, 0) + 1
+            fail_counts[name] = failures
+
+            # Backoff: 1st fail → try now. Then wait longer between attempts.
+            # 2nd: 1 min, 3rd: 2 min, cap at WATCHDOG_MAX_BACKOFF min.
+            if failures > 1:
+                wait_minutes = min(failures - 1, WATCHDOG_MAX_BACKOFF)
+                cycles_needed = max(1, int((wait_minutes * 60) / check_interval))
+                if (failures - 1) % cycles_needed != 0:
+                    logger.debug(
+                        f"[WATCHDOG] {name} backing off "
+                        f"(next attempt in {cycles_needed - ((failures - 1) % cycles_needed)} cycles)"
+                    )
+                    continue
+
+            logger.warning(
+                f"[WATCHDOG] {name} unhealthy (failure #{failures}). "
+                f"Attempting reconnect..."
+            )
+
+            try:
+                if transport.reconnect():
+                    logger.info(
+                        f"[WATCHDOG] {name} reconnected → {transport.my_node_id}"
+                    )
+                    # Re-wire all callbacks (pubsub state may be stale)
+                    router.wire_callbacks()
+
+                    # Re-attach DCRG to broadcast drain
+                    if name == "DCRG":
+                        drain.set_transport(transport)
+
+                    fail_counts[name] = 0
+                else:
+                    logger.error(
+                        f"[WATCHDOG] {name} reconnect failed (attempt #{failures})"
+                    )
+            except Exception as e:
+                logger.error(
+                    f"[WATCHDOG] {name} reconnect error (attempt #{failures}): {e}"
+                )
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="MMUD — Mesh Multi-User Dungeon Server (6-Node Architecture)",
@@ -329,6 +407,18 @@ def main():
         drain_thread.start()
         logger.info("Broadcast drain started")
 
+    # Start connection watchdog thread (6-node mode only)
+    watchdog_thread = None
+    if active_nodes:
+        watchdog_thread = threading.Thread(
+            target=_run_watchdog,
+            args=(router, drain, active_nodes, stop_event),
+            daemon=True,
+            name="connection-watchdog",
+        )
+        watchdog_thread.start()
+        logger.info("Connection watchdog started (30s interval)")
+
     # Track last tick date for wall-clock day tick detection
     from src.models.epoch import get_epoch
     from datetime import date, timedelta
@@ -377,7 +467,7 @@ def main():
             last_tick_date = _check_day_tick(conn, last_tick_date)
             stop_event.wait(5)
     finally:
-        _shutdown(router, conn, drain_thread, stop_event)
+        _shutdown(router, conn, drain_thread, stop_event, watchdog_thread)
 
 
 def _start_multi_node(
@@ -435,14 +525,17 @@ def _shutdown(
     conn,
     drain_thread: threading.Thread | None,
     stop_event: threading.Event,
+    watchdog_thread: threading.Thread | None = None,
 ) -> None:
     """Graceful shutdown: disconnect all transports, close DB."""
     logger.info("Shutting down...")
 
-    # Stop drain thread
+    # Stop background threads
     stop_event.set()
     if drain_thread and drain_thread.is_alive():
         drain_thread.join(timeout=5)
+    if watchdog_thread and watchdog_thread.is_alive():
+        watchdog_thread.join(timeout=5)
 
     # Disconnect all transports
     for name, transport in router.transports.items():

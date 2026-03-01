@@ -90,7 +90,6 @@ class MeshTransport:
         self._send_thread: Optional[threading.Thread] = None
         self._health_thread: Optional[threading.Thread] = None
         self._stop_event = threading.Event()
-        self._reconnect_lock = threading.Lock()
         self._last_send_time: float = 0.0
         self._subscribed: bool = False
         self._pending_acks: dict[str, PendingMessage] = {}  # dest_id → last unacked msg
@@ -151,7 +150,7 @@ class MeshTransport:
         self._connected = True
 
     def disconnect(self) -> None:
-        """Disconnect from the device."""
+        """Disconnect from the device and stop background threads."""
         self._stop_event.set()
         if self._send_thread:
             self._send_thread.join(timeout=5)
@@ -167,6 +166,38 @@ class MeshTransport:
                 pass
             self._interface = None
             logger.info("Disconnected from Meshtastic device")
+
+    def teardown(self) -> None:
+        """Tear down the interface without stopping background threads.
+
+        Used by the watchdog before reconnect — preserves the send queue
+        and health monitor threads so they survive the reconnection cycle.
+        """
+        self._connected = False
+        if self._interface:
+            try:
+                self._interface.close()
+            except Exception:
+                pass
+            self._interface = None
+
+    def reconnect(self) -> bool:
+        """Tear down dead connection and re-establish.
+
+        Used by the external watchdog. Does not retry — the watchdog
+        handles retry logic and backoff.
+
+        Returns True if reconnection succeeded.
+        """
+        self.teardown()
+        time.sleep(2)
+        try:
+            self._establish_connection()
+            logger.info(f"Reconnected to {self._conn_str} as {self._my_node_id}")
+            return True
+        except Exception as e:
+            logger.error(f"Reconnect failed for {self._conn_str}: {e}")
+            return False
 
     def set_message_callback(self, callback: Callable[[MeshMessage], None]) -> None:
         """Set the callback for incoming messages.
@@ -310,8 +341,41 @@ class MeshTransport:
 
     # ── Connection Health & Reconnect ──────────────────────────────────────
 
+    def is_healthy(self) -> bool:
+        """Check if the connection to the meshtastic device is alive.
+
+        Returns False if:
+        - Not connected (_interface is None)
+        - Internal stream/socket is closed or broken
+        """
+        if not self._connected or not self._interface:
+            return False
+        try:
+            # TCPInterface stores the socket as _socket
+            if hasattr(self._interface, '_socket'):
+                sock = self._interface._socket
+                if sock is None or sock.fileno() == -1:
+                    return False
+
+            # SerialInterface stores the serial port as stream
+            if hasattr(self._interface, 'stream'):
+                stream = self._interface.stream
+                if stream is None:
+                    return False
+                if hasattr(stream, 'is_open') and not stream.is_open:
+                    return False
+
+            return True
+        except Exception:
+            return False
+
     def _health_loop(self) -> None:
-        """Background thread: periodically check connection, reconnect if dead."""
+        """Background thread: periodic housekeeping and dead-socket detection.
+
+        Does NOT reconnect — that's the watchdog's job. This thread:
+        1. Expires stale pending ACK entries
+        2. Detects dead sockets and marks _connected = False
+        """
         while not self._stop_event.is_set():
             self._stop_event.wait(self.HEARTBEAT_INTERVAL)
             if self._stop_event.is_set():
@@ -321,66 +385,19 @@ class MeshTransport:
             self._expire_pending()
 
             if not self._connected or not self._interface:
-                self._attempt_reconnect()
                 continue
 
-            try:
-                self._interface.getMyNodeInfo()
-            except Exception as e:
-                logger.error(f"Connection health check failed: {e}")
+            # Probe socket health
+            if not self.is_healthy():
+                logger.warning(f"Health check: socket dead for {self._conn_str}")
                 self._connected = False
-                self._attempt_reconnect()
-
-    def _attempt_reconnect(self) -> bool:
-        """Tear down dead connection and re-establish.
-
-        Uses a lock to prevent concurrent reconnect from health thread
-        and send thread. Returns True on success.
-        """
-        if not self._reconnect_lock.acquire(blocking=False):
-            return self._connected  # Another thread is already reconnecting
-
-        try:
-            for attempt in range(1, self.MAX_RECONNECT_ATTEMPTS + 1):
-                if self._stop_event.is_set():
-                    return False
-
-                logger.info(
-                    f"Reconnect attempt {attempt}/{self.MAX_RECONNECT_ATTEMPTS}"
-                    f" for {self._conn_str}"
-                )
-
-                # Tear down old interface
-                try:
-                    if self._interface:
-                        self._interface.close()
-                except Exception:
-                    pass
-                self._interface = None
-                self._connected = False
-
-                self._stop_event.wait(self.RECONNECT_DELAY)
-                if self._stop_event.is_set():
-                    return False
-
-                try:
-                    self._establish_connection()
-                    logger.info(
-                        f"Reconnected to {self._conn_str} as {self._my_node_id}"
-                    )
-                    return True
-                except Exception as e:
-                    logger.warning(f"Reconnect attempt {attempt} failed: {e}")
-
-            logger.error(
-                f"Failed to reconnect after {self.MAX_RECONNECT_ATTEMPTS} attempts"
-            )
-            return False
-        finally:
-            self._reconnect_lock.release()
 
     def _safe_send(self, send_fn) -> bool:
-        """Execute a send function, reconnect on failure, retry once.
+        """Execute a send function, mark dead on socket errors.
+
+        Does NOT attempt inline reconnection — that's the watchdog's job.
+        Sets _connected = False so is_healthy() returns False and the
+        watchdog picks up the dead node on its next cycle (<=30s).
 
         Args:
             send_fn: Callable that performs the actual sendText().
@@ -388,21 +405,21 @@ class MeshTransport:
         Returns:
             True if the message was sent successfully.
         """
-        for attempt in range(2):
-            if not self._connected or not self._interface:
-                if not self._attempt_reconnect():
-                    return False
+        if not self._connected or not self._interface:
+            return False
 
-            try:
-                send_fn()
-                return True
-            except Exception as e:
-                logger.warning(f"Send failed (attempt {attempt + 1}): {e}")
-                self._connected = False
-                if attempt == 0:
-                    self._attempt_reconnect()
-
-        return False
+        try:
+            send_fn()
+            return True
+        except (BrokenPipeError, ConnectionError, OSError) as e:
+            logger.error(f"Send failed (dead socket): {e}")
+            self._connected = False
+            self._interface = None
+            return False
+        except Exception as e:
+            logger.warning(f"Send failed: {e}")
+            self._connected = False
+            return False
 
     # ── ACK Tracking ──────────────────────────────────────────────────────
 

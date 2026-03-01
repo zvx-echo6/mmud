@@ -1,4 +1,4 @@
-"""Tests for MeshTransport send queue, health monitor, and auto-reconnect."""
+"""Tests for MeshTransport send queue, health monitor, watchdog, and reconnect."""
 
 import queue
 import sys
@@ -183,70 +183,90 @@ def test_safe_send_success():
     assert result is True
 
 
-def test_safe_send_retries_once():
-    """_safe_send retries once on failure then returns False."""
+def test_safe_send_marks_dead_on_broken_pipe():
+    """_safe_send on BrokenPipeError should set _connected=False, _interface=None."""
     t = _make_transport()
-    # Disable reconnect by making it fail fast
-    t.MAX_RECONNECT_ATTEMPTS = 0
-    call_count = [0]
 
-    def always_fail():
-        call_count[0] += 1
-        raise RuntimeError("dead socket")
+    def broken():
+        raise BrokenPipeError("dead socket")
 
-    result = t._safe_send(always_fail)
+    result = t._safe_send(broken)
     assert result is False
-    # Called once, failed, reconnect fails (0 attempts), second call skipped
-    assert call_count[0] >= 1
+    assert not t._connected
+    assert t._interface is None
 
 
-def test_safe_send_succeeds_on_retry():
-    """_safe_send succeeds if second attempt works after reconnect."""
+def test_safe_send_marks_dead_on_connection_error():
+    """_safe_send on ConnectionError should mark transport dead."""
     t = _make_transport()
-    call_count = [0]
 
-    def flaky():
-        call_count[0] += 1
-        if call_count[0] == 1:
-            raise RuntimeError("transient")
-        # Second call succeeds
+    def conn_error():
+        raise ConnectionResetError("reset by peer")
 
-    # Mock _attempt_reconnect to just set _connected back
-    t._attempt_reconnect = lambda: setattr(t, '_connected', True) or True
-    result = t._safe_send(flaky)
-    assert result is True
-    assert call_count[0] == 2
+    result = t._safe_send(conn_error)
+    assert result is False
+    assert not t._connected
+    assert t._interface is None
 
 
-def test_safe_send_when_disconnected_triggers_reconnect():
-    """_safe_send with _connected=False should attempt reconnect."""
+def test_safe_send_when_disconnected_returns_false():
+    """_safe_send with _connected=False returns False (no inline reconnect)."""
     t = _make_transport()
     t._connected = False
-    reconnect_called = [False]
-
-    def mock_reconnect():
-        reconnect_called[0] = True
-        t._connected = True
-        t._interface = MagicMock()
-        return True
-
-    t._attempt_reconnect = mock_reconnect
     result = t._safe_send(lambda: None)
-    assert reconnect_called[0]
-    assert result is True
+    assert result is False
+
+
+# ── is_healthy Tests ──────────────────────────────────────────────────────
+
+
+def test_is_healthy_true_when_connected():
+    """is_healthy() returns True on a live transport."""
+    t = _make_transport()
+    assert t.is_healthy() is True
+
+
+def test_is_healthy_false_when_interface_none():
+    """is_healthy() returns False when _interface is None."""
+    t = _make_transport()
+    t._interface = None
+    assert t.is_healthy() is False
+
+
+def test_is_healthy_false_when_not_connected():
+    """is_healthy() returns False when _connected is False."""
+    t = _make_transport()
+    t._connected = False
+    assert t.is_healthy() is False
+
+
+def test_is_healthy_false_when_socket_dead():
+    """is_healthy() returns False when TCP socket fileno is -1."""
+    t = _make_transport()
+    # Simulate dead socket
+    mock_socket = MagicMock()
+    mock_socket.fileno.return_value = -1
+    t._interface._socket = mock_socket
+    assert t.is_healthy() is False
+
+
+def test_is_healthy_false_when_socket_none():
+    """is_healthy() returns False when TCP socket is None."""
+    t = _make_transport()
+    t._interface._socket = None
+    assert t.is_healthy() is False
 
 
 # ── Reconnect Tests ────────────────────────────────────────────────────────
 
 
-def test_attempt_reconnect_success():
-    """_attempt_reconnect should call _establish_connection."""
+def test_reconnect_success():
+    """reconnect() should teardown and re-establish."""
     t = _make_transport()
+    old_interface = t._interface
     t._connected = False
-    t.RECONNECT_DELAY = 0.0  # No delay in tests
 
     establish_called = [False]
-    original_establish = t._establish_connection
 
     def mock_establish():
         establish_called[0] = True
@@ -255,198 +275,85 @@ def test_attempt_reconnect_success():
         t._connected = True
 
     t._establish_connection = mock_establish
-    result = t._attempt_reconnect()
+    result = t.reconnect()
     assert result is True
     assert establish_called[0]
     assert t._connected
-
-
-def test_attempt_reconnect_retries_up_to_max():
-    """_attempt_reconnect retries MAX_RECONNECT_ATTEMPTS times."""
-    t = _make_transport()
-    t._connected = False
-    t.RECONNECT_DELAY = 0.0
-    t.MAX_RECONNECT_ATTEMPTS = 3
-    attempt_count = [0]
-
-    def fail_establish():
-        attempt_count[0] += 1
-        raise RuntimeError("connection refused")
-
-    t._establish_connection = fail_establish
-    result = t._attempt_reconnect()
-    assert result is False
-    assert attempt_count[0] == 3
-
-
-def test_attempt_reconnect_closes_old_interface():
-    """_attempt_reconnect should close the old interface before reconnecting."""
-    t = _make_transport()
-    old_interface = t._interface
-    t._connected = False
-    t.RECONNECT_DELAY = 0.0
-
-    def mock_establish():
-        t._interface = MagicMock()
-        t._my_node_id = "!new1234"
-        t._connected = True
-
-    t._establish_connection = mock_establish
-    t._attempt_reconnect()
     old_interface.close.assert_called_once()
 
 
-def test_reconnect_lock_prevents_concurrent():
-    """Only one thread should reconnect at a time."""
+def test_reconnect_failure():
+    """reconnect() should return False on connection failure."""
     t = _make_transport()
     t._connected = False
-    t.RECONNECT_DELAY = 0.1
-    t.MAX_RECONNECT_ATTEMPTS = 2
-    concurrent_count = [0]
-    max_concurrent = [0]
 
-    original_establish = t._establish_connection
+    def fail_establish():
+        raise RuntimeError("connection refused")
 
-    def slow_establish():
-        concurrent_count[0] += 1
-        max_concurrent[0] = max(max_concurrent[0], concurrent_count[0])
-        time.sleep(0.05)
-        concurrent_count[0] -= 1
-        t._interface = MagicMock()
-        t._my_node_id = "!test"
-        t._connected = True
+    t._establish_connection = fail_establish
+    result = t.reconnect()
+    assert result is False
+    assert not t._connected
 
-    t._establish_connection = slow_establish
 
-    # Two threads try to reconnect simultaneously
-    t1 = threading.Thread(target=t._attempt_reconnect)
-    t2 = threading.Thread(target=t._attempt_reconnect)
-    t1.start()
-    t2.start()
-    t1.join(timeout=5)
-    t2.join(timeout=5)
+def test_teardown_preserves_threads():
+    """teardown() should null the interface but not stop background threads."""
+    t = _make_transport()
+    t.SEND_INTERVAL = 0.0
+    _start_send_loop(t)
+    assert t._send_thread.is_alive()
 
-    # Only one thread should have been inside _establish_connection at a time
-    assert max_concurrent[0] <= 1
+    t.teardown()
+    assert t._interface is None
+    assert not t._connected
+    # Send thread should still be alive
+    assert t._send_thread.is_alive()
+
+    _stop_send_loop(t)
 
 
 # ── Health Monitor Tests ───────────────────────────────────────────────────
 
 
-def test_health_check_marks_disconnected_on_failure():
-    """Health check failure should set _connected = False."""
+def test_health_check_marks_disconnected_on_dead_socket():
+    """Health check detects dead socket via is_healthy() and marks disconnected."""
     t = _make_transport()
     t.HEARTBEAT_INTERVAL = 0.05
-    t.RECONNECT_DELAY = 0.0
-    t.MAX_RECONNECT_ATTEMPTS = 0  # Don't actually reconnect
     assert t._connected
 
-    # Make getMyNodeInfo raise
-    t._interface.getMyNodeInfo.side_effect = RuntimeError("TCP dead")
+    # Simulate dead socket
+    t._interface._socket = None
 
-    # Start health loop
     t._stop_event.clear()
     t._health_thread = threading.Thread(
         target=t._health_loop, name="test-health", daemon=True
     )
     t._health_thread.start()
 
-    # Wait for one health check cycle
     time.sleep(0.2)
-
     t._stop_event.set()
     t._health_thread.join(timeout=5)
 
     assert not t._connected
 
 
-def test_health_check_triggers_reconnect():
-    """Health check failure should trigger _attempt_reconnect."""
-    t = _make_transport()
-    t.HEARTBEAT_INTERVAL = 0.05
-    t.RECONNECT_DELAY = 0.0
-    reconnect_called = [False]
-
-    # Make health check fail
-    t._interface.getMyNodeInfo.side_effect = RuntimeError("dead")
-
-    def mock_reconnect():
-        reconnect_called[0] = True
-        t._connected = True
-        t._interface = MagicMock()
-        return True
-
-    t._attempt_reconnect = mock_reconnect
-
-    t._stop_event.clear()
-    t._health_thread = threading.Thread(
-        target=t._health_loop, name="test-health", daemon=True
-    )
-    t._health_thread.start()
-
-    time.sleep(0.2)
-    t._stop_event.set()
-    t._health_thread.join(timeout=5)
-
-    assert reconnect_called[0]
+# ── Send Loop + Dead Socket ───────────────────────────────────────────────
 
 
-# ── Send Loop + Reconnect Integration ─────────────────────────────────────
-
-
-def test_send_loop_reconnects_on_send_failure():
-    """Send loop should reconnect and retry when sendText raises."""
+def test_send_loop_drops_message_on_dead_socket():
+    """Send loop marks transport dead on BrokenPipeError, drops message."""
     t = _make_transport()
     t.SEND_INTERVAL = 0.0
-    t.RECONNECT_DELAY = 0.0
-    send_results = []
-    call_count = [0]
 
-    def flaky_send(**kwargs):
-        call_count[0] += 1
-        if call_count[0] == 1:
-            raise RuntimeError("TCP reset")
-        send_results.append(kwargs)
-
-    t._interface.sendText = flaky_send
-
-    # Mock reconnect to restore _connected
-    def mock_reconnect():
-        t._connected = True
-        return True
-
-    t._attempt_reconnect = mock_reconnect
-
-    _start_send_loop(t)
-    try:
-        t._send_queue.put(("dm", "!a", "test"))
-        t._send_queue.join()
-        # First call failed, reconnect, second call succeeded
-        assert len(send_results) == 1
-        assert send_results[0]["text"] == "test"
-    finally:
-        _stop_send_loop(t)
-
-
-def test_send_loop_drops_message_when_reconnect_fails():
-    """If reconnect fails, message is dropped (not retried forever)."""
-    t = _make_transport()
-    t.SEND_INTERVAL = 0.0
-    t.RECONNECT_DELAY = 0.0
-    t.MAX_RECONNECT_ATTEMPTS = 1
-
-    # sendText always fails
-    t._interface.sendText = MagicMock(side_effect=RuntimeError("dead"))
-
-    # establish_connection always fails
-    t._establish_connection = MagicMock(side_effect=RuntimeError("refused"))
+    t._interface.sendText = MagicMock(side_effect=BrokenPipeError("dead"))
 
     _start_send_loop(t)
     try:
         t._send_queue.put(("dm", "!a", "lost"))
         t._send_queue.join()
-        # Message was processed (not stuck in queue)
         assert t.send_queue_depth == 0
+        assert not t._connected
+        assert t._interface is None
     finally:
         _stop_send_loop(t)
 
@@ -628,40 +535,231 @@ def test_new_dm_replaces_old_pending():
     assert t._pending_acks["!a"].retry_count == 0
 
 
-if __name__ == "__main__":
-    test_send_dm_queues_message()
-    test_send_broadcast_queues_message()
-    test_send_broadcast_uses_default_channel()
-    test_send_dm_not_connected()
-    test_send_loop_processes_dm()
-    test_send_loop_processes_broadcast()
-    test_send_loop_paces_messages()
-    test_disconnect_stops_threads()
-    test_queue_depth_property()
-    test_connected_property()
-    test_safe_send_success()
-    test_safe_send_retries_once()
-    test_safe_send_succeeds_on_retry()
-    test_safe_send_when_disconnected_triggers_reconnect()
-    test_attempt_reconnect_success()
-    test_attempt_reconnect_retries_up_to_max()
-    test_attempt_reconnect_closes_old_interface()
-    test_reconnect_lock_prevents_concurrent()
-    test_health_check_marks_disconnected_on_failure()
-    test_health_check_triggers_reconnect()
-    test_send_loop_reconnects_on_send_failure()
-    test_send_loop_drops_message_when_reconnect_fails()
-    test_do_send_dm_stores_pending()
-    test_do_send_dm_retry_does_not_overwrite_pending()
-    test_do_send_dm_lost_does_not_overwrite_pending()
-    test_get_unacked_returns_none_no_pending()
-    test_get_unacked_clears_within_timeout()
-    test_get_unacked_returns_tagged_after_timeout()
-    test_get_unacked_increments_retry_count()
-    test_get_unacked_truncates_to_char_limit()
-    test_get_unacked_max_retries_returns_lost()
-    test_expire_pending_removes_old_entries()
-    test_send_loop_stores_pending_for_dm()
-    test_broadcast_does_not_store_pending()
-    test_new_dm_replaces_old_pending()
-    print("All transport tests passed!")
+# ── Watchdog Tests ─────────────────────────────────────────────────────────
+
+
+def test_watchdog_detects_unhealthy_node():
+    """Watchdog should log warning when a node becomes unhealthy."""
+    from src.transport.router import NodeRouter
+    from src.transport.broadcast_drain import BroadcastDrain
+
+    # Create mock router with one unhealthy transport
+    t = _make_transport()
+    t._connected = False  # Unhealthy
+    t._interface = None
+
+    mock_engine = MagicMock()
+    mock_npc = MagicMock()
+    router = NodeRouter(mock_engine, mock_npc)
+    router.transports = {"EMBR": t}
+
+    drain = BroadcastDrain(MagicMock())
+
+    # Mock reconnect to succeed
+    establish_called = [False]
+
+    def mock_establish():
+        establish_called[0] = True
+        t._interface = MagicMock()
+        t._my_node_id = "!reconnected"
+        t._connected = True
+
+    t._establish_connection = mock_establish
+
+    stop = threading.Event()
+
+    from src.main import _run_watchdog
+    watchdog = threading.Thread(
+        target=_run_watchdog,
+        args=(router, drain, {"EMBR": {"connection": "fake:4403"}}, stop, 0.05),
+        daemon=True,
+    )
+    watchdog.start()
+
+    time.sleep(0.3)
+    stop.set()
+    watchdog.join(timeout=5)
+
+    assert establish_called[0], "Watchdog should have called reconnect"
+    assert t._connected
+
+
+def test_watchdog_backoff_on_repeated_failures():
+    """Watchdog should back off on repeated reconnect failures."""
+    from src.transport.router import NodeRouter
+    from src.transport.broadcast_drain import BroadcastDrain
+
+    t = _make_transport()
+    t._connected = False
+    t._interface = None
+
+    mock_engine = MagicMock()
+    mock_npc = MagicMock()
+    router = NodeRouter(mock_engine, mock_npc)
+    router.transports = {"EMBR": t}
+
+    drain = BroadcastDrain(MagicMock())
+
+    attempt_count = [0]
+
+    def fail_establish():
+        attempt_count[0] += 1
+        raise RuntimeError("connection refused")
+
+    t._establish_connection = fail_establish
+
+    stop = threading.Event()
+
+    from src.main import _run_watchdog
+    watchdog = threading.Thread(
+        target=_run_watchdog,
+        args=(router, drain, {"EMBR": {"connection": "fake:4403"}}, stop, 0.05),
+        daemon=True,
+    )
+    watchdog.start()
+
+    # Run for a bit — backoff should limit attempts
+    time.sleep(0.5)
+    stop.set()
+    watchdog.join(timeout=5)
+
+    # Should have attempted but not hammered (backoff limits it)
+    assert attempt_count[0] >= 1
+    assert attempt_count[0] < 15  # Would be ~10 without backoff at 0.05s interval
+
+
+def test_watchdog_rewires_callbacks_after_reconnect():
+    """Watchdog should re-wire router callbacks after successful reconnect."""
+    from src.transport.router import NodeRouter
+    from src.transport.broadcast_drain import BroadcastDrain
+
+    t = _make_transport()
+    t._connected = False
+    t._interface = None
+
+    mock_engine = MagicMock()
+    mock_npc = MagicMock()
+    router = NodeRouter(mock_engine, mock_npc)
+    router.transports = {"EMBR": t}
+
+    wire_count = [0]
+    original_wire = router.wire_callbacks
+
+    def counting_wire():
+        wire_count[0] += 1
+        original_wire()
+
+    router.wire_callbacks = counting_wire
+
+    drain = BroadcastDrain(MagicMock())
+
+    def mock_establish():
+        t._interface = MagicMock()
+        t._my_node_id = "!test"
+        t._connected = True
+
+    t._establish_connection = mock_establish
+
+    stop = threading.Event()
+
+    from src.main import _run_watchdog
+    watchdog = threading.Thread(
+        target=_run_watchdog,
+        args=(router, drain, {"EMBR": {"connection": "fake:4403"}}, stop, 0.05),
+        daemon=True,
+    )
+    watchdog.start()
+
+    time.sleep(0.3)
+    stop.set()
+    watchdog.join(timeout=5)
+
+    assert wire_count[0] >= 1, "wire_callbacks should be called after reconnect"
+
+
+def test_watchdog_reattaches_dcrg_drain():
+    """Watchdog should re-attach DCRG to broadcast drain after reconnect."""
+    from src.transport.router import NodeRouter
+    from src.transport.broadcast_drain import BroadcastDrain
+
+    t = _make_transport()
+    t._connected = False
+    t._interface = None
+
+    mock_engine = MagicMock()
+    mock_npc = MagicMock()
+    router = NodeRouter(mock_engine, mock_npc)
+    router.transports = {"DCRG": t}
+
+    drain = BroadcastDrain(MagicMock())
+    drain_set_count = [0]
+    original_set = drain.set_transport
+
+    def counting_set(transport):
+        drain_set_count[0] += 1
+        original_set(transport)
+
+    drain.set_transport = counting_set
+
+    def mock_establish():
+        t._interface = MagicMock()
+        t._my_node_id = "!dcrg"
+        t._connected = True
+
+    t._establish_connection = mock_establish
+
+    stop = threading.Event()
+
+    from src.main import _run_watchdog
+    watchdog = threading.Thread(
+        target=_run_watchdog,
+        args=(router, drain, {"DCRG": {"connection": "fake:4403"}}, stop, 0.05),
+        daemon=True,
+    )
+    watchdog.start()
+
+    time.sleep(0.3)
+    stop.set()
+    watchdog.join(timeout=5)
+
+    assert drain_set_count[0] >= 1, "drain.set_transport should be called for DCRG"
+
+
+def test_watchdog_skips_healthy_nodes():
+    """Watchdog should not attempt reconnect on healthy nodes."""
+    from src.transport.router import NodeRouter
+    from src.transport.broadcast_drain import BroadcastDrain
+
+    t = _make_transport()  # Healthy by default
+
+    mock_engine = MagicMock()
+    mock_npc = MagicMock()
+    router = NodeRouter(mock_engine, mock_npc)
+    router.transports = {"EMBR": t}
+
+    drain = BroadcastDrain(MagicMock())
+
+    reconnect_called = [False]
+    original_reconnect = t.reconnect
+
+    def mock_reconnect():
+        reconnect_called[0] = True
+        return original_reconnect()
+
+    t.reconnect = mock_reconnect
+
+    stop = threading.Event()
+
+    from src.main import _run_watchdog
+    watchdog = threading.Thread(
+        target=_run_watchdog,
+        args=(router, drain, {"EMBR": {"connection": "fake:4403"}}, stop, 0.05),
+        daemon=True,
+    )
+    watchdog.start()
+
+    time.sleep(0.3)
+    stop.set()
+    watchdog.join(timeout=5)
+
+    assert not reconnect_called[0], "Healthy node should not trigger reconnect"
