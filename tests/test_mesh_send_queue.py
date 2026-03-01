@@ -246,14 +246,14 @@ def test_is_healthy_false_when_socket_dead():
     # Simulate dead socket
     mock_socket = MagicMock()
     mock_socket.fileno.return_value = -1
-    t._interface._socket = mock_socket
+    t._interface.socket = mock_socket
     assert t.is_healthy() is False
 
 
 def test_is_healthy_false_when_socket_none():
     """is_healthy() returns False when TCP socket is None."""
     t = _make_transport()
-    t._interface._socket = None
+    t._interface.socket = None
     assert t.is_healthy() is False
 
 
@@ -322,7 +322,7 @@ def test_health_check_marks_disconnected_on_dead_socket():
     assert t._connected
 
     # Simulate dead socket
-    t._interface._socket = None
+    t._interface.socket = None
 
     t._stop_event.clear()
     t._health_thread = threading.Thread(

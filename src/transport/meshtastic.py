@@ -351,11 +351,12 @@ class MeshTransport:
         if not self._connected or not self._interface:
             return False
         try:
-            # TCPInterface stores the socket as _socket
-            if hasattr(self._interface, '_socket'):
-                sock = self._interface._socket
+            # TCPInterface uses public 'socket' attribute (not '_socket')
+            if hasattr(self._interface, 'socket'):
+                sock = self._interface.socket
                 if sock is None or sock.fileno() == -1:
                     return False
+                return True
 
             # SerialInterface stores the serial port as stream
             if hasattr(self._interface, 'stream'):
