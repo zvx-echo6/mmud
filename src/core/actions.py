@@ -110,6 +110,32 @@ def _activate_floor_boss(conn: sqlite3.Connection, monster: dict) -> int:
     return hp
 
 
+def _record_boss_kill(conn: sqlite3.Connection, player: dict, monster: dict) -> None:
+    """Record floor boss kill: update floor_progress, deepest floor, broadcast."""
+    if not monster.get("is_floor_boss"):
+        return
+    floor = player.get("floor", 0)
+    conn.execute(
+        """INSERT OR REPLACE INTO floor_progress
+           (player_id, floor, boss_killed, boss_killed_at)
+           VALUES (?, ?, 1, CURRENT_TIMESTAMP)""",
+        (player["id"], floor),
+    )
+    new_deepest = floor + 1
+    if new_deepest <= NUM_FLOORS:
+        conn.execute(
+            "UPDATE players SET deepest_floor_reached = MAX(deepest_floor_reached, ?) WHERE id = ?",
+            (new_deepest, player["id"]),
+        )
+    conn.commit()
+    broadcast_sys.create_broadcast(
+        conn, 1,
+        f"{player['name']} felled {monster['name']}. Floor {floor} falls silent.",
+    )
+    if floor < NUM_FLOORS:
+        broadcast_sys.broadcast_floor_unlock(conn, floor)
+
+
 def _room_hints(player_class: str) -> list[str]:
     """Return contextual command hints for room display brackets.
 
@@ -532,28 +558,7 @@ def action_fight(conn: sqlite3.Connection, player: dict, args: list[str]) -> str
         parts = [f"{result.narrative} +{xp}xp +{gold}g"]
 
         # Floor boss kill tracking
-        if monster.get("is_floor_boss"):
-            floor = player.get("floor", 0)
-            conn.execute(
-                """INSERT OR REPLACE INTO floor_progress
-                   (player_id, floor, boss_killed, boss_killed_at)
-                   VALUES (?, ?, 1, CURRENT_TIMESTAMP)""",
-                (player["id"], floor),
-            )
-            new_deepest = floor + 1
-            if new_deepest <= NUM_FLOORS:
-                conn.execute(
-                    "UPDATE players SET deepest_floor_reached = MAX(deepest_floor_reached, ?) WHERE id = ?",
-                    (new_deepest, player["id"]),
-                )
-            conn.commit()
-            broadcast_sys.create_broadcast(
-                conn, 1,
-                f"{player['name']} felled {monster['name']}. Floor {floor} falls silent.",
-            )
-            # Floor unlock broadcast (skip floor 8 — that's endgame)
-            if floor < NUM_FLOORS:
-                broadcast_sys.broadcast_floor_unlock(conn, floor)
+        _record_boss_kill(conn, player, monster)
 
         # Check bounty completion
         if bounty:
@@ -1178,6 +1183,7 @@ def action_charge(conn: sqlite3.Connection, player: dict, args: list[str]) -> st
             gold = random.randint(monster["gold_reward_min"], monster["gold_reward_max"])
             player_model.award_xp(conn, player["id"], xp)
             player_model.award_gold(conn, player["id"], gold)
+            _record_boss_kill(conn, player, monster)
             return fmt(f"CHARGE! {monster['name']} falls! {dmg}dmg +{xp}xp +{gold}g")
         return fmt(f"CHARGE! {dmg}dmg to {monster['name']}! {monster['name']}:{new_mhp}/{monster['hp_max']}")
 
@@ -1204,6 +1210,7 @@ def action_charge(conn: sqlite3.Connection, player: dict, args: list[str]) -> st
             gold = random.randint(monster["gold_reward_min"], monster["gold_reward_max"])
             player_model.award_xp(conn, player["id"], xp)
             player_model.award_gold(conn, player["id"], gold)
+            _record_boss_kill(conn, player, monster)
             return fmt(f"CHARGE into {room1['name']}! {monster['name']} crushed! {dmg}dmg +{xp}xp +{gold}g")
         return fmt(f"CHARGE into {room1['name']}! {dmg}dmg to {monster['name']}! {new_mhp}hp left")
 
@@ -1234,6 +1241,7 @@ def action_charge(conn: sqlite3.Connection, player: dict, args: list[str]) -> st
             gold = random.randint(monster2["gold_reward_min"], monster2["gold_reward_max"])
             player_model.award_xp(conn, player["id"], xp)
             player_model.award_gold(conn, player["id"], gold)
+            _record_boss_kill(conn, player, monster2)
             return fmt(f"CHARGE through to {room2['name']}! {monster2['name']} crushed! {dmg}dmg +{xp}xp +{gold}g")
         return fmt(f"CHARGE through to {room2['name']}! {dmg}dmg to {monster2['name']}! {new_mhp}hp left")
 
@@ -1265,6 +1273,7 @@ def action_sneak(conn: sqlite3.Connection, player: dict, args: list[str]) -> str
             gold = random.randint(monster["gold_reward_min"], monster["gold_reward_max"])
             player_model.award_xp(conn, player["id"], xp)
             player_model.award_gold(conn, player["id"], gold)
+            _record_boss_kill(conn, player, monster)
             return fmt(f"Backstab! {monster['name']} falls! {dmg}dmg +{xp}xp +{gold}g")
         world_mgr.exit_combat(conn, player["id"])
         return fmt(f"Backstab {dmg}dmg! You slip away. {monster['name']}:{new_mhp}/{monster['hp_max']}")
@@ -1326,6 +1335,7 @@ def action_cast(conn: sqlite3.Connection, player: dict, args: list[str]) -> str:
             gold = random.randint(monster["gold_reward_min"], monster["gold_reward_max"])
             player_model.award_xp(conn, player["id"], xp)
             player_model.award_gold(conn, player["id"], gold)
+            _record_boss_kill(conn, player, monster)
             return fmt(f"{spell_name}! {monster['name']} crumbles. {dmg}dmg +{xp}xp +{gold}g")
         return fmt(f"{spell_name} hits {monster['name']} for {dmg}! {monster['name']}:{new_mhp}/{monster['hp_max']}")
 
