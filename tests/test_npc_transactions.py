@@ -25,6 +25,7 @@ from src.systems.npc_conversation import (
     _SUCCESS,
     _detect_dummy_tx,
     _validate_heal,
+    _validate_story_heal,
     _validate_buy,
     _validate_sell,
     _validate_recap,
@@ -825,6 +826,90 @@ class TestConfirmKeywords(unittest.TestCase):
             response = handler.handle_message("maren", "!abc123", keyword)
             self.assertIn("HP mended", response,
                           f"Confirm keyword '{keyword}' did not trigger execution")
+
+
+class TestStoryHeal(unittest.TestCase):
+    """Tests for Maren's story heal mechanic."""
+
+    def test_story_heal_via_tx_tag(self):
+        """LLM returns [TX:story_heal:_] — player healed to full, no gold cost."""
+        conn = _create_test_db()
+        # Hurt the player, give some gold
+        conn.execute("UPDATE players SET hp = 10, gold_carried = 5 WHERE id = 1")
+        conn.commit()
+
+        backend = MockBackend("[TX:story_heal:_] Good story. Sit still.")
+        handler = NPCConversationHandler(conn, backend)
+
+        response = handler.handle_message("maren", "!abc123", "let me tell you what I saw down there")
+        self.assertIn("mended", response)
+        self.assertIn("No charge", response)
+
+        # HP should be full
+        player = conn.execute("SELECT hp, hp_max, gold_carried FROM players WHERE id = 1").fetchone()
+        self.assertEqual(player["hp"], player["hp_max"])
+        # Gold unchanged
+        self.assertEqual(player["gold_carried"], 5)
+
+    def test_story_heal_once_per_day(self):
+        """Story heal can only be used once per day."""
+        conn = _create_test_db()
+        conn.execute("UPDATE players SET hp = 10 WHERE id = 1")
+        conn.commit()
+
+        backend = MockBackend("[TX:story_heal:_] Good tale.")
+        handler = NPCConversationHandler(conn, backend)
+
+        # First story heal works
+        response = handler.handle_message("maren", "!abc123", "story about the dungeon")
+        self.assertIn("mended", response)
+
+        # Hurt again
+        conn.execute("UPDATE players SET hp = 10 WHERE id = 1")
+        conn.commit()
+
+        # Second attempt rejected
+        response = handler.handle_message("maren", "!abc123", "another story")
+        self.assertIn("Already heard one today", response)
+
+    def test_story_heal_not_when_full_hp(self):
+        """Story heal rejected if already at full HP."""
+        conn = _create_test_db()
+        conn.execute("UPDATE players SET hp = hp_max WHERE id = 1")
+        conn.commit()
+        backend = MockBackend("[TX:story_heal:_] Nice tale.")
+        handler = NPCConversationHandler(conn, backend)
+
+        response = handler.handle_message("maren", "!abc123", "a story")
+        self.assertIn("whole", response)
+
+    def test_story_heal_dummy_keyword_detection(self):
+        """DummyBackend detects story keywords."""
+        action, detail = _detect_dummy_tx("maren", "let me tell you a story")
+        self.assertEqual(action, "story_heal")
+
+    def test_story_heal_validation_passes(self):
+        """_validate_story_heal passes when hurt and no prior use."""
+        conn = _create_test_db()
+        conn.execute("UPDATE players SET hp = 10 WHERE id = 1")
+        conn.commit()
+        player = dict(conn.execute("SELECT * FROM players WHERE id = 1").fetchone())
+        valid, reason = _validate_story_heal(conn, player)
+        self.assertTrue(valid)
+
+    def test_story_heal_no_confirm_needed(self):
+        """Story heal executes immediately — no confirmation step."""
+        conn = _create_test_db()
+        conn.execute("UPDATE players SET hp = 10 WHERE id = 1")
+        conn.commit()
+
+        backend = MockBackend("[TX:story_heal:_] Good story.")
+        handler = NPCConversationHandler(conn, backend)
+
+        response = handler.handle_message("maren", "!abc123", "tell you what happened")
+        # Should execute in one message, not ask for confirmation
+        self.assertIn("mended", response)
+        self.assertNotIn("Say yes", response)
 
 
 if __name__ == "__main__":

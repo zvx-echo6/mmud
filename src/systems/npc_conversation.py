@@ -101,7 +101,9 @@ NPC_PERSONALITIES = {
             "You NEVER talk about what you saw on the lowest floor, no matter what. "
             "If pressed about Floor 4, deflect firmly but stay in character. "
             "You treat injuries like evidence — fungal burns mean Floor 2, "
-            "heat scarring means the Ember Caverns. You are protective but unsentimental."
+            "heat scarring means the Ember Caverns. You are protective but unsentimental. "
+            "You accept stories from the dungeon as payment for healing — once a day, "
+            "a good tale about what they faced down there is worth your time and thread."
         ),
         "knowledge": (
             "You know about: player HP and conditions, death counts, "
@@ -213,7 +215,7 @@ _TX_TAG_RE = re.compile(r'^\s*`?\[TX:(\w+):([^\]]*)\]`?\s*(.*)', re.DOTALL)
 
 # Valid TX actions per NPC
 _NPC_TX_ACTIONS = {
-    "maren": {"heal"},
+    "maren": {"heal", "story_heal"},
     "torval": {"buy", "sell", "browse", "gamble"},
     "grist": {"recap", "hint"},
     "whisper": {"hint"},
@@ -224,6 +226,7 @@ _CONFIRM_KEYWORDS = {"y", "yes", "do it", "deal", "confirm", "go", "ok", "yep", 
 
 # DummyBackend keyword fallbacks (when no LLM available)
 _MAREN_TX_KEYWORDS = {"heal", "patch", "fix", "hurt", "wounded", "health", "help me"}
+_MAREN_STORY_KEYWORDS = {"story", "tale", "tell you", "let me tell", "listen", "happened to me", "down there", "i saw", "i fought"}
 _TORVAL_BUY_PREFIX = ("buy ", "purchase ")
 _TORVAL_SELL_PREFIX = ("sell ", "offload ", "dump ")
 _TORVAL_BROWSE_KEYWORDS = {"shop", "inventory", "stock", "wares", "what do you have", "browse"}
@@ -248,6 +251,8 @@ _QUOTES = {
 _REJECTIONS = {
     ("maren", "full_hp"):    "You're whole. Don't waste my time or your gold.",
     ("maren", "no_gold"):    "That's {cost}g. You have {gold}g. Can't stitch on credit.",
+    ("maren", "story_used"):  "Already heard one today. Come back tomorrow.",
+    ("maren", "story_full_hp"): "You're whole. Save the stories for when you need stitching.",
     ("torval", "no_gold"):   "That's {cost}g. You have {gold}g. Math.",
     ("torval", "not_found"): "Don't carry it. Don't know it.",
     ("torval", "full_bag"):  "Carrying too much. Drop something first.",
@@ -262,6 +267,7 @@ _REJECTIONS = {
 # Success templates (DummyBackend fallback)
 _SUCCESS = {
     ("maren", "heal"):   "Done. {hp_restored}HP mended. {gold_remaining}g left.",
+    ("maren", "story_heal"): "...good story. Sit still. {hp_restored}HP mended. No charge.",
     ("torval", "buy"):   "{item}. Yours. {gold_remaining}g remains.",
     ("torval", "sell"):  "{value}g for the {item}. Done.",
     ("grist", "recap"):  "{recap_text}",
@@ -277,6 +283,10 @@ _TX_INSTRUCTIONS = {
         "\n\nTRANSACTION DETECTION:\n"
         "If the player wants healing, prefix your response with [TX:heal:_] "
         "then continue with your in-character response.\n"
+        "If the player tells you a story or tale about their adventures in the dungeon "
+        "(what they fought, what they saw, what happened to them), prefix with [TX:story_heal:_] "
+        "then respond in character — you appreciate the story and heal them for free. "
+        "The story must be about THEIR experience, not a request to hear YOUR stories.\n"
         "If just chatting, do NOT include any tag."
     ),
     "torval": (
@@ -699,6 +709,22 @@ def _validate_heal(conn: sqlite3.Connection, player: dict) -> tuple[bool, str]:
     return True, ""
 
 
+def _validate_story_heal(conn: sqlite3.Connection, player: dict) -> tuple[bool, str]:
+    """Validate story heal transaction. Once per day, must need healing."""
+    if player["hp"] >= player["hp_max"]:
+        return False, "story_full_hp"
+    # Daily limit: check message_log for story_heal TX today
+    today_count = conn.execute(
+        """SELECT COUNT(*) as cnt FROM message_log
+           WHERE message_type = 'npc_tx' AND message LIKE 'story_heal:%'
+           AND player_id = ? AND DATE(timestamp) = DATE('now')""",
+        (player["id"],),
+    ).fetchone()
+    if today_count and today_count["cnt"] > 0:
+        return False, "story_used"
+    return True, ""
+
+
 def _validate_buy(conn: sqlite3.Connection, player: dict, item_name: str) -> tuple[bool, str]:
     """Validate buy transaction."""
     epoch = conn.execute("SELECT day_number FROM epoch WHERE id = 1").fetchone()
@@ -788,6 +814,18 @@ def _execute_heal(conn: sqlite3.Connection, player: dict) -> tuple[bool, str, di
             hp_restored=hp_restored, gold_remaining=gold_remaining,
         ), meta
     return False, msg, {}
+
+
+def _execute_story_heal(conn: sqlite3.Connection, player: dict) -> tuple[bool, str, dict]:
+    """Execute story heal — free full heal, no gold cost."""
+    hp_before = player["hp"]
+    hp_max = player["hp_max"]
+    player_model.update_state(conn, player["id"], hp=hp_max)
+    hp_restored = hp_max - hp_before
+    meta = {"hp_restored": hp_restored}
+    return True, _SUCCESS[("maren", "story_heal")].format(
+        hp_restored=hp_restored,
+    ), meta
 
 
 def _execute_buy(conn: sqlite3.Connection, player: dict, item_name: str) -> tuple[bool, str, dict]:
@@ -909,6 +947,9 @@ def _detect_dummy_tx(npc: str, text: str) -> tuple[str, str]:
     text_lower = text.lower().strip()
 
     if npc == "maren":
+        for kw in _MAREN_STORY_KEYWORDS:
+            if kw in text_lower:
+                return "story_heal", "_"
         for kw in _MAREN_TX_KEYWORDS:
             if kw in text_lower:
                 return "heal", "_"
@@ -1186,6 +1227,23 @@ class NPCConversationHandler:
             self.last_result_type = "npc_tx"
             return response[:200]
 
+        # Story heal is immediate — the story IS the payment
+        if action == "story_heal":
+            valid, reason = self._validate_tx(npc, action, detail, player)
+            if not valid:
+                response = _build_rejection(npc, reason, player, self.conn)
+                session.add_assistant_message(response)
+                self.last_result_type = "npc_llm"
+                return response[:200]
+            ok, response, meta = _execute_story_heal(self.conn, player)
+            if ok:
+                summary = f"story_heal:_ for player {player['name']}"
+                _log_tx(self.conn, npc, "story_heal", summary,
+                        player_id=player["id"], metadata=meta)
+            session.add_assistant_message(response)
+            self.last_result_type = "npc_tx"
+            return response[:200]
+
         # Validate the transaction
         valid, reason = self._validate_tx(npc, action, detail, player)
 
@@ -1211,6 +1269,8 @@ class NPCConversationHandler:
         """Validate a transaction. Returns (valid, rejection_reason)."""
         if action == "heal":
             return _validate_heal(self.conn, player)
+        elif action == "story_heal":
+            return _validate_story_heal(self.conn, player)
         elif action == "buy":
             return _validate_buy(self.conn, player, detail)
         elif action == "sell":
