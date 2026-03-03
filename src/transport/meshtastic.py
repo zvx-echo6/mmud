@@ -356,6 +356,9 @@ class MeshTransport:
                 sock = self._interface.socket
                 if sock is None or sock.fileno() == -1:
                     return False
+                # fileno() stays valid on broken pipes — probe the socket
+                # to detect remote disconnects
+                sock.getpeername()
                 return True
 
             # SerialInterface stores the serial port as stream

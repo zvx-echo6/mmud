@@ -257,6 +257,16 @@ def test_is_healthy_false_when_socket_none():
     assert t.is_healthy() is False
 
 
+def test_is_healthy_false_when_broken_pipe():
+    """is_healthy() returns False when getpeername() raises (broken pipe)."""
+    t = _make_transport()
+    mock_socket = MagicMock()
+    mock_socket.fileno.return_value = 5
+    mock_socket.getpeername.side_effect = BrokenPipeError("Broken pipe")
+    t._interface.socket = mock_socket
+    assert t.is_healthy() is False
+
+
 # ── Reconnect Tests ────────────────────────────────────────────────────────
 
 
