@@ -239,13 +239,14 @@ def _run_watchdog(
     drain: BroadcastDrain,
     node_configs: dict,
     stop_event: threading.Event,
+    channel: int = 0,
     check_interval: float = WATCHDOG_INTERVAL,
 ) -> None:
     """Background thread: monitor connection health, auto-reconnect dead nodes.
 
-    Runs every check_interval seconds. For each registered transport:
-    1. Check is_healthy()
-    2. If unhealthy → attempt reconnect with backoff
+    Runs every check_interval seconds. For each configured node:
+    1. If not registered → attempt initial connect (startup failure recovery)
+    2. If registered but unhealthy → attempt reconnect with backoff
     3. Re-wire callbacks after successful reconnect
     4. Re-attach DCRG to broadcast drain if needed
     """
@@ -256,8 +257,38 @@ def _run_watchdog(
         if stop_event.is_set():
             break
 
-        for name in list(router.transports.keys()):
-            transport = router.transports[name]
+        # Check ALL configured nodes — not just registered ones
+        for name in list(node_configs.keys()):
+            transport = router.transports.get(name)
+
+            # Node never connected at startup — try initial connect
+            if transport is None:
+                failures = fail_counts.get(name, 0) + 1
+                fail_counts[name] = failures
+
+                if not _should_attempt(failures, check_interval):
+                    continue
+
+                logger.warning(
+                    f"[WATCHDOG] {name} not registered (failure #{failures}). "
+                    f"Attempting connect..."
+                )
+                try:
+                    cfg = node_configs[name]
+                    new_transport = _connect_node(name, cfg["connection"], channel)
+                    router.register_transport(name, new_transport)
+                    router.wire_callbacks()
+                    if name == "DCRG":
+                        drain.set_transport(new_transport)
+                    logger.info(
+                        f"[WATCHDOG] {name} connected → {new_transport.my_node_id}"
+                    )
+                    fail_counts[name] = 0
+                except Exception as e:
+                    logger.error(
+                        f"[WATCHDOG] {name} connect failed (attempt #{failures}): {e}"
+                    )
+                continue
 
             if transport.is_healthy():
                 if fail_counts.get(name, 0) > 0:
@@ -268,17 +299,8 @@ def _run_watchdog(
             failures = fail_counts.get(name, 0) + 1
             fail_counts[name] = failures
 
-            # Backoff: 1st fail → try now. Then wait longer between attempts.
-            # 2nd: 1 min, 3rd: 2 min, cap at WATCHDOG_MAX_BACKOFF min.
-            if failures > 1:
-                wait_minutes = min(failures - 1, WATCHDOG_MAX_BACKOFF)
-                cycles_needed = max(1, int((wait_minutes * 60) / check_interval))
-                if (failures - 1) % cycles_needed != 0:
-                    logger.debug(
-                        f"[WATCHDOG] {name} backing off "
-                        f"(next attempt in {cycles_needed - ((failures - 1) % cycles_needed)} cycles)"
-                    )
-                    continue
+            if not _should_attempt(failures, check_interval):
+                continue
 
             logger.warning(
                 f"[WATCHDOG] {name} unhealthy (failure #{failures}). "
@@ -306,6 +328,15 @@ def _run_watchdog(
                 logger.error(
                     f"[WATCHDOG] {name} reconnect error (attempt #{failures}): {e}"
                 )
+
+
+def _should_attempt(failures: int, check_interval: float) -> bool:
+    """Backoff logic: 1st fail → try now. Then wait longer between attempts."""
+    if failures <= 1:
+        return True
+    wait_minutes = min(failures - 1, WATCHDOG_MAX_BACKOFF)
+    cycles_needed = max(1, int((wait_minutes * 60) / check_interval))
+    return (failures - 1) % cycles_needed == 0
 
 
 def main():
@@ -412,7 +443,7 @@ def main():
     if active_nodes:
         watchdog_thread = threading.Thread(
             target=_run_watchdog,
-            args=(router, drain, active_nodes, stop_event),
+            args=(router, drain, active_nodes, stop_event, args.channel),
             daemon=True,
             name="connection-watchdog",
         )

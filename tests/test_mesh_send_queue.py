@@ -581,7 +581,8 @@ def test_watchdog_detects_unhealthy_node():
     from src.main import _run_watchdog
     watchdog = threading.Thread(
         target=_run_watchdog,
-        args=(router, drain, {"EMBR": {"connection": "fake:4403"}}, stop, 0.05),
+        args=(router, drain, {"EMBR": {"connection": "fake:4403"}}, stop),
+        kwargs={"check_interval": 0.05},
         daemon=True,
     )
     watchdog.start()
@@ -623,7 +624,8 @@ def test_watchdog_backoff_on_repeated_failures():
     from src.main import _run_watchdog
     watchdog = threading.Thread(
         target=_run_watchdog,
-        args=(router, drain, {"EMBR": {"connection": "fake:4403"}}, stop, 0.05),
+        args=(router, drain, {"EMBR": {"connection": "fake:4403"}}, stop),
+        kwargs={"check_interval": 0.05},
         daemon=True,
     )
     watchdog.start()
@@ -675,7 +677,8 @@ def test_watchdog_rewires_callbacks_after_reconnect():
     from src.main import _run_watchdog
     watchdog = threading.Thread(
         target=_run_watchdog,
-        args=(router, drain, {"EMBR": {"connection": "fake:4403"}}, stop, 0.05),
+        args=(router, drain, {"EMBR": {"connection": "fake:4403"}}, stop),
+        kwargs={"check_interval": 0.05},
         daemon=True,
     )
     watchdog.start()
@@ -723,7 +726,8 @@ def test_watchdog_reattaches_dcrg_drain():
     from src.main import _run_watchdog
     watchdog = threading.Thread(
         target=_run_watchdog,
-        args=(router, drain, {"DCRG": {"connection": "fake:4403"}}, stop, 0.05),
+        args=(router, drain, {"DCRG": {"connection": "fake:4403"}}, stop),
+        kwargs={"check_interval": 0.05},
         daemon=True,
     )
     watchdog.start()
@@ -763,7 +767,8 @@ def test_watchdog_skips_healthy_nodes():
     from src.main import _run_watchdog
     watchdog = threading.Thread(
         target=_run_watchdog,
-        args=(router, drain, {"EMBR": {"connection": "fake:4403"}}, stop, 0.05),
+        args=(router, drain, {"EMBR": {"connection": "fake:4403"}}, stop),
+        kwargs={"check_interval": 0.05},
         daemon=True,
     )
     watchdog.start()
